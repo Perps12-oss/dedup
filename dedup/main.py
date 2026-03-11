@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+"""
+DEDUP - A minimal, high-performance duplicate file finder.
+
+A simplified duplicate file finder with a production-grade engine
+capable of handling 1,000,000+ files.
+
+Usage:
+    python -m dedup                    # Launch GUI
+    python -m dedup /path/to/scan      # Quick CLI scan
+"""
+
+from __future__ import annotations
+
+import sys
+import argparse
+from pathlib import Path
+
+
+def run_gui():
+    """Run the graphical interface."""
+    from dedup.ui import DedupApp
+    app = DedupApp()
+    app.run()
+
+
+def run_cli_scan(path: Path, min_size: int = 1, verbose: bool = False):
+    """Run a quick CLI scan."""
+    from dedup.engine import ScanConfig, ScanPipeline
+    from dedup.infrastructure.utils import format_bytes
+    
+    print(f"Scanning: {path}")
+    print("-" * 50)
+    
+    config = ScanConfig(roots=[path], min_size_bytes=min_size)
+    pipeline = ScanPipeline(config)
+    
+    def on_progress(progress):
+        if verbose:
+            print(f"\r{progress.phase}: {progress.files_found:,} files", end="", flush=True)
+    
+    result = pipeline.run(progress_cb=on_progress if verbose else None)
+    
+    print()  # New line after progress
+    print("-" * 50)
+    print(f"Scan complete in {result.duration_seconds:.1f}s")
+    print(f"Files scanned: {result.files_scanned:,}")
+    print(f"Duplicate groups: {len(result.duplicate_groups)}")
+    print(f"Duplicate files: {result.total_duplicates}")
+    print(f"Reclaimable space: {format_bytes(result.total_reclaimable_bytes)}")
+    
+    if result.duplicate_groups:
+        print("\nDuplicate groups:")
+        for i, group in enumerate(result.duplicate_groups[:10], 1):
+            print(f"\n  Group {i}: {group.files[0].filename}")
+            print(f"    Size: {format_bytes(group.files[0].size)}")
+            print(f"    Files: {len(group.files)}")
+            for file in group.files:
+                print(f"      - {file.path}")
+        
+        if len(result.duplicate_groups) > 10:
+            print(f"\n  ... and {len(result.duplicate_groups) - 10} more groups")
+
+
+def main():
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="DEDUP - Find and remove duplicate files",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s                    Launch GUI
+  %(prog)s /data              Quick scan of /data
+  %(prog)s /data --min-size 1M  Skip files smaller than 1MB
+  %(prog)s /data -v           Verbose scan output
+        """
+    )
+    
+    parser.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        help="Path to scan (if not provided, launches GUI)"
+    )
+    
+    parser.add_argument(
+        "--min-size",
+        type=str,
+        default="1",
+        help="Minimum file size to consider (e.g., 1K, 1M, 1G)"
+    )
+    
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Verbose output"
+    )
+    
+    parser.add_argument(
+        "--version",
+        action="version",
+        version="%(prog)s 1.0.0"
+    )
+    
+    args = parser.parse_args()
+    
+    # Parse min size
+    min_size = 1
+    if args.min_size:
+        size_str = args.min_size.upper()
+        try:
+            if size_str.endswith("K"):
+                min_size = int(size_str[:-1]) * 1024
+            elif size_str.endswith("M"):
+                min_size = int(size_str[:-1]) * 1024 * 1024
+            elif size_str.endswith("G"):
+                min_size = int(size_str[:-1]) * 1024 * 1024 * 1024
+            else:
+                min_size = int(size_str)
+        except ValueError:
+            print(f"Error: Invalid size format: {args.min_size}")
+            sys.exit(1)
+    
+    # Run appropriate mode
+    if args.path:
+        run_cli_scan(args.path, min_size, args.verbose)
+    else:
+        run_gui()
+
+
+if __name__ == "__main__":
+    main()
