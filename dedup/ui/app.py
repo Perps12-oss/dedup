@@ -157,7 +157,8 @@ class DedupApp:
         self.frames["history"] = HistoryFrame(
             self.content_frame,
             coordinator=self.coordinator,
-            on_load_scan=self._on_load_history_scan
+            on_load_scan=self._on_load_history_scan,
+            on_resume_scan=self._on_resume_scan,
         )
         
         # Grid all frames (they will be hidden/shown)
@@ -237,6 +238,12 @@ class DedupApp:
             self.last_result = result
             self.frames["results"].load_result(result)
             self._show_frame("results")
+
+    def _on_resume_scan(self, scan_id: str):
+        """Handle resume scan from History (continue from checkpoint)."""
+        self._show_frame("scan")
+        self.frames["scan"].start_resume(scan_id)
+        self.status_var.set("Resuming scan...")
     
     def _on_close(self):
         """Handle window close."""

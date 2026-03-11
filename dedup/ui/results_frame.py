@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import tkinter as tk
 from tkinter import ttk, messagebox
+from pathlib import Path
 from typing import Callable, Optional, List
 
 from ..orchestration.coordinator import ScanCoordinator
 from ..engine.models import ScanResult, DuplicateGroup, FileMetadata, DeletionPlan, DeletionResult
+from ..engine.thumbnails import generate_thumbnails_async, get_cache_dir
+from ..engine.media_types import is_image_extension
 from ..infrastructure.utils import format_bytes
 
 
@@ -107,16 +110,22 @@ class ResultsFrame(ttk.Frame):
         
         self._selected_group_id: Optional[str] = None
         self._selected_group: Optional[DuplicateGroup] = None
-        
+        self._thumbnail_refs: list = []  # Keep PhotoImage refs for GC
+
+        # Thumbnail strip for image groups (only populated when Pillow available)
+        self.thumbnail_frame = ttk.Frame(self.details_frame)
+        self.thumbnail_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 5))
+        self.thumbnail_frame.columnconfigure(0, weight=1)
+
         self.files_list = tk.Listbox(self.details_frame, height=5)
-        self.files_list.grid(row=0, column=0, sticky="ew")
+        self.files_list.grid(row=1, column=0, sticky="ew")
         
         files_scroll = ttk.Scrollbar(self.details_frame, orient="vertical", command=self.files_list.yview)
-        files_scroll.grid(row=0, column=1, sticky="ns")
+        files_scroll.grid(row=1, column=1, sticky="ns")
         self.files_list.configure(yscrollcommand=files_scroll.set)
         
         keep_btn_frame = ttk.Frame(self.details_frame)
-        keep_btn_frame.grid(row=1, column=0, columnspan=2, sticky="w", pady=(5, 0))
+        keep_btn_frame.grid(row=2, column=0, columnspan=2, sticky="w", pady=(5, 0))
         ttk.Button(
             keep_btn_frame,
             text="Keep this file",
@@ -234,6 +243,27 @@ class ResultsFrame(ttk.Frame):
         
         self._selected_group_id = group_id
         self._selected_group = group
+
+        # Clear and repopulate thumbnail strip for image groups
+        self._thumbnail_refs.clear()
+        for w in self.thumbnail_frame.winfo_children():
+            w.destroy()
+        paths = [f.path for f in group.files]
+        if any(is_image_extension(Path(f.path).suffix) for f in group.files):
+            def on_thumb(file_path: str, thumb_path: Optional[Path]):
+                def update():
+                    if thumb_path is not None and thumb_path.exists():
+                        try:
+                            from tkinter import PhotoImage
+                            img = PhotoImage(file=str(thumb_path))
+                            self._thumbnail_refs.append(img)
+                            lbl = ttk.Label(self.thumbnail_frame, image=img)
+                            lbl.image = img
+                            lbl.pack(side=tk.LEFT, padx=2)
+                        except Exception:
+                            pass
+                self.after(0, update)
+            generate_thumbnails_async(paths, on_thumb, cache_dir=get_cache_dir())
         
         # Update files list
         self.files_list.delete(0, tk.END)

@@ -272,6 +272,7 @@ class ScanPipeline:
         return engine.execute_plan(plan, progress_cb)
 
 
+@dataclass
 class ResumableScanPipeline(ScanPipeline):
     """
     Scan pipeline with persistence for resumability.
@@ -330,6 +331,137 @@ class ResumableScanPipeline(ScanPipeline):
         
         except Exception:
             return None
+
+    @staticmethod
+    def load_checkpoint_config(checkpoint_dir: Path, scan_id: str) -> Optional[ScanConfig]:
+        """Load ScanConfig from a checkpoint file (for resume). Returns None if missing or invalid."""
+        try:
+            import json
+            path = Path(checkpoint_dir) / f"{scan_id}_checkpoint.json"
+            if not path.exists():
+                return None
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return ScanConfig.from_dict(data.get("config", {}))
+        except Exception:
+            return None
+
+    def _clear_checkpoint(self) -> None:
+        """Remove checkpoint file after successful completion."""
+        if not self.checkpoint_dir:
+            return
+        try:
+            checkpoint_file = self.checkpoint_dir / f"{self.scan_id}_checkpoint.json"
+            if checkpoint_file.exists():
+                checkpoint_file.unlink()
+        except Exception:
+            pass
+
+    def run(
+        self,
+        progress_cb: Optional[Callable[[ScanProgress], None]] = None
+    ) -> ScanResult:
+        """
+        Run the scan pipeline with checkpoint support.
+        If a checkpoint exists for this scan_id, discovery is skipped and the
+        cached file list is used. After discovery, state is saved so that
+        cancel/interrupt can be resumed later.
+        """
+        self._start_time = time.time()
+        self.grouping.progress_cb = progress_cb
+
+        result = ScanResult(
+            scan_id=self.scan_id,
+            config=self.config,
+            started_at=datetime.now(),
+        )
+
+        try:
+            # Try resume from checkpoint
+            discovered_files = self._load_checkpoint()
+            if discovered_files:
+                if progress_cb:
+                    progress_cb(self._create_progress(
+                        phase="resuming",
+                        phase_description="Resuming from checkpoint...",
+                        files_found=len(discovered_files),
+                        bytes_found=sum(f.size for f in discovered_files),
+                    ))
+                self._files_found = len(discovered_files)
+                self._bytes_found = sum(f.size for f in discovered_files)
+            else:
+                # Phase 1: Discovery
+                if progress_cb:
+                    progress_cb(self._create_progress(
+                        phase="discovering",
+                        phase_description="Discovering files...",
+                    ))
+
+                discovered_files = self._discover_files(progress_cb)
+                if self.checkpoint_dir and discovered_files:
+                    self._save_checkpoint(discovered_files)
+
+            if self._cancelled:
+                result.errors.append("Scan cancelled by user")
+                result.completed_at = datetime.now()
+                return result
+
+            if not discovered_files and self.config.roots:
+                result.errors.append(
+                    "No files were found. Check that the folder path is correct, "
+                    "readable, and contains files (check filters: min size, extensions)."
+                )
+
+            # Phase 2-4: Grouping and hashing
+            if progress_cb:
+                progress_cb(self._create_progress(
+                    phase="grouping",
+                    phase_description="Finding duplicates...",
+                    files_found=self._files_found,
+                    bytes_found=self._bytes_found,
+                ))
+
+            duplicate_groups = self.grouping.find_duplicates(
+                iter(discovered_files),
+                self.scan_id,
+                cancel_check=lambda: self._cancelled
+            )
+
+            result.files_scanned = self._files_found
+            result.bytes_scanned = self._bytes_found
+            result.duplicate_groups = duplicate_groups
+            result.total_duplicates = sum(len(g.files) - 1 for g in duplicate_groups)
+            result.total_reclaimable_bytes = sum(g.reclaimable_size for g in duplicate_groups)
+            result.errors = self._errors
+
+            if self._cancelled:
+                result.errors.append("Scan cancelled by user")
+
+        except Exception as e:
+            self._errors.append(str(e))
+            result.errors = self._errors
+            if progress_cb:
+                progress_cb(self._create_progress(
+                    phase="error",
+                    phase_description=f"Error: {str(e)}",
+                    error_count=len(self._errors),
+                    last_error=str(e),
+                ))
+
+        finally:
+            result.completed_at = datetime.now()
+            if not self._cancelled and result.errors == []:
+                self._clear_checkpoint()
+            if progress_cb:
+                progress_cb(self._create_progress(
+                    phase="complete" if not self._cancelled else "cancelled",
+                    phase_description=f"Scan complete. Found {len(result.duplicate_groups)} duplicate groups.",
+                    files_found=result.files_scanned,
+                    groups_found=len(result.duplicate_groups),
+                    duplicates_found=result.total_duplicates,
+                ))
+
+        return result
 
 
 def quick_scan(

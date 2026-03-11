@@ -55,18 +55,20 @@ class ScanCoordinator:
         on_progress: Optional[Callable[[ScanProgress], None]] = None,
         on_complete: Optional[Callable[[ScanResult], None]] = None,
         on_error: Optional[Callable[[str], None]] = None,
+        resume_scan_id: Optional[str] = None,
         **scan_options
     ) -> str:
         """
-        Start a new scan.
-        
+        Start a new scan, or resume from a checkpoint.
+
         Args:
-            roots: Directories to scan
+            roots: Directories to scan (ignored when resume_scan_id is set)
             on_progress: Progress callback
             on_complete: Completion callback
             on_error: Error callback
-            **scan_options: Additional ScanConfig options
-        
+            resume_scan_id: If set, resume from checkpoint for this scan_id
+            **scan_options: Additional ScanConfig options (ignored when resuming)
+
         Returns:
             Scan ID
         """
@@ -74,25 +76,36 @@ class ScanCoordinator:
         if self._active_worker and self._active_worker.is_running:
             self._active_worker.cancel()
             self._active_worker.join(timeout=5.0)
-        
-        # Create config
-        scan_config = ScanConfig(
-            roots=roots,
-            min_size_bytes=scan_options.get('min_size', self.config.default_min_size),
-            include_hidden=scan_options.get('include_hidden', self.config.default_include_hidden),
-            follow_symlinks=scan_options.get('follow_symlinks', self.config.default_follow_symlinks),
-            scan_subfolders=scan_options.get('scan_subfolders', True),
-            hash_algorithm=scan_options.get('hash_algorithm', self.config.default_hash_algorithm),
-            full_hash_workers=self.config.max_workers,
-            batch_size=self.config.batch_size,
-        )
-        
-        # Create and start worker
+
+        if resume_scan_id:
+            scan_config = ScanConfig(roots=[Path(".")])  # Replaced by checkpoint config
+        else:
+            allowed = scan_options.get('allowed_extensions')
+            if allowed is None and scan_options.get('media_category'):
+                from ..engine.media_types import get_extensions_for_category
+                allowed = get_extensions_for_category(scan_options.get('media_category'))
+            scan_config = ScanConfig(
+                roots=roots,
+                min_size_bytes=scan_options.get('min_size', self.config.default_min_size),
+                include_hidden=scan_options.get('include_hidden', self.config.default_include_hidden),
+                follow_symlinks=scan_options.get('follow_symlinks', self.config.default_follow_symlinks),
+                scan_subfolders=scan_options.get('scan_subfolders', True),
+                hash_algorithm=scan_options.get('hash_algorithm', self.config.default_hash_algorithm),
+                full_hash_workers=self.config.max_workers,
+                batch_size=self.config.batch_size,
+                allowed_extensions=allowed,
+            )
+
+        checkpoint_dir = self.persistence.checkpoint_dir
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
         worker = ScanWorker(
             scan_config,
             self.event_bus,
             hash_cache_getter=self.persistence.get_hash_cache,
             hash_cache_setter=self.persistence.set_hash_cache,
+            checkpoint_dir=checkpoint_dir,
+            resume_scan_id=resume_scan_id,
         )
         worker.callbacks.on_progress = on_progress
         worker.callbacks.on_complete = self._on_scan_complete_wrapper(on_complete)
@@ -145,6 +158,13 @@ class ScanCoordinator:
         """Get scan history."""
         try:
             return self.persistence.list_scans(limit=limit)
+        except Exception:
+            return []
+
+    def get_resumable_scan_ids(self) -> List[str]:
+        """List scan_ids that have a checkpoint and can be resumed."""
+        try:
+            return self.persistence.list_resumable_scan_ids()
         except Exception:
             return []
     

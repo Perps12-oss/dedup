@@ -35,6 +35,25 @@ class Persistence:
             self._lock = threading.Lock()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
+
+    @property
+    def checkpoint_dir(self) -> Path:
+        """Directory for scan checkpoints (resume support)."""
+        return self.db_path.parent / "checkpoints"
+
+    def list_resumable_scan_ids(self) -> List[str]:
+        """List scan_ids that have a checkpoint (can be resumed)."""
+        try:
+            cp_dir = self.checkpoint_dir
+            if not cp_dir.exists():
+                return []
+            return [
+                f.stem.replace("_checkpoint", "")
+                for f in cp_dir.glob("*_checkpoint.json")
+                if f.is_file()
+            ]
+        except Exception:
+            return []
     
     def _get_connection(self) -> sqlite3.Connection:
         """Get or create database connection."""
@@ -152,26 +171,35 @@ class Persistence:
                 cursor = conn.cursor()
                 
                 cursor.execute("""
-                    SELECT scan_id, started_at, completed_at, files_scanned,
-                           duplicates_found, reclaimable_bytes, status
+                    SELECT scan_id, started_at, completed_at, config,
+                           files_scanned, duplicates_found, reclaimable_bytes, status
                     FROM scan_history
                     ORDER BY started_at DESC
                     LIMIT ? OFFSET ?
                 """, (limit, offset))
                 
                 rows = cursor.fetchall()
-                return [
-                    {
-                        "scan_id": row['scan_id'],
-                        "started_at": row['started_at'],
-                        "completed_at": row['completed_at'],
-                        "files_scanned": row['files_scanned'],
-                        "duplicates_found": row['duplicates_found'],
-                        "reclaimable_bytes": row['reclaimable_bytes'],
-                        "status": row['status'],
-                    }
-                    for row in rows
-                ]
+                out = []
+                for row in rows:
+                    r = dict(row)
+                    roots = []
+                    if r.get('config'):
+                        try:
+                            cfg = json.loads(r['config'])
+                            roots = cfg.get('roots') or []
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                    out.append({
+                        "scan_id": r['scan_id'],
+                        "started_at": r['started_at'],
+                        "completed_at": r['completed_at'],
+                        "files_scanned": r['files_scanned'],
+                        "duplicates_found": r['duplicates_found'],
+                        "reclaimable_bytes": r['reclaimable_bytes'],
+                        "status": r['status'],
+                        "roots": roots,
+                    })
+                return out
         except sqlite3.Error:
             return []
     

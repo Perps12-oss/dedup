@@ -10,7 +10,9 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, List
+
+from ..engine.media_types import list_categories, get_category_label
 
 try:
     from tkinterdnd2 import DND_FILES  # type: ignore
@@ -145,7 +147,22 @@ class HomeFrame(ttk.Frame):
             text="Include hidden files",
             variable=self.hidden_var
         ).grid(row=2, column=0, sticky="w")
-        
+
+        # Media type filter
+        ttk.Label(options_frame, text="File type:").grid(row=3, column=0, sticky="w", padx=(0, 10))
+        self.media_category_var = tk.StringVar(value="all")
+        categories: List[str] = list_categories()
+        media_combo = ttk.Combobox(
+            options_frame,
+            textvariable=self.media_category_var,
+            values=[get_category_label(c) for c in categories],
+            state="readonly",
+            width=14,
+        )
+        media_combo.grid(row=3, column=1, sticky="w", pady=(5, 0))
+        self._media_label_to_key = {get_category_label(c): c for c in categories}
+        media_combo.current(0)
+
         # Start button
         start_btn = ttk.Button(
             self,
@@ -222,11 +239,15 @@ class HomeFrame(ttk.Frame):
         
         self.path_var.set(str(path))
         
-        # Build options
+        # Build options (media_category: key like "images", "all")
+        label = self.media_category_var.get()
+        media_key = self._media_label_to_key.get(label, "all")
+
         options = {
             "min_size": self.min_size_var.get(),
             "include_hidden": self.hidden_var.get(),
             "scan_subfolders": self.scan_subfolders_var.get(),
+            "media_category": media_key,
         }
 
         self.on_start_scan(path, options)

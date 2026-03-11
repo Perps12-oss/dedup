@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional, Dict, Any
 
 from ..engine.models import ScanConfig, ScanProgress, ScanResult
-from ..engine.pipeline import ScanPipeline
+from ..engine.pipeline import ScanPipeline, ResumableScanPipeline
 from .events import EventBus, ScanEvent, ScanEventType, get_event_bus
 
 
@@ -46,13 +46,17 @@ class ScanWorker:
         event_bus: Optional[EventBus] = None,
         hash_cache_getter: Optional[Callable[[str], Optional[Dict[str, Any]]]] = None,
         hash_cache_setter: Optional[Callable[[Any], bool]] = None,
+        checkpoint_dir: Optional[Any] = None,
+        resume_scan_id: Optional[str] = None,
     ):
         self.config = config
         self.event_bus = event_bus or get_event_bus()
         self.callbacks = ScanWorkerCallbacks()
         self._hash_cache_getter = hash_cache_getter
         self._hash_cache_setter = hash_cache_setter
-        
+        self._checkpoint_dir = checkpoint_dir
+        self._resume_scan_id = resume_scan_id
+
         self._pipeline: Optional[ScanPipeline] = None
         self._thread: Optional[threading.Thread] = None
         self._result: Optional[ScanResult] = None
@@ -84,13 +88,37 @@ class ScanWorker:
             self._cancelled = False
             self._result = None
             self._error = None
-            
-            # Create pipeline
-            self._pipeline = ScanPipeline(
-                self.config,
-                hash_cache_getter=self._hash_cache_getter,
-                hash_cache_setter=self._hash_cache_setter,
-            )
+
+            # Use resumable pipeline when checkpoint_dir is set (save checkpoint on cancel)
+            from pathlib import Path
+            if self._checkpoint_dir:
+                cp_path = Path(self._checkpoint_dir)
+                if self._resume_scan_id:
+                    resume_config = ResumableScanPipeline.load_checkpoint_config(
+                        cp_path, self._resume_scan_id
+                    )
+                    if resume_config is None:
+                        raise ValueError(f"Checkpoint not found for scan {self._resume_scan_id}")
+                    self._pipeline = ResumableScanPipeline(
+                        resume_config,
+                        scan_id=self._resume_scan_id,
+                        checkpoint_dir=cp_path,
+                        hash_cache_getter=self._hash_cache_getter,
+                        hash_cache_setter=self._hash_cache_setter,
+                    )
+                else:
+                    self._pipeline = ResumableScanPipeline(
+                        self.config,
+                        checkpoint_dir=cp_path,
+                        hash_cache_getter=self._hash_cache_getter,
+                        hash_cache_setter=self._hash_cache_setter,
+                    )
+            else:
+                self._pipeline = ScanPipeline(
+                    self.config,
+                    hash_cache_getter=self._hash_cache_getter,
+                    hash_cache_setter=self._hash_cache_setter,
+                )
             scan_id = self._pipeline.scan_id
             
             # Start thread

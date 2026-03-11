@@ -17,8 +17,8 @@
 | **High** | Deletion plan ignored user “Keep” selection in UI | **Fixed:** `create_plan_from_groups` accepts `group_keep_paths`; Results frame passes `selected_groups` and has “Keep this file” button. |
 | **High** | `DeletionResult.bytes_reclaimed` never set | **Fixed:** Size is read before each delete and added to `bytes_reclaimed` on success. |
 | **Medium** | Full file list materialized in memory (1M files) | **Documented:** Pipeline’s `_discover_files` returns `List[FileMetadata]`; grouping then holds candidates in memory. For 1M files this is a known memory spike; streaming grouping would require larger refactor. |
-| **Medium** | Hash cache is in-memory only (not wired to DB) | **Documented:** `HashEngine` uses in-memory cache; `Persistence` has `get_hash_cache`/`set_hash_cache` but pipeline does not use them. Optional follow-up. |
-| **Medium** | ResumableScanPipeline checkpoints never called | **Documented:** `_save_checkpoint`/`_load_checkpoint` exist but are not invoked from `run()`. Resume is not implemented. |
+| **Medium** | Hash cache is in-memory only (not wired to DB) | **Fixed:** Coordinator passes `get_hash_cache`/`set_hash_cache` to worker → pipeline → `HashEngine`; hashing uses DB cache with size/mtime invalidation. |
+| **Medium** | ResumableScanPipeline checkpoints never called | **Fixed:** Checkpoints saved after discovery; `run()` loads checkpoint when present and skips discovery; worker uses `ResumableScanPipeline` when `checkpoint_dir` set; History offers "Resume Scan" for resumable scan_ids. |
 | **Low** | Persistence `get_default_persistence` used `sys` before import | **Fixed:** `sys` imported at top of `persistence.py`. |
 | **Low** | Coordinator missing `DeletionPolicy` import | **Fixed.** |
 | **Low** | Results tree could be huge (no virtualization) | **Documented:** Tree adds all groups; for very large result sets consider pagination/virtualization. |
@@ -107,13 +107,13 @@
 - **Deletion:** Plan matches user keep selection; keep file is never deleted; bytes reclaimed is reported correctly.
 - **Discovery:** Completion and cancellation behavior fixed; suitable for large runs.
 - **Scale (1M files):** Main limitation is memory: full discovered file list and candidate lists are in memory. Acceptable for many deployments but not “O(1) memory”; consider streaming/chunking for future work.
-- **Resume:** Not implemented; checkpoints exist but are not used. Cancel leaves a consistent partial result (result is still returned with whatever was found).
+- **Resume:** Implemented: checkpoint saved after discovery; resume from History for cancelled scans; only discovery phase is resumable (grouping/hashing re-run from cached file list).
 - **Caveats:**
-  - Hash cache is in-memory only unless persistence hash cache is wired in.
   - Very large result sets in the UI (e.g. 100k+ groups) may benefit from virtualization/pagination.
   - SQLite and temp file cleanup on Windows require closing connections/handles before deleting (handled in tests via fixture).
+  - Image thumbnails require Pillow; app degrades gracefully if not installed.
 
-**Verdict:** Production-usable for typical and large (hundreds of thousands of files) datasets, with the above caveats. Safe for duplicate detection and deletion; metrics and UI are truthful and conservative.
+**Verdict:** Production-usable for typical and large (hundreds of thousands of files) datasets. Safe for duplicate detection and deletion; metrics and UI are truthful and conservative. Resume, media filtering, thumbnails, empty-trash, and history roots/resume are implemented.
 
 ---
 
@@ -147,3 +147,18 @@
    python -m dedup C:\path\to\stress_data -v
    ```
    Check log output for phase durations and rates (debug level).
+
+---
+
+## 9. Feature-completion pass (summary)
+
+- **Checkpoint / resume:** `ResumableScanPipeline.run()` now saves a checkpoint after discovery and loads it when present; coordinator passes `checkpoint_dir` and optional `resume_scan_id`; History screen shows "Resume Scan" for scans with a checkpoint. Only the discovery phase is resumable (grouping/hashing re-run from the cached file list).
+- **Persistent hash cache:** Already wired: coordinator passes `get_hash_cache`/`set_hash_cache` to the worker; pipeline assigns them to `HashEngine`; hashing reads/writes DB cache with size/mtime invalidation.
+- **Media filtering:** `engine/media_types.py` added (Images, Videos, Audio, Documents, Archives, All); Home screen has a "File type" dropdown; coordinator maps `media_category` to `allowed_extensions` for discovery.
+- **Image thumbnails:** `engine/thumbnails.py` added (Pillow, disk cache, async generation); Results frame shows a thumbnail strip for image duplicate groups; graceful fallback when Pillow is not installed.
+- **Empty Trash:** `infrastructure/trash.py` lists/empties the DEDUP fallback folder (`~/.dedup/trash`); History screen has "Empty Trash" with confirmation (file count and size). Does not affect system recycle bin.
+- **History:** `list_scans` now includes `roots` (from stored config); History tree shows Roots column; "Resume Scan" button for resumable scans; "Load Selected" and "Delete Selected" unchanged.
+- **Drag-and-drop:** Already present (tkinterdnd2; fallback to click-to-browse when unavailable). No change.
+- **Progress UI:** Existing truthful behavior preserved (phase, files, groups, elapsed, current file; indeterminate bar; no fake ETA).
+
+**Status after pass:** Core features are complete. Remaining limitations: full file list and candidate groups still materialized in memory (no O(1) claim); only discovery is resumable; thumbnails optional (Pillow). App is ready for typical use and for large scans with resume and hash cache; very large result sets (100k+ groups) may benefit from future UI virtualization.

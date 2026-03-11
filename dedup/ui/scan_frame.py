@@ -141,6 +141,27 @@ class ScanFrame(ttk.Frame):
         
         # Start elapsed time updates
         self._update_elapsed()
+
+    def start_resume(self, scan_id: str):
+        """Resume a scan from checkpoint (no folder selection)."""
+        self.is_scanning = True
+        self.title_label.config(text="Resuming scan...")
+        self.progress.start(10)
+        self.phase_var.set("Resuming...")
+        self.files_var.set("0")
+        self.groups_var.set("0")
+        self.elapsed_var.set("0s")
+        self.current_file_var.set("")
+        import time
+        self.start_time = time.time()
+        self.coordinator.start_scan(
+            roots=[],
+            resume_scan_id=scan_id,
+            on_progress=self._on_progress,
+            on_complete=self._on_complete,
+            on_error=self._on_error,
+        )
+        self._update_elapsed()
     
     def _on_progress(self, progress: ScanProgress):
         """Handle progress update."""

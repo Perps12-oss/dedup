@@ -12,6 +12,9 @@ send2trash>=1.8.0
 # Optional UI drag-and-drop support
 tkinterdnd2>=0.4.2
 
+# Optional: Image thumbnails in Results (graceful fallback if not installed)
+Pillow>=9.0.0
+
 # Optional: Faster cryptographic hashing
 # blake3 is faster than SHA256 for large files
 # blake3>=0.3.0
