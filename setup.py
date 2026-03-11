@@ -30,6 +30,7 @@ setup(
         "recommended": [
             "xxhash>=3.0.0",
             "send2trash>=1.8.0",
+            "tkinterdnd2>=0.4.2",
         ],
         "dev": [
             "pytest>=7.0.0",

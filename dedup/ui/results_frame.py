@@ -334,7 +334,27 @@ class ResultsFrame(ttk.Frame):
             )
         
         self.on_delete_complete(result)
-        
+
+        # Update result: remove successfully deleted files from groups so UI reflects reality
+        if result.deleted_files:
+            deleted_set = set(result.deleted_files)
+            new_groups = []
+            for group in self.current_result.duplicate_groups:
+                remaining = [f for f in group.files if f.path not in deleted_set]
+                if len(remaining) >= 2:
+                    new_group = DuplicateGroup(
+                        group_id=group.group_id,
+                        group_hash=group.group_hash,
+                        files=remaining,
+                    )
+                    new_groups.append(new_group)
+                elif len(remaining) == 1:
+                    # Only "keep" left - no longer a duplicate group
+                    pass
+            self.current_result.duplicate_groups = new_groups
+            self.current_result.total_duplicates = sum(len(g.files) - 1 for g in new_groups)
+            self.current_result.total_reclaimable_bytes = sum(g.reclaimable_size for g in new_groups)
+
         # Refresh display
         self.load_result(self.current_result)
     

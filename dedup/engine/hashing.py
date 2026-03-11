@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Iterator, List, Optional, Callable, Dict, Set, Tuple
+from typing import Iterator, List, Optional, Callable, Dict, Set, Tuple, Any
 import threading
 
 from .models import FileMetadata, ScanConfig
@@ -47,6 +47,8 @@ class HashEngine:
     partial_bytes: int = 4096
     workers: int = 4
     use_mmap: bool = True
+    cache_getter: Optional[Callable[[str], Optional[Dict[str, Any]]]] = None
+    cache_setter: Optional[Callable[[FileMetadata], bool]] = None
     
     # Cache: path -> (mtime_ns, size, hash) to avoid re-hashing
     _hash_cache: Dict[str, Tuple[int, int, str]] = None
@@ -102,6 +104,34 @@ class HashEngine:
         """Update the hash cache."""
         with self._cache_lock:
             self._hash_cache[path] = (mtime_ns, size, hash_value)
+
+    def _check_external_partial_cache(self, file: FileMetadata) -> Optional[str]:
+        """Check persistence-backed cache for a valid partial hash."""
+        if not self.cache_getter:
+            return None
+        try:
+            cached = self.cache_getter(file.path)
+            if not cached:
+                return None
+            if cached.get("size") != file.size or cached.get("mtime_ns") != file.mtime_ns:
+                return None
+            return cached.get("hash_partial")
+        except Exception:
+            return None
+
+    def _check_external_full_cache(self, file: FileMetadata) -> Optional[str]:
+        """Check persistence-backed cache for a valid full hash."""
+        if not self.cache_getter:
+            return None
+        try:
+            cached = self.cache_getter(file.path)
+            if not cached:
+                return None
+            if cached.get("size") != file.size or cached.get("mtime_ns") != file.mtime_ns:
+                return None
+            return cached.get("hash_full")
+        except Exception:
+            return None
     
     def hash_partial(self, file: FileMetadata) -> Optional[str]:
         """
@@ -113,6 +143,10 @@ class HashEngine:
         cached = self._check_cache(file.path, file.mtime_ns, file.size)
         if cached:
             return cached
+        cached_external = self._check_external_partial_cache(file)
+        if cached_external:
+            self._update_cache(file.path, file.mtime_ns, file.size, cached_external)
+            return cached_external
         
         try:
             path = Path(file.path)
@@ -144,6 +178,11 @@ class HashEngine:
             
             hash_value = hasher.hexdigest()
             self._update_cache(file.path, file.mtime_ns, file.size, hash_value)
+            if self.cache_setter:
+                try:
+                    self.cache_setter(file.with_hash_partial(hash_value))
+                except Exception:
+                    pass
             return hash_value
             
         except (OSError, PermissionError, IOError):
@@ -160,6 +199,9 @@ class HashEngine:
             path = Path(file.path)
             if not path.exists():
                 return None
+            cached_external = self._check_external_full_cache(file)
+            if cached_external:
+                return cached_external
             
             hasher = self._get_hasher()
             file_size = file.size
@@ -185,7 +227,13 @@ class HashEngine:
                             break
                         hasher.update(chunk)
             
-            return hasher.hexdigest()
+            hash_value = hasher.hexdigest()
+            if self.cache_setter:
+                try:
+                    self.cache_setter(file.with_hash_full(hash_value))
+                except Exception:
+                    pass
+            return hash_value
             
         except (OSError, PermissionError, IOError):
             return None

@@ -81,13 +81,19 @@ class ScanCoordinator:
             min_size_bytes=scan_options.get('min_size', self.config.default_min_size),
             include_hidden=scan_options.get('include_hidden', self.config.default_include_hidden),
             follow_symlinks=scan_options.get('follow_symlinks', self.config.default_follow_symlinks),
+            scan_subfolders=scan_options.get('scan_subfolders', True),
             hash_algorithm=scan_options.get('hash_algorithm', self.config.default_hash_algorithm),
             full_hash_workers=self.config.max_workers,
             batch_size=self.config.batch_size,
         )
         
         # Create and start worker
-        worker = ScanWorker(scan_config, self.event_bus)
+        worker = ScanWorker(
+            scan_config,
+            self.event_bus,
+            hash_cache_getter=self.persistence.get_hash_cache,
+            hash_cache_setter=self.persistence.set_hash_cache,
+        )
         worker.callbacks.on_progress = on_progress
         worker.callbacks.on_complete = self._on_scan_complete_wrapper(on_complete)
         worker.callbacks.on_error = on_error

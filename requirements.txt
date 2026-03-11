@@ -7,8 +7,10 @@ xxhash>=3.0.0; platform_python_implementation=='CPython'
 
 # Trash support (recommended)
 # send2trash provides proper trash/recycle bin support
-cross-platform
 send2trash>=1.8.0
+
+# Optional UI drag-and-drop support
+tkinterdnd2>=0.4.2
 
 # Optional: Faster cryptographic hashing
 # blake3 is faster than SHA256 for large files

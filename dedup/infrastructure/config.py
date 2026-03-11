@@ -43,6 +43,25 @@ class Config:
     # Recent folders
     recent_folders: List[str] = field(default_factory=list)
     max_recent_folders: int = 10
+
+    def __post_init__(self):
+        """Validate and clamp config values to safe ranges."""
+        if self.default_min_size < 0:
+            self.default_min_size = 0
+        if self.max_workers < 1:
+            self.max_workers = 1
+        if self.max_workers > 32:
+            self.max_workers = 32
+        if self.batch_size < 1:
+            self.batch_size = 1
+        if self.max_recent_folders < 1:
+            self.max_recent_folders = 1
+        if self.window_width < 600:
+            self.window_width = 600
+        if self.window_height < 400:
+            self.window_height = 400
+        # Keep only existing recent folders
+        self.recent_folders = [f for f in self.recent_folders if Path(f).exists()][:self.max_recent_folders]
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""

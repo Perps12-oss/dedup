@@ -16,14 +16,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator, Optional, Set, Callable, List, Dict
-from queue import Queue
+from queue import Queue, Empty
 import threading
 
 from .models import FileMetadata, ScanConfig
-
-# Sentinel for result_queue: worker signals completion (not a FileMetadata)
-_WORKER_DONE = object()
-
 
 @dataclass(slots=True)
 class DiscoveryOptions:
@@ -33,10 +29,11 @@ class DiscoveryOptions:
     max_size_bytes: Optional[int] = None
     include_hidden: bool = False
     follow_symlinks: bool = False
+    scan_subfolders: bool = True
     allowed_extensions: Optional[Set[str]] = None
     exclude_dirs: Set[str] = field(default_factory=set)
     max_workers: int = 8
-    
+
     @classmethod
     def from_config(cls, config: ScanConfig) -> DiscoveryOptions:
         """Create options from scan config."""
@@ -46,6 +43,7 @@ class DiscoveryOptions:
             max_size_bytes=config.max_size_bytes,
             include_hidden=config.include_hidden,
             follow_symlinks=config.follow_symlinks,
+            scan_subfolders=config.scan_subfolders,
             allowed_extensions=config.allowed_extensions,
             exclude_dirs=config.exclude_dirs,
             max_workers=config.full_hash_workers,
@@ -94,63 +92,53 @@ class FileDiscovery:
         # Use a queue to collect results from worker threads
         result_queue: Queue[Optional[FileMetadata]] = Queue(maxsize=1000)
         work_queue: Queue[Optional[Path]] = Queue()
-        
-        # Add initial roots to work queue
+
+        # Add initial roots
         for root in self.options.roots:
             work_queue.put(root)
-        # Signal workers to stop when no more work: one SENTINEL per worker
+
         WORK_SENTINEL = None
         num_workers = min(self.options.max_workers, 4)
-        for _ in range(num_workers):
-            work_queue.put(WORK_SENTINEL)
-        
-        # Track active workers
-        active_workers = threading.Lock()
-        worker_count = [0]
-        
+        done_event = threading.Event()
+
         def worker():
-            """Worker thread that processes directories."""
-            with active_workers:
-                worker_count[0] += 1
-            
-            try:
-                while not self._cancelled:
-                    try:
-                        directory = work_queue.get(timeout=0.1)
-                        if directory is WORK_SENTINEL:
-                            work_queue.put(WORK_SENTINEL)  # Propagate to other workers
-                            break
-                    except Exception:
-                        continue
-                    
-                    try:
-                        self._scan_directory(directory, work_queue, result_queue)
-                    except Exception:
-                        self._stats["errors"] += 1
-            finally:
-                with active_workers:
-                    worker_count[0] -= 1
-                result_queue.put(_WORKER_DONE)
-        
-        # Start worker threads
+            while not self._cancelled:
+                try:
+                    directory = work_queue.get(timeout=0.1)
+                except Empty:
+                    continue
+
+                try:
+                    if directory is WORK_SENTINEL:
+                        return
+                    self._scan_directory(directory, work_queue, result_queue)
+                except Exception:
+                    self._stats["errors"] += 1
+                finally:
+                    work_queue.task_done()
+
+        # Start workers
         threads = []
         for _ in range(num_workers):
-            t = threading.Thread(target=worker)
-            t.daemon = True
+            t = threading.Thread(target=worker, daemon=True)
             t.start()
             threads.append(t)
-        
+
+        # Monitor queue completion (all discovered subdirs processed too)
+        def monitor_done():
+            try:
+                work_queue.join()
+            finally:
+                done_event.set()
+
+        monitor = threading.Thread(target=monitor_done, daemon=True)
+        monitor.start()
+
         try:
-            # Yield results as they come in
-            finished_workers = 0
             while not self._cancelled:
                 try:
                     metadata = result_queue.get(timeout=0.1)
-                    if metadata is _WORKER_DONE:
-                        finished_workers += 1
-                        if finished_workers >= num_workers:
-                            break
-                    elif metadata is not None and metadata is not _WORKER_DONE:
+                    if metadata is not None:
                         self._stats["files_found"] += 1
                         if progress_cb:
                             try:
@@ -158,11 +146,17 @@ class FileDiscovery:
                             except Exception:
                                 pass
                         yield metadata
-                except Exception:
-                    if finished_workers >= num_workers:
+                except Empty:
+                    if done_event.is_set() and result_queue.empty():
                         break
         finally:
-            # Wait for workers to finish (they received SENTINELs from initial queue)
+            # Stop workers cleanly
+            for _ in range(num_workers):
+                work_queue.put(WORK_SENTINEL)
+            # Ensure sentinels are consumed when not cancelled.
+            # If cancelled, workers may exit before draining the queue.
+            if not self._cancelled:
+                work_queue.join()
             for t in threads:
                 t.join(timeout=1.0)
     
@@ -174,7 +168,8 @@ class FileDiscovery:
     ):
         """Scan a single directory and queue results."""
         try:
-            with os.scandir(directory) as entries:
+            # Use str() for Windows/long-path compatibility with os.scandir
+            with os.scandir(str(directory)) as entries:
                 for entry in entries:
                     if self._cancelled:
                         return
@@ -186,9 +181,9 @@ class FileDiscovery:
                         if not self.options.include_hidden and name.startswith('.'):
                             continue
                         
-                        # Handle directories
+                        # Handle directories (recurse only if scan_subfolders)
                         if entry.is_dir(follow_symlinks=self.options.follow_symlinks):
-                            if name not in self.options.exclude_dirs:
+                            if self.options.scan_subfolders and name not in self.options.exclude_dirs:
                                 work_queue.put(Path(entry.path))
                             continue
                         

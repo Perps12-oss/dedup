@@ -63,7 +63,7 @@ def test_list_scans(persistence):
 
 
 def test_hash_cache_set_get(persistence):
-    from engine.models import FileMetadata
+    from dedup.engine.models import FileMetadata
     m = FileMetadata(path="/some/path", size=100, mtime_ns=123, hash_partial="abc", hash_full="def")
     assert persistence.set_hash_cache(m) is True
     cached = persistence.get_hash_cache("/some/path")

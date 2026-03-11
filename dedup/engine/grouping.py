@@ -31,6 +31,57 @@ class GroupingEngine:
     
     hash_engine: HashEngine
     progress_cb: Optional[Callable[[ScanProgress], None]] = None
+
+    def _adaptive_refine_partial_groups(
+        self,
+        groups: Dict[str, List[FileMetadata]],
+        scan_id: str,
+    ) -> Dict[str, List[FileMetadata]]:
+        """
+        Refine large candidate groups with stronger partial hashing before full hash.
+        This reduces expensive full hashes on very large files.
+        """
+        large_candidates: List[FileMetadata] = []
+        passthrough: Dict[str, List[FileMetadata]] = {}
+
+        for key, files in groups.items():
+            if not files:
+                continue
+            file_size = files[0].size
+            if len(files) >= 3 and file_size >= 32 * 1024 * 1024:
+                large_candidates.extend(files)
+            else:
+                passthrough[key] = files
+
+        if not large_candidates:
+            return groups
+
+        stronger_engine = HashEngine(
+            algorithm=self.hash_engine.algorithm,
+            partial_bytes=max(self.hash_engine.partial_bytes * 8, 64 * 1024),
+            workers=self.hash_engine.workers,
+            use_mmap=self.hash_engine.use_mmap,
+            cache_getter=self.hash_engine.cache_getter,
+            cache_setter=self.hash_engine.cache_setter,
+        )
+
+        if self.progress_cb:
+            self.progress_cb(ScanProgress(
+                scan_id=scan_id,
+                phase="hashing_partial",
+                phase_description="Refining large candidate groups with stronger partial hashing...",
+            ))
+
+        refined = group_by_partial_hash(
+            large_candidates,
+            stronger_engine,
+            progress_cb=lambda n: self._on_hash_progress(scan_id, "hashing_partial", n),
+        )
+
+        combined: Dict[str, List[FileMetadata]] = {}
+        combined.update(passthrough)
+        combined.update(refined)
+        return combined
     
     def group_by_size(
         self,
@@ -116,6 +167,7 @@ class GroupingEngine:
             self.hash_engine,
             progress_cb=lambda n: self._on_hash_progress(scan_id, "hashing_partial", n)
         )
+        partial_hash_groups = self._adaptive_refine_partial_groups(partial_hash_groups, scan_id)
         
         if self.progress_cb:
             self.progress_cb(ScanProgress(

@@ -18,7 +18,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator, Optional, Callable, List, Dict
+from typing import Iterator, Optional, Callable, List, Dict, Any
 import threading
 
 from .models import (
@@ -48,6 +48,8 @@ class ScanPipeline:
     
     config: ScanConfig
     scan_id: str = field(default_factory=lambda: str(uuid.uuid4())[:12])
+    hash_cache_getter: Optional[Callable[[str], Optional[Dict[str, Any]]]] = None
+    hash_cache_setter: Optional[Callable[[FileMetadata], bool]] = None
     
     # Components
     discovery: FileDiscovery = field(init=False)
@@ -66,6 +68,8 @@ class ScanPipeline:
         discovery_options = DiscoveryOptions.from_config(self.config)
         self.discovery = FileDiscovery(discovery_options)
         self.hash_engine = HashEngine.from_config(self.config)
+        self.hash_engine.cache_getter = self.hash_cache_getter
+        self.hash_engine.cache_setter = self.hash_cache_setter
         self.grouping = GroupingEngine(
             hash_engine=self.hash_engine,
             progress_cb=None,
@@ -129,6 +133,12 @@ class ScanPipeline:
                 result.errors.append("Scan cancelled by user")
                 result.completed_at = datetime.now()
                 return result
+
+            if not discovered_files and self.config.roots:
+                result.errors.append(
+                    "No files were found. Check that the folder path is correct, "
+                    "readable, and contains files (check filters: min size, extensions)."
+                )
             
             # Phase 2-4: Grouping and hashing
             if progress_cb:

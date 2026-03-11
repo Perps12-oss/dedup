@@ -11,6 +11,11 @@ from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 from typing import Optional
 
+try:
+    from tkinterdnd2 import TkinterDnD  # type: ignore
+except Exception:
+    TkinterDnD = None
+
 from ..orchestration.coordinator import ScanCoordinator
 from ..infrastructure.config import load_config, save_config
 from .home_frame import HomeFrame
@@ -36,7 +41,10 @@ class DedupApp:
     MIN_HEIGHT = 600
     
     def __init__(self):
-        self.root = tk.Tk()
+        if TkinterDnD is not None:
+            self.root = TkinterDnD.Tk()
+        else:
+            self.root = tk.Tk()
         self.root.title(f"{self.APP_NAME} v{self.APP_VERSION}")
         self.root.minsize(self.MIN_WIDTH, self.MIN_HEIGHT)
         self.root.geometry(f"{self.MIN_WIDTH}x{self.MIN_HEIGHT}")
@@ -129,7 +137,8 @@ class DedupApp:
         
         self.frames["home"] = HomeFrame(
             self.content_frame,
-            on_start_scan=self._on_start_scan
+            on_start_scan=self._on_start_scan,
+            recent_folders=self.coordinator.get_recent_folders(),
         )
         
         self.frames["scan"] = ScanFrame(
@@ -190,6 +199,10 @@ class DedupApp:
     
     def _on_start_scan(self, path: Path, options: dict):
         """Handle start scan request from home frame."""
+        try:
+            self.coordinator.add_recent_folder(path)
+        except Exception:
+            pass
         self._show_frame("scan")
         self.frames["scan"].start_scan(path, options)
         self.status_var.set(f"Scanning: {path}")

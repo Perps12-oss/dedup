@@ -229,6 +229,7 @@ class ScanConfig:
     max_size_bytes: Optional[int] = None
     include_hidden: bool = False
     follow_symlinks: bool = False
+    scan_subfolders: bool = True  # Recurse into subfolders (default: scan entire tree)
     allowed_extensions: Optional[Set[str]] = None
     exclude_dirs: Set[str] = field(default_factory=lambda: {
         '.git', '.svn', '.hg',  # Version control
@@ -250,9 +251,12 @@ class ScanConfig:
     mode: PipelineMode = PipelineMode.EXACT
     
     def __post_init__(self):
-        # Normalize paths
-        self.roots = [Path(r).resolve() for r in self.roots if Path(r).exists()]
-        
+        # Normalize paths: resolve all, prefer existing; never drop all roots
+        # (exists() can be False on network/OneDrive paths; discovery will still try)
+        resolved = [Path(r).resolve() for r in self.roots]
+        existing = [r for r in resolved if r.exists()]
+        self.roots = existing if existing else resolved
+
         # Normalize extensions to lowercase
         if self.allowed_extensions:
             self.allowed_extensions = {e.lower().lstrip('.') for e in self.allowed_extensions}
@@ -265,6 +269,7 @@ class ScanConfig:
             "max_size_bytes": self.max_size_bytes,
             "include_hidden": self.include_hidden,
             "follow_symlinks": self.follow_symlinks,
+            "scan_subfolders": self.scan_subfolders,
             "allowed_extensions": list(self.allowed_extensions) if self.allowed_extensions else None,
             "exclude_dirs": list(self.exclude_dirs),
             "hash_algorithm": self.hash_algorithm,
@@ -284,6 +289,7 @@ class ScanConfig:
             max_size_bytes=data.get("max_size_bytes"),
             include_hidden=data.get("include_hidden", False),
             follow_symlinks=data.get("follow_symlinks", False),
+            scan_subfolders=data.get("scan_subfolders", True),
             allowed_extensions=set(data["allowed_extensions"]) if data.get("allowed_extensions") else None,
             exclude_dirs=set(data.get("exclude_dirs", [])),
             hash_algorithm=data.get("hash_algorithm", "xxhash64"),

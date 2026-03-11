@@ -10,7 +10,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Callable, Optional, Dict, Any
 
 from ..engine.models import ScanConfig, ScanProgress, ScanResult
 from ..engine.pipeline import ScanPipeline
@@ -43,11 +43,15 @@ class ScanWorker:
     def __init__(
         self,
         config: ScanConfig,
-        event_bus: Optional[EventBus] = None
+        event_bus: Optional[EventBus] = None,
+        hash_cache_getter: Optional[Callable[[str], Optional[Dict[str, Any]]]] = None,
+        hash_cache_setter: Optional[Callable[[Any], bool]] = None,
     ):
         self.config = config
         self.event_bus = event_bus or get_event_bus()
         self.callbacks = ScanWorkerCallbacks()
+        self._hash_cache_getter = hash_cache_getter
+        self._hash_cache_setter = hash_cache_setter
         
         self._pipeline: Optional[ScanPipeline] = None
         self._thread: Optional[threading.Thread] = None
@@ -82,7 +86,11 @@ class ScanWorker:
             self._error = None
             
             # Create pipeline
-            self._pipeline = ScanPipeline(self.config)
+            self._pipeline = ScanPipeline(
+                self.config,
+                hash_cache_getter=self._hash_cache_getter,
+                hash_cache_setter=self._hash_cache_setter,
+            )
             scan_id = self._pipeline.scan_id
             
             # Start thread

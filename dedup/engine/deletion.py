@@ -58,86 +58,114 @@ class DeletionEngine:
         except Exception:
             pass  # Audit logging should not break the operation
     
-    def _move_to_trash(self, path: Path) -> tuple[bool, Optional[str]]:
-        """
-        Move file to trash/recycle bin.
-        
-        Tries platform-specific methods first, falls back to custom trash folder.
-        """
-        if not path.exists():
-            return False, "File does not exist"
-        
+    def _move_to_trash_fallback(self, path: Path) -> tuple[bool, Optional[str]]:
+        """Move file to ~/.dedup/trash (always works if we have write access)."""
         try:
-            # Try send2trash library (cross-platform)
-            try:
-                import send2trash
-                send2trash.send2trash(str(path))
-                return True, None
-            except ImportError:
-                pass
-            
-            # Platform-specific trash
-            system = platform.system()
-            
-            if system == "Darwin":  # macOS
-                # Use osascript to move to trash
-                import subprocess
-                result = subprocess.run(
-                    ['osascript', '-e', f'tell application "Finder" to delete POSIX file "{path}"'],
-                    capture_output=True,
-                    text=True
-                )
-                if result.returncode == 0:
-                    return True, None
-            
-            elif system == "Linux":
-                # Try xdg-trash or gio trash
-                for cmd in [['gio', 'trash', str(path)], ['xdg-trash', str(path)]]:
-                    try:
-                        import subprocess
-                        result = subprocess.run(cmd, capture_output=True)
-                        if result.returncode == 0:
-                            return True, None
-                    except FileNotFoundError:
-                        continue
-            
-            elif system == "Windows":
-                # Use Windows Shell API
-                try:
-                    import winshell
-                    winshell.delete_file(str(path))
-                    return True, None
-                except ImportError:
-                    pass
-            
-            # Fallback: Move to ~/.dedup/trash
+            path = path.resolve()
+            if not path.exists():
+                return False, "File does not exist"
             trash_dir = Path.home() / ".dedup" / "trash"
             trash_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Generate unique filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             dest = trash_dir / f"{timestamp}_{path.name}"
             counter = 1
             while dest.exists():
                 dest = trash_dir / f"{timestamp}_{counter}_{path.name}"
                 counter += 1
-            
             shutil.move(str(path), str(dest))
             return True, None
-            
+        except Exception as e:
+            return False, str(e)
+
+    def _move_to_trash(self, path: Path) -> tuple[bool, Optional[str]]:
+        """
+        Move file to trash/recycle bin.
+        Verifies the file is actually gone after the operation; if not, uses fallback.
+        """
+        path = path.resolve()
+        if not path.exists():
+            return False, "File does not exist"
+
+        def _verified() -> bool:
+            """Return True only if the file no longer exists at the original path."""
+            try:
+                return not path.exists()
+            except OSError:
+                return False
+
+        try:
+            # Try send2trash library (cross-platform)
+            try:
+                import send2trash
+                send2trash.send2trash(str(path))
+                if _verified():
+                    return True, None
+                # Reported success but file still there - try fallback
+                return self._move_to_trash_fallback(path)
+            except ImportError:
+                pass
+            except Exception as e:
+                # send2trash failed - try fallback
+                ok, _ = self._move_to_trash_fallback(path)
+                if ok:
+                    return True, None
+                return False, str(e)
+
+            # Platform-specific trash
+            system = platform.system()
+
+            if system == "Darwin":  # macOS
+                import subprocess
+                result = subprocess.run(
+                    ['osascript', '-e', f'tell application "Finder" to delete POSIX file "{path}"'],
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode == 0 and _verified():
+                    return True, None
+                return self._move_to_trash_fallback(path)
+
+            elif system == "Linux":
+                for cmd in [['gio', 'trash', str(path)], ['xdg-trash', str(path)]]:
+                    try:
+                        import subprocess
+                        result = subprocess.run(cmd, capture_output=True)
+                        if result.returncode == 0 and _verified():
+                            return True, None
+                    except FileNotFoundError:
+                        continue
+                return self._move_to_trash_fallback(path)
+
+            elif system == "Windows":
+                try:
+                    import winshell
+                    winshell.delete_file(str(path))
+                    if _verified():
+                        return True, None
+                except ImportError:
+                    pass
+                except Exception:
+                    pass
+                return self._move_to_trash_fallback(path)
+
+            # Fallback: move to ~/.dedup/trash
+            return self._move_to_trash_fallback(path)
+
         except Exception as e:
             return False, str(e)
     
     def _delete_permanently(self, path: Path) -> tuple[bool, Optional[str]]:
-        """Permanently delete a file or directory."""
+        """Permanently delete a file or directory. Verifies file is gone after."""
+        path = path.resolve()
         if not path.exists():
             return False, "File does not exist"
-        
         try:
             if path.is_file():
                 os.remove(path)
             elif path.is_dir():
                 shutil.rmtree(path)
+            if path.exists():
+                return False, "File still exists after delete"
             return True, None
         except Exception as e:
             return False, str(e)
