@@ -12,7 +12,7 @@ from typing import Optional, List, Dict, Any, Callable
 from pathlib import Path
 
 from ..engine.models import ScanConfig, ScanResult, ScanProgress, DeletionPlan, DeletionResult, DeletionPolicy
-from ..infrastructure.persistence import Persistence, ScanStore
+from ..infrastructure.persistence import Persistence, get_default_persistence
 from ..infrastructure.config import Config, load_config
 from .worker import ScanWorker
 from .events import EventBus, get_event_bus
@@ -40,9 +40,7 @@ class ScanCoordinator:
         )
     """
     
-    persistence: Persistence = field(default_factory=lambda: Persistence(
-        db_path=Path.home() / '.local' / 'share' / 'dedup' / 'dedup.db'
-    ))
+    persistence: Persistence = field(default_factory=get_default_persistence)
     event_bus: EventBus = field(default_factory=get_event_bus)
     config: Config = field(default_factory=load_config)
     

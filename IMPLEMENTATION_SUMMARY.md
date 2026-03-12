@@ -15,7 +15,11 @@ dedup/
 │   ├── hashing.py            # Layered hash computation
 │   ├── grouping.py           # Duplicate grouping logic
 │   ├── deletion.py           # Safe file deletion
-│   └── pipeline.py           # Scan orchestration
+│   ├── pipeline.py           # Scan orchestration (incl. ResumableScanPipeline)
+│   ├── media_types.py        # Category-based extension filtering
+│   ├── thumbnails.py         # Image thumbnail generation and disk cache
+│   ├── metrics_semantics.py # Metric truthfulness helpers
+│   └── bench.py              # Optional bench instrumentation
 ├── orchestration/            # Scan lifecycle management
 │   ├── __init__.py
 │   ├── events.py             # Event bus for decoupled communication
@@ -25,7 +29,8 @@ dedup/
 │   ├── __init__.py
 │   ├── config.py             # Settings management
 │   ├── logger.py             # Structured logging
-│   ├── persistence.py        # SQLite storage
+│   ├── persistence.py        # SQLite storage (history, hash cache, deletion_log)
+│   ├── trash.py              # DEDUP fallback trash list/empty
 │   └── utils.py              # Utility functions
 ├── ui/                       # Minimal tkinter UI
 │   ├── __init__.py
@@ -33,12 +38,14 @@ dedup/
 │   ├── home_frame.py         # Scan setup screen
 │   ├── scan_frame.py         # Live scan monitoring
 │   ├── results_frame.py      # Review/delete duplicates
-│   └── history_frame.py      # Scan history
+│   └── history_frame.py      # Scan history, roots, resume, empty trash
+├── tests/                    # test_discovery, test_hashing, test_persistence, etc.
 ├── __init__.py               # Package initialization
-├── main.py                   # Entry point
-├── setup.py                  # Package setup
+├── __main__.py               # Entry point (python -m dedup)
 ├── requirements.txt          # Dependencies
-└── README.md                 # Documentation
+├── README.md                 # Documentation
+├── TODO-ENHANCEMENTS.md      # TO DO & enhancements (from repo TO DO -ENHANCEMENTS)
+└── IMPLEMENTATION_PLAN.md    # Implement / enhance / refactor plan
 ```
 
 ## Repository Audit Summary
@@ -150,6 +157,17 @@ result = pipeline.run()
 4. **Edge Cases**: Empty files, symlinks, permission errors
 5. **Cross-Platform**: Windows, macOS, Linux
 
+## Implemented Since This Summary
+
+The following were added after the initial migration; see **AUDIT_SUMMARY.md §9** and **IMPLEMENTATION_PLAN.md** for details:
+
+- **Checkpoint / resume**: Discovery phase checkpoint; resume from History.
+- **Media filtering**: Category-based (Images, Videos, Audio, Documents, Archives) via `engine/media_types.py`.
+- **Image thumbnails**: Async thumbnails for duplicate image groups (Pillow optional); `engine/thumbnails.py`.
+- **Empty Trash**: Empty DEDUP fallback folder only; `infrastructure/trash.py`.
+- **History**: Roots column, Resume Scan button, resumable scan_ids.
+- **Persistent hash cache**: Wired coordinator → worker → pipeline → HashEngine; SQLite cache.
+
 ## Future Enhancements (Out of Scope)
 
 These features were intentionally excluded to maintain simplicity:
@@ -165,7 +183,7 @@ These features were intentionally excluded to maintain simplicity:
 
 ```bash
 # Install (no dependencies required)
-cd /mnt/okcomputer/output/dedup
+cd /path/to/dedup
 pip install -e .
 
 # Run GUI
@@ -175,10 +193,10 @@ python -m dedup
 python -m dedup /path/to/scan --min-size 1M
 
 # Run with optional dependencies
-pip install xxhash send2trash
+pip install xxhash send2trash tkinterdnd2 Pillow
 python -m dedup
 ```
 
 ## Conclusion
 
-DEDUP successfully distills Cerebro's strong engine concepts into a minimal, maintainable codebase while preserving the core functionality needed for duplicate file detection at scale.
+DEDUP successfully distills Cerebro's strong engine concepts into a minimal, maintainable codebase while preserving the core functionality needed for duplicate file detection at scale. For a prioritized plan to **implement, enhance, and refactor** (testing, config, progress UI, optional streaming), see **IMPLEMENTATION_PLAN.md**.
