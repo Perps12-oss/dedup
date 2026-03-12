@@ -4,7 +4,7 @@ Phase 5 items are **optional / later** (see [IMPLEMENTATION_PLAN.md](IMPLEMENTAT
 
 ---
 
-## 5.1 Streaming grouping
+## 5.1 Streaming grouping ✅ Implemented
 
 **Goal:** Avoid materializing the full discovered file list in memory; feed discovery output in batches into grouping so memory stays bounded per batch.
 

@@ -29,6 +29,7 @@ from .discovery import FileDiscovery, DiscoveryOptions
 from .hashing import HashEngine
 from .grouping import GroupingEngine
 from .deletion import DeletionEngine
+from .streaming_store import StreamingStore
 
 
 @dataclass
@@ -459,6 +460,286 @@ class ResumableScanPipeline(ScanPipeline):
             result.completed_at = datetime.now()
             if not self._cancelled and result.errors == []:
                 self._clear_checkpoint()
+            if progress_cb:
+                progress_cb(self._create_progress(
+                    phase="complete" if not self._cancelled else "cancelled",
+                    phase_description=f"Scan complete. Found {len(result.duplicate_groups)} duplicate groups.",
+                    files_found=result.files_scanned,
+                    files_total=result.files_scanned if result.files_scanned > 0 else None,
+                    groups_found=len(result.duplicate_groups),
+                    duplicates_found=result.total_duplicates,
+                    files_per_second=(result.files_scanned / self._elapsed()) if self._elapsed() > 0 else None,
+                ))
+
+        return result
+
+
+@dataclass
+class StreamingScanPipeline(ScanPipeline):
+    """
+    Scan pipeline with bounded memory using a temp SQLite store.
+
+    Discovery writes (path, size, mtime_ns, inode) to SQLite in batches.
+    Only files that share a size with at least one other file are loaded
+    for hashing - unique sizes never enter memory.
+    """
+
+    def run(
+        self,
+        progress_cb: Optional[Callable[[ScanProgress], None]] = None
+    ) -> ScanResult:
+        """
+        Run scan with streaming discovery and bounded memory.
+        """
+        self._start_time = time.time()
+        self.grouping.progress_cb = progress_cb
+
+        result = ScanResult(
+            scan_id=self.scan_id,
+            config=self.config,
+            started_at=datetime.now(),
+        )
+        batch_size = getattr(
+            self.config, "streaming_batch_size", 50000
+        )
+
+        try:
+            # Phase 1: Discovery -> SQLite
+            if progress_cb:
+                progress_cb(self._create_progress(
+                    phase="discovering",
+                    phase_description="Discovering files (streaming)...",
+                ))
+
+            last_progress_time = 0
+            progress_interval = self.config.progress_interval_ms / 1000
+
+            with StreamingStore() as store:
+                for batch in self.discovery.discover_batch(
+                    batch_size=batch_size,
+                    progress_cb=lambda n: None,
+                ):
+                    if self._cancelled:
+                        break
+                    store.insert_batch(batch)
+                    self._files_found += len(batch)
+                    self._bytes_found += sum(f.size for f in batch)
+
+                    current_time = time.time()
+                    if progress_cb and (current_time - last_progress_time) >= progress_interval:
+                        progress_cb(self._create_progress(
+                            phase="discovering",
+                            phase_description=f"Discovering files: {self._files_found} found...",
+                            files_found=self._files_found,
+                            bytes_found=self._bytes_found,
+                            files_per_second=(
+                                self._files_found / self._elapsed()
+                            ) if self._elapsed() > 0 else None,
+                        ))
+                        last_progress_time = current_time
+
+                if self._cancelled:
+                    result.errors.append("Scan cancelled by user")
+                    result.completed_at = datetime.now()
+                    return result
+
+                if store.get_file_count() == 0 and self.config.roots:
+                    result.errors.append(
+                        "No files were found. Check that the folder path is correct, "
+                        "readable, and contains files (check filters: min size, extensions)."
+                    )
+
+                # Phase 2-4: Process only size groups with 2+ files
+                sizes = store.get_sizes_with_duplicates()
+                if progress_cb:
+                    progress_cb(self._create_progress(
+                        phase="grouping",
+                        phase_description="Finding duplicates (bounded memory)...",
+                        files_found=self._files_found,
+                        files_total=self._files_found,
+                        bytes_found=self._bytes_found,
+                        files_per_second=(
+                            self._files_found / self._elapsed()
+                        ) if self._elapsed() > 0 else None,
+                        groups_found=len(sizes),
+                    ))
+
+                duplicate_groups: List[DuplicateGroup] = []
+                for size in sizes:
+                    if self._cancelled:
+                        break
+                    files = store.get_files_by_size(size)
+                    groups = self.grouping.find_duplicates_for_size_group(
+                        files,
+                        self.scan_id,
+                        cancel_check=lambda: self._cancelled,
+                    )
+                    duplicate_groups.extend(groups)
+
+                result.files_scanned = self._files_found
+                result.bytes_scanned = self._bytes_found
+                result.duplicate_groups = duplicate_groups
+                result.total_duplicates = sum(
+                    len(g.files) - 1 for g in duplicate_groups
+                )
+                result.total_reclaimable_bytes = sum(
+                    g.reclaimable_size for g in duplicate_groups
+                )
+                result.errors = self._errors
+
+                if self._cancelled:
+                    result.errors.append("Scan cancelled by user")
+
+        except Exception as e:
+            self._errors.append(str(e))
+            result.errors = self._errors
+            if progress_cb:
+                progress_cb(self._create_progress(
+                    phase="error",
+                    phase_description=f"Error: {str(e)}",
+                    error_count=len(self._errors),
+                    last_error=str(e),
+                ))
+
+        finally:
+            result.completed_at = datetime.now()
+            if progress_cb:
+                progress_cb(self._create_progress(
+                    phase="complete" if not self._cancelled else "cancelled",
+                    phase_description=f"Scan complete. Found {len(result.duplicate_groups)} duplicate groups.",
+                    files_found=result.files_scanned,
+                    files_total=result.files_scanned if result.files_scanned > 0 else None,
+                    groups_found=len(result.duplicate_groups),
+                    duplicates_found=result.total_duplicates,
+                    files_per_second=(
+                        result.files_scanned / self._elapsed()
+                    ) if self._elapsed() > 0 else None,
+                ))
+
+        return result
+
+
+@dataclass
+class StreamingScanPipeline(ScanPipeline):
+    """
+    Scan pipeline with bounded memory via temp SQLite store.
+
+    Discovery writes (path, size, mtime_ns, inode) to SQLite in batches.
+    Only size groups with 2+ files are loaded for hashing; unique sizes
+    never enter RAM. Designed for 1M+ file scans.
+    """
+
+    def run(
+        self,
+        progress_cb: Optional[Callable[[ScanProgress], None]] = None
+    ) -> ScanResult:
+        """
+        Run the scan using streaming discovery and temp SQLite.
+        Peak memory: batch_size FileMetadata + largest size-group during hashing.
+        """
+        self._start_time = time.time()
+        self.grouping.progress_cb = progress_cb
+
+        result = ScanResult(
+            scan_id=self.scan_id,
+            config=self.config,
+            started_at=datetime.now(),
+        )
+        batch_size = getattr(
+            self.config, "streaming_batch_size", 50_000
+        )
+
+        try:
+            # Phase 1: Discovery into SQLite
+            if progress_cb:
+                progress_cb(self._create_progress(
+                    phase="discovering",
+                    phase_description="Discovering files (streaming)...",
+                ))
+
+            last_progress_time = 0
+            progress_interval = self.config.progress_interval_ms / 1000
+
+            with StreamingStore() as store:
+                for batch in self.discovery.discover_batch(
+                    batch_size=batch_size,
+                    progress_cb=lambda n: None,
+                ):
+                    if self._cancelled:
+                        break
+                    store.insert_batch(batch)
+                    self._files_found += len(batch)
+                    self._bytes_found += sum(f.size for f in batch)
+
+                    current_time = time.time()
+                    if progress_cb and (current_time - last_progress_time) >= progress_interval:
+                        progress_cb(self._create_progress(
+                            phase="discovering",
+                            phase_description=f"Discovering files: {self._files_found} found...",
+                            files_found=self._files_found,
+                            bytes_found=self._bytes_found,
+                            files_per_second=(self._files_found / self._elapsed()) if self._elapsed() > 0 else None,
+                        ))
+                        last_progress_time = current_time
+
+                if self._cancelled:
+                    result.errors.append("Scan cancelled by user")
+                    result.completed_at = datetime.now()
+                    return result
+
+                if store.get_file_count() == 0 and self.config.roots:
+                    result.errors.append(
+                        "No files were found. Check that the folder path is correct, "
+                        "readable, and contains files (check filters: min size, extensions)."
+                    )
+
+                # Phase 2-4: Load only candidate size groups, hash per size
+                sizes = store.get_sizes_with_duplicates()
+                if progress_cb:
+                    progress_cb(self._create_progress(
+                        phase="grouping",
+                        phase_description=f"Finding duplicates ({len(sizes)} size groups)...",
+                        files_found=self._files_found,
+                        files_total=self._files_found,
+                        bytes_found=self._bytes_found,
+                        files_per_second=(self._files_found / self._elapsed()) if self._elapsed() > 0 else None,
+                    ))
+
+                duplicate_groups: List[DuplicateGroup] = []
+                for size in sizes:
+                    if self._cancelled:
+                        break
+                    files = store.get_files_by_size(size)
+                    groups = self.grouping.find_duplicates_for_size_group(
+                        files,
+                        self.scan_id,
+                        cancel_check=lambda: self._cancelled,
+                    )
+                    duplicate_groups.extend(groups)
+
+                result.files_scanned = self._files_found
+                result.bytes_scanned = self._bytes_found
+                result.duplicate_groups = duplicate_groups
+                result.total_duplicates = sum(len(g.files) - 1 for g in duplicate_groups)
+                result.total_reclaimable_bytes = sum(g.reclaimable_size for g in duplicate_groups)
+                result.errors = self._errors
+
+                if self._cancelled:
+                    result.errors.append("Scan cancelled by user")
+
+        except Exception as e:
+            self._errors.append(str(e))
+            result.errors = self._errors
+            if progress_cb:
+                progress_cb(self._create_progress(
+                    phase="error",
+                    phase_description=f"Error: {str(e)}",
+                    error_count=len(self._errors),
+                    last_error=str(e),
+                ))
+
+        finally:
+            result.completed_at = datetime.now()
             if progress_cb:
                 progress_cb(self._create_progress(
                     phase="complete" if not self._cancelled else "cancelled",

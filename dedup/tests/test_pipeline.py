@@ -7,7 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from dedup.engine.models import ScanConfig, FileMetadata
-from dedup.engine.pipeline import ScanPipeline, ResumableScanPipeline
+from dedup.engine.pipeline import ScanPipeline, ResumableScanPipeline, StreamingScanPipeline
 
 
 def test_pipeline_integration_scan(temp_dir):
@@ -100,3 +100,24 @@ def test_pipeline_hash_cache_callbacks_are_used(temp_dir):
     assert result.files_scanned >= 2
     assert calls["get"] >= 1
     assert calls["set"] >= 1
+
+
+def test_streaming_pipeline_produces_same_results_as_regular(temp_dir):
+    """StreamingScanPipeline should find same duplicates as ScanPipeline."""
+    (temp_dir / "a.txt").write_text("dup")
+    (temp_dir / "b.txt").write_text("dup")
+    (temp_dir / "c.txt").write_text("unique")
+
+    cfg = ScanConfig(
+        roots=[temp_dir],
+        min_size_bytes=1,
+        hash_algorithm="md5",
+        full_hash_workers=2,
+        use_streaming=True,
+        streaming_batch_size=100,
+    )
+    result = StreamingScanPipeline(cfg).run()
+    assert result.files_scanned >= 3
+    assert len(result.duplicate_groups) == 1
+    assert result.total_duplicates == 1
+    assert result.total_reclaimable_bytes > 0

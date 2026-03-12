@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Callable, Optional, Dict, Any
 
 from ..engine.models import ScanConfig, ScanProgress, ScanResult, FileMetadata
-from ..engine.pipeline import ScanPipeline, ResumableScanPipeline
+from ..engine.pipeline import ScanPipeline, ResumableScanPipeline, StreamingScanPipeline
 from .events import EventBus, ScanEvent, ScanEventType, get_event_bus
 
 
@@ -90,8 +90,15 @@ class ScanWorker:
             self._result = None
             self._error = None
 
+            # Use streaming pipeline when use_streaming=True (bounded memory, no checkpoint)
+            if self.config.use_streaming:
+                self._pipeline = StreamingScanPipeline(
+                    self.config,
+                    hash_cache_getter=self._hash_cache_getter,
+                    hash_cache_setter=self._hash_cache_setter,
+                )
             # Use resumable pipeline when checkpoint_dir is set (save checkpoint on cancel)
-            if self._checkpoint_dir:
+            elif self._checkpoint_dir:
                 cp_path = Path(self._checkpoint_dir)
                 if self._resume_scan_id:
                     resume_config = ResumableScanPipeline.load_checkpoint_config(

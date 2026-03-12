@@ -18,13 +18,17 @@ from ..engine.media_types import is_image_extension
 from ..infrastructure.utils import format_bytes
 
 
+# Max groups per page when pagination is used (keeps UI responsive for 100k+ groups)
+RESULTS_PAGE_SIZE = 100
+
+
 class ResultsFrame(ttk.Frame):
     """
     Results review screen.
     
     Displays:
     - Summary of duplicates found
-    - List of duplicate groups
+    - List of duplicate groups (paginated when large)
     - Selection of files to keep/delete
     - Preview of deletion impact
     - Execute deletion with confirmation
@@ -43,6 +47,8 @@ class ResultsFrame(ttk.Frame):
         
         self.current_result: Optional[ScanResult] = None
         self.selected_groups: dict = {}  # group_id -> keep_path
+        self._page_index = 0
+        self._total_pages = 0
         
         self._build_ui()
     
@@ -100,6 +106,27 @@ class ResultsFrame(ttk.Frame):
         vsb.grid(row=0, column=1, sticky="ns")
         hsb.grid(row=1, column=0, sticky="ew")
         
+        # Pagination (shown when multiple pages)
+        self.pagination_frame = ttk.Frame(list_frame)
+        self.pagination_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(5, 0))
+        self.pagination_frame.columnconfigure(1, weight=1)
+        self.page_var = tk.StringVar(value="")
+        self.page_label = ttk.Label(self.pagination_frame, textvariable=self.page_var)
+        self.page_label.grid(row=0, column=0)
+        self.prev_btn = ttk.Button(
+            self.pagination_frame,
+            text="Previous",
+            command=self._on_prev_page,
+        )
+        self.prev_btn.grid(row=0, column=1, padx=(20, 5))
+        self.next_btn = ttk.Button(
+            self.pagination_frame,
+            text="Next",
+            command=self._on_next_page,
+        )
+        self.next_btn.grid(row=0, column=2)
+        self.pagination_frame.grid_remove()
+        
         # Bind selection
         self.tree.bind("<<TreeviewSelect>>", self._on_select_group)
         
@@ -156,14 +183,19 @@ class ResultsFrame(ttk.Frame):
         """Load a scan result for display."""
         self.current_result = result
         self.selected_groups = {}
+        # Default keep selection for every group (needed for deletion plan across all pages)
+        for group in result.duplicate_groups:
+            if group.files:
+                self.selected_groups[group.group_id] = group.files[0].path
         
-        # Update title
         group_count = len(result.duplicate_groups)
+        self._total_pages = max(1, (group_count + RESULTS_PAGE_SIZE - 1) // RESULTS_PAGE_SIZE)
+        self._page_index = 0
+        
         self.title_label.config(
             text=f"{group_count} Duplicate Group{'s' if group_count != 1 else ''} Found"
         )
         
-        # Update summary
         total_dupes = sum(len(g.files) - 1 for g in result.duplicate_groups)
         reclaimable = sum(g.reclaimable_size for g in result.duplicate_groups)
         
@@ -173,10 +205,9 @@ class ResultsFrame(ttk.Frame):
             f"Space reclaimable: {format_bytes(reclaimable)}"
         )
         
-        # Populate tree
         self._populate_tree()
+        self._update_pagination_ui()
         
-        # Enable buttons if there are duplicates
         if result.duplicate_groups:
             self.delete_btn.config(state="normal")
             self.preview_btn.config(state="normal")
@@ -185,25 +216,24 @@ class ResultsFrame(ttk.Frame):
             self.preview_btn.config(state="disabled")
     
     def _populate_tree(self):
-        """Populate the tree with duplicate groups."""
-        # Clear existing
+        """Populate the tree with duplicate groups (current page only when paginated)."""
         for item in self.tree.get_children():
             self.tree.delete(item)
         
         if not self.current_result:
             return
         
-        # Add groups
-        for group in self.current_result.duplicate_groups:
+        groups = self.current_result.duplicate_groups
+        start = self._page_index * RESULTS_PAGE_SIZE
+        end = min(start + RESULTS_PAGE_SIZE, len(groups))
+        page_groups = groups[start:end]
+        
+        for group in page_groups:
             if not group.files:
                 continue
-            
-            # Use first file's name as group name
             first_file = group.files[0]
             group_name = first_file.filename
-            
-            # Insert group
-            group_id = self.tree.insert(
+            self.tree.insert(
                 "",
                 "end",
                 text=group_name,
@@ -214,9 +244,42 @@ class ResultsFrame(ttk.Frame):
                 ),
                 tags=(group.group_id,)
             )
-            
-            # Store default keep selection (first file)
-            self.selected_groups[group.group_id] = first_file.path
+    
+    def _update_pagination_ui(self):
+        """Show or hide pagination controls and update label."""
+        if self._total_pages <= 1:
+            self.pagination_frame.grid_remove()
+            return
+        self.pagination_frame.grid()
+        self.page_var.set(f"Page {self._page_index + 1} of {self._total_pages}")
+        self.prev_btn.config(state="normal" if self._page_index > 0 else "disabled")
+        self.next_btn.config(state="normal" if self._page_index < self._total_pages - 1 else "disabled")
+    
+    def _on_prev_page(self):
+        if self._page_index <= 0:
+            return
+        self._page_index -= 1
+        self._clear_selection_and_details()
+        self._populate_tree()
+        self._update_pagination_ui()
+    
+    def _on_next_page(self):
+        if self._page_index >= self._total_pages - 1:
+            return
+        self._page_index += 1
+        self._clear_selection_and_details()
+        self._populate_tree()
+        self._update_pagination_ui()
+    
+    def _clear_selection_and_details(self):
+        """Clear tree selection and details panel (e.g. when changing page)."""
+        self.tree.selection_remove(self.tree.selection())
+        self._selected_group_id = None
+        self._selected_group = None
+        for w in self.thumbnail_frame.winfo_children():
+            w.destroy()
+        self._thumbnail_refs.clear()
+        self.files_list.delete(0, tk.END)
     
     def _on_select_group(self, event):
         """Handle group selection."""

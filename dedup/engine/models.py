@@ -247,6 +247,10 @@ class ScanConfig:
     batch_size: int = 1000  # Process files in batches
     progress_interval_ms: int = 100  # Progress update interval
     
+    # Streaming (bounded memory for 1M+ file scans)
+    use_streaming: bool = False  # Use SQLite temp store; discovery never holds full list
+    streaming_batch_size: int = 50000  # Files per batch when streaming
+    
     # Mode
     mode: PipelineMode = PipelineMode.EXACT
     
@@ -277,6 +281,8 @@ class ScanConfig:
             "full_hash_workers": self.full_hash_workers,
             "batch_size": self.batch_size,
             "progress_interval_ms": self.progress_interval_ms,
+            "use_streaming": self.use_streaming,
+            "streaming_batch_size": self.streaming_batch_size,
             "mode": self.mode.value,
         }
     
@@ -297,6 +303,8 @@ class ScanConfig:
             full_hash_workers=data.get("full_hash_workers", 4),
             batch_size=data.get("batch_size", 1000),
             progress_interval_ms=data.get("progress_interval_ms", 100),
+            use_streaming=data.get("use_streaming", False),
+            streaming_batch_size=data.get("streaming_batch_size", 50000),
             mode=PipelineMode(data.get("mode", "exact")),
         )
         return config

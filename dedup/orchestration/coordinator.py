@@ -83,6 +83,7 @@ class ScanCoordinator:
                 from ..engine.media_types import get_extensions_for_category
                 allowed = get_extensions_for_category(scan_options.get('media_category'))
             exclude_dirs = scan_options.get('exclude_dirs')
+            use_streaming = scan_options.get('use_streaming', self.config.use_streaming)
             scan_config = ScanConfig(
                 roots=roots,
                 min_size_bytes=scan_options.get('min_size', self.config.default_min_size),
@@ -95,6 +96,8 @@ class ScanCoordinator:
                 full_hash_workers=scan_options.get('full_hash_workers', self.config.max_workers),
                 batch_size=scan_options.get('batch_size', self.config.batch_size),
                 progress_interval_ms=scan_options.get('progress_interval_ms', 100),
+                use_streaming=use_streaming,
+                streaming_batch_size=scan_options.get('streaming_batch_size', self.config.streaming_batch_size),
                 allowed_extensions=allowed,
                 exclude_dirs=set(exclude_dirs) if exclude_dirs else {
                     '.git', '.svn', '.hg',

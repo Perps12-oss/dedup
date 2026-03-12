@@ -1,5 +1,7 @@
 # DEDUP - Minimal Duplicate File Finder
 
+[![Tests](https://github.com/Perps12-oss/dedup/actions/workflows/tests.yml/badge.svg)](https://github.com/Perps12-oss/dedup/actions/workflows/tests.yml)
+
 A simplified duplicate file finder with a production-grade engine, derived from the Cerebro project.
 
 ## Philosophy
@@ -12,6 +14,7 @@ A simplified duplicate file finder with a production-grade engine, derived from 
 ## Features
 
 - **Streaming Discovery**: Memory-efficient file discovery using generators
+- **Bounded-Memory Scans**: Optional streaming mode uses temp SQLite; only duplicate candidates held in RAM
 - **Layered Hashing**: Fast partial hash first, full hash only when needed
 - **Safe Deletion**: Trash/recycle bin by default, permanent only with confirmation
 - **Minimal UI**: Four screens only - Home, Scan, Results, History
@@ -173,11 +176,11 @@ Based on analysis of the Cerebro repository:
 
 ## Future Work Backlog
 
-Phase 5 items are intentionally kept as a backlog unless prioritized:
+Phase 5 items (see PHASE5_PLAN.md):
 
-- **Streaming grouping:** remove full-list materialization in pipeline by feeding discovery batches directly into grouping.
-- **Results virtualization:** virtual/windowed rendering for very large duplicate-group sets (100k+ groups).
-- **Cross-platform CI:** automated Windows/macOS/Linux test matrix for unit and integration suites.
+- ~~**Streaming grouping:**~~ Implemented. Use `use_streaming=True` in scan options or Config for bounded-memory scans.
+- **Results virtualization:** Pagination added (Phase 5.2a). Optional: virtual/windowed rendering for 100k+ groups.
+- **Cross-platform CI:** Implemented. See `.github/workflows/tests.yml`.
 
 ## License
 

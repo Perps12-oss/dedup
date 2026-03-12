@@ -114,6 +114,70 @@ class GroupingEngine:
         
         # Filter to only sizes with 2+ files
         return {size: group for size, group in size_groups.items() if len(group) >= 2}
+
+    def find_duplicates_for_size_group(
+        self,
+        files: List[FileMetadata],
+        scan_id: str,
+        cancel_check: Optional[Callable[[], bool]] = None,
+    ) -> List[DuplicateGroup]:
+        """
+        Find duplicates within a single size group (all files share the same size).
+        Skips size grouping; runs partial hash → full hash directly.
+        Used by streaming pipeline to process candidate groups one at a time.
+        """
+        if len(files) < 2:
+            return []
+
+        # Phase 1: Partial hash
+        if self.progress_cb:
+            self.progress_cb(ScanProgress(
+                scan_id=scan_id,
+                phase="hashing_partial",
+                phase_description="Computing partial hashes...",
+                files_total=len(files),
+            ))
+        self._phase_started_at["hashing_partial"] = time.time()
+
+        partial_hash_groups = group_by_partial_hash(
+            files,
+            self.hash_engine,
+            progress_cb=lambda n: self._on_hash_progress(
+                scan_id, "hashing_partial", n, len(files)
+            ),
+        )
+        partial_hash_groups = self._adaptive_refine_partial_groups(
+            partial_hash_groups, scan_id
+        )
+
+        # Phase 2: Full hash
+        if self.progress_cb:
+            self.progress_cb(ScanProgress(
+                scan_id=scan_id,
+                phase="hashing_full",
+                phase_description="Computing full hashes to confirm duplicates...",
+            ))
+        full_hash_total = sum(len(g) for g in partial_hash_groups.values())
+        self._phase_started_at["hashing_full"] = time.time()
+
+        confirmed_groups = confirm_duplicates(
+            partial_hash_groups,
+            self.hash_engine,
+            progress_cb=lambda n: self._on_hash_progress(
+                scan_id, "hashing_full", n, full_hash_total
+            ),
+        )
+
+        duplicate_groups: List[DuplicateGroup] = []
+        for hash_value, group_files in confirmed_groups.items():
+            if cancel_check and cancel_check():
+                break
+            duplicate_groups.append(DuplicateGroup(
+                group_id="",
+                group_hash=hash_value,
+                files=group_files,
+            ))
+        return duplicate_groups
     
     def find_duplicates(
         self,
@@ -221,6 +285,73 @@ class GroupingEngine:
                 phase_description=f"Found {len(duplicate_groups)} duplicate groups",
                 groups_found=len(duplicate_groups),
                 duplicates_found=sum(len(g.files) - 1 for g in duplicate_groups),
+            ))
+        
+        return duplicate_groups
+    
+    def find_duplicates_for_size_group(
+        self,
+        files: List[FileMetadata],
+        scan_id: str,
+        cancel_check: Optional[Callable[[], bool]] = None
+    ) -> List[DuplicateGroup]:
+        """
+        Find duplicates within a pre-grouped list of files (all same size).
+        Skips size grouping; runs partial hash, adaptive refine, and full hash.
+        Used by streaming pipeline to process one size group at a time.
+        """
+        if len(files) < 2:
+            return []
+        
+        # Phase 1: Group by partial hash
+        if self.progress_cb:
+            self.progress_cb(ScanProgress(
+                scan_id=scan_id,
+                phase="hashing_partial",
+                phase_description="Computing partial hashes...",
+                files_total=len(files),
+            ))
+        self._phase_started_at["hashing_partial"] = time.time()
+        
+        partial_hash_groups = group_by_partial_hash(
+            files,
+            self.hash_engine,
+            progress_cb=lambda n: self._on_hash_progress(
+                scan_id, "hashing_partial", n, len(files)
+            )
+        )
+        partial_hash_groups = self._adaptive_refine_partial_groups(partial_hash_groups, scan_id)
+        
+        if not partial_hash_groups:
+            return []
+        
+        # Phase 2: Confirm duplicates with full hashes
+        if self.progress_cb:
+            self.progress_cb(ScanProgress(
+                scan_id=scan_id,
+                phase="hashing_full",
+                phase_description="Computing full hashes to confirm duplicates...",
+            ))
+        full_hash_total = sum(len(g) for g in partial_hash_groups.values())
+        self._phase_started_at["hashing_full"] = time.time()
+        
+        confirmed_groups = confirm_duplicates(
+            partial_hash_groups,
+            self.hash_engine,
+            progress_cb=lambda n: self._on_hash_progress(
+                scan_id, "hashing_full", n, full_hash_total
+            )
+        )
+        
+        duplicate_groups = []
+        for hash_value, group_files in confirmed_groups.items():
+            if cancel_check and cancel_check():
+                break
+            
+            duplicate_groups.append(DuplicateGroup(
+                group_id="",
+                group_hash=hash_value,
+                files=group_files,
             ))
         
         return duplicate_groups

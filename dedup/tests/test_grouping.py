@@ -56,3 +56,24 @@ def test_find_duplicates_respects_cancel(temp_dir):
     grouping = GroupingEngine(hash_engine=HashEngine(algorithm=HashStrategy.MD5, partial_bytes=64, workers=1))
     dupes = grouping.find_duplicates(iter(files), scan_id="s3", cancel_check=lambda: True)
     assert dupes == []
+
+
+def test_find_duplicates_for_size_group(temp_dir):
+    """Used by StreamingScanPipeline; pre-grouped same-size files."""
+    p1 = temp_dir / "a.bin"
+    p2 = temp_dir / "b.bin"
+    p3 = temp_dir / "c.bin"
+    p1.write_bytes(b"dup")
+    p2.write_bytes(b"dup")
+    p3.write_bytes(b"unique")
+    files = [
+        FileMetadata(path=str(p1.resolve()), size=3, mtime_ns=1),
+        FileMetadata(path=str(p2.resolve()), size=3, mtime_ns=1),
+        FileMetadata(path=str(p3.resolve()), size=3, mtime_ns=1),
+    ]
+    grouping = GroupingEngine(hash_engine=HashEngine(algorithm=HashStrategy.MD5, partial_bytes=64, workers=1))
+    dupes = grouping.find_duplicates_for_size_group(files, scan_id="s4")
+    assert len(dupes) == 1
+    assert len(dupes[0].files) == 2
+    names = {Path(f.path).name for f in dupes[0].files}
+    assert names == {"a.bin", "b.bin"}

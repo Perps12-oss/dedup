@@ -64,5 +64,15 @@ def test_start_scan_passes_scan_options_to_worker(temp_dir, monkeypatch):
         assert cfg.progress_interval_ms == 250
         assert "tmp" in cfg.exclude_dirs
         assert "jpg" in (cfg.allowed_extensions or set())
+        assert cfg.use_streaming is False  # default
+
+        coordinator.start_scan(
+            roots=[temp_dir],
+            use_streaming=True,
+            streaming_batch_size=9999,
+        )
+        cfg_streaming = captured["config"]
+        assert cfg_streaming.use_streaming is True
+        assert cfg_streaming.streaming_batch_size == 9999
     finally:
         persistence.close()

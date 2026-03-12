@@ -21,7 +21,7 @@ from .discovery import FileDiscovery, DiscoveryOptions
 from .hashing import HashEngine, HashStrategy
 from .grouping import GroupingEngine
 from .deletion import DeletionEngine, DeletionPolicy
-from .pipeline import ScanPipeline
+from .pipeline import ScanPipeline, StreamingScanPipeline
 
 __all__ = [
     # Models
@@ -43,4 +43,5 @@ __all__ = [
     "DeletionEngine",
     "DeletionPolicy",
     "ScanPipeline",
+    "StreamingScanPipeline",
 ]

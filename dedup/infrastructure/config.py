@@ -30,6 +30,8 @@ class Config:
     # Performance
     max_workers: int = 4
     batch_size: int = 1000
+    use_streaming: bool = False  # Bounded-memory scan (SQLite temp store)
+    streaming_batch_size: int = 50000
     
     # Deletion
     default_deletion_policy: str = "trash"  # trash, permanent
