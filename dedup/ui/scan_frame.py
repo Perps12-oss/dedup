@@ -87,16 +87,26 @@ class ScanFrame(ttk.Frame):
         ttk.Label(info_frame, text="Elapsed:").grid(row=3, column=0, sticky="w", padx=(0, 10), pady=(5, 0))
         self.elapsed_var = tk.StringVar(value="0s")
         ttk.Label(info_frame, textvariable=self.elapsed_var).grid(row=3, column=1, sticky="w", pady=(5, 0))
+
+        # Throughput
+        ttk.Label(info_frame, text="Throughput:").grid(row=4, column=0, sticky="w", padx=(0, 10), pady=(5, 0))
+        self.throughput_var = tk.StringVar(value="—")
+        ttk.Label(info_frame, textvariable=self.throughput_var).grid(row=4, column=1, sticky="w", pady=(5, 0))
+
+        # ETA (truthful only; otherwise "Estimating...")
+        ttk.Label(info_frame, text="ETA:").grid(row=5, column=0, sticky="w", padx=(0, 10), pady=(5, 0))
+        self.eta_var = tk.StringVar(value="Estimating...")
+        ttk.Label(info_frame, textvariable=self.eta_var).grid(row=5, column=1, sticky="w", pady=(5, 0))
         
         # Current file
-        ttk.Label(info_frame, text="Current file:").grid(row=4, column=0, sticky="w", padx=(0, 10), pady=(10, 0))
+        ttk.Label(info_frame, text="Current file:").grid(row=6, column=0, sticky="w", padx=(0, 10), pady=(10, 0))
         self.current_file_var = tk.StringVar(value="")
         self.current_file_label = ttk.Label(
             info_frame,
             textvariable=self.current_file_var,
             wraplength=400
         )
-        self.current_file_label.grid(row=4, column=1, sticky="w", pady=(10, 0))
+        self.current_file_label.grid(row=6, column=1, sticky="w", pady=(10, 0))
         
         # Progress bar (indeterminate - we don't fake progress percentages)
         self.progress = ttk.Progressbar(
@@ -118,13 +128,15 @@ class ScanFrame(ttk.Frame):
         """Start a new scan."""
         self.is_scanning = True
         self.title_label.config(text=f"Scanning: {path.name}")
-        self.progress.start(10)
+        self._set_progress_mode(indeterminate=True)
         
         # Reset display
         self.phase_var.set("Starting...")
         self.files_var.set("0")
         self.groups_var.set("0")
         self.elapsed_var.set("0s")
+        self.throughput_var.set("—")
+        self.eta_var.set("Estimating...")
         self.current_file_var.set("")
         
         # Start the scan
@@ -146,11 +158,13 @@ class ScanFrame(ttk.Frame):
         """Resume a scan from checkpoint (no folder selection)."""
         self.is_scanning = True
         self.title_label.config(text="Resuming scan...")
-        self.progress.start(10)
+        self._set_progress_mode(indeterminate=True)
         self.phase_var.set("Resuming...")
         self.files_var.set("0")
         self.groups_var.set("0")
         self.elapsed_var.set("0s")
+        self.throughput_var.set("—")
+        self.eta_var.set("Estimating...")
         self.current_file_var.set("")
         import time
         self.start_time = time.time()
@@ -176,6 +190,40 @@ class ScanFrame(ttk.Frame):
         self.phase_var.set(progress.phase_description or progress.phase)
         self.files_var.set(f"{progress.files_found:,}")
         self.groups_var.set(f"{progress.groups_found:,}")
+
+        # Throughput: real measured value when available; fallback to observed ratio.
+        files_per_sec = progress.files_per_second
+        if files_per_sec is None and progress.elapsed_seconds > 0 and progress.files_found > 0:
+            files_per_sec = progress.files_found / progress.elapsed_seconds
+        if files_per_sec and files_per_sec > 0:
+            self.throughput_var.set(f"{files_per_sec:,.1f} files/s")
+        else:
+            self.throughput_var.set("—")
+
+        # ETA: show only when denominator + stable throughput are available.
+        eta_seconds = progress.estimated_remaining_seconds
+        if eta_seconds is None and progress.files_total and files_per_sec and files_per_sec > 0:
+            remaining = max(progress.files_total - progress.files_found, 0)
+            # only show ETA after at least 1 second of measurements
+            if progress.elapsed_seconds >= 1.0 and progress.files_found > 0:
+                eta_seconds = remaining / files_per_sec
+        if eta_seconds is not None:
+            eta_s = int(max(eta_seconds, 0))
+            if eta_s < 60:
+                self.eta_var.set(f"{eta_s}s")
+            elif eta_s < 3600:
+                self.eta_var.set(f"{eta_s // 60}m {eta_s % 60}s")
+            else:
+                self.eta_var.set(f"{eta_s // 3600}h {(eta_s % 3600) // 60}m")
+        else:
+            self.eta_var.set("Estimating...")
+
+        # Determinate progress only when the denominator is real.
+        if progress.percent_complete is not None:
+            self._set_progress_mode(indeterminate=False)
+            self.progress["value"] = progress.percent_complete
+        else:
+            self._set_progress_mode(indeterminate=True)
         
         if progress.current_file:
             # Truncate long paths
@@ -205,6 +253,19 @@ class ScanFrame(ttk.Frame):
         
         # Schedule next update
         self.after_id = self.after(1000, self._update_elapsed)
+
+    def _set_progress_mode(self, indeterminate: bool):
+        """Switch progress mode safely without fake precision."""
+        current_mode = str(self.progress.cget("mode"))
+        target_mode = "indeterminate" if indeterminate else "determinate"
+        if current_mode == target_mode:
+            if indeterminate:
+                self.progress.start(10)
+            return
+        self.progress.stop()
+        self.progress.configure(mode=target_mode)
+        if indeterminate:
+            self.progress.start(10)
     
     def _on_complete(self, result: ScanResult):
         """Handle scan completion."""

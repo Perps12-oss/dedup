@@ -146,7 +146,9 @@ class ScanPipeline:
                     phase="grouping",
                     phase_description="Finding duplicates...",
                     files_found=self._files_found,
+                    files_total=self._files_found,
                     bytes_found=self._bytes_found,
+                    files_per_second=(self._files_found / self._elapsed()) if self._elapsed() > 0 else None,
                 ))
             
             duplicate_groups = self.grouping.find_duplicates(
@@ -185,8 +187,10 @@ class ScanPipeline:
                     phase="complete" if not self._cancelled else "cancelled",
                     phase_description=f"Scan complete. Found {len(result.duplicate_groups)} duplicate groups.",
                     files_found=result.files_scanned,
+                    files_total=result.files_scanned if result.files_scanned > 0 else None,
                     groups_found=len(result.duplicate_groups),
                     duplicates_found=result.total_duplicates,
+                    files_per_second=(result.files_scanned / self._elapsed()) if self._elapsed() > 0 else None,
                 ))
         
         return result
@@ -220,6 +224,7 @@ class ScanPipeline:
                     phase_description=f"Discovering files: {self._files_found} found...",
                     files_found=self._files_found,
                     bytes_found=self._bytes_found,
+                    files_per_second=(self._files_found / self._elapsed()) if self._elapsed() > 0 else None,
                     current_file=file.path,
                 ))
                 last_progress_time = current_time
@@ -418,7 +423,9 @@ class ResumableScanPipeline(ScanPipeline):
                     phase="grouping",
                     phase_description="Finding duplicates...",
                     files_found=self._files_found,
+                    files_total=self._files_found,
                     bytes_found=self._bytes_found,
+                    files_per_second=(self._files_found / self._elapsed()) if self._elapsed() > 0 else None,
                 ))
 
             duplicate_groups = self.grouping.find_duplicates(
@@ -457,8 +464,10 @@ class ResumableScanPipeline(ScanPipeline):
                     phase="complete" if not self._cancelled else "cancelled",
                     phase_description=f"Scan complete. Found {len(result.duplicate_groups)} duplicate groups.",
                     files_found=result.files_scanned,
+                    files_total=result.files_scanned if result.files_scanned > 0 else None,
                     groups_found=len(result.duplicate_groups),
                     duplicates_found=result.total_duplicates,
+                    files_per_second=(result.files_scanned / self._elapsed()) if self._elapsed() > 0 else None,
                 ))
 
         return result

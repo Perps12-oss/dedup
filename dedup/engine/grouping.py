@@ -31,6 +31,7 @@ class GroupingEngine:
     
     hash_engine: HashEngine
     progress_cb: Optional[Callable[[ScanProgress], None]] = None
+    _phase_started_at: Dict[str, float] = field(default_factory=dict, repr=False)
 
     def _adaptive_refine_partial_groups(
         self,
@@ -154,7 +155,9 @@ class GroupingEngine:
                 scan_id=scan_id,
                 phase="hashing_partial",
                 phase_description="Computing partial hashes...",
+                files_total=files_in_size_groups,
             ))
+        self._phase_started_at["hashing_partial"] = time.time()
         
         # Flatten size groups for partial hashing
         size_group_files = []
@@ -165,7 +168,9 @@ class GroupingEngine:
         partial_hash_groups = group_by_partial_hash(
             size_group_files,
             self.hash_engine,
-            progress_cb=lambda n: self._on_hash_progress(scan_id, "hashing_partial", n)
+            progress_cb=lambda n: self._on_hash_progress(
+                scan_id, "hashing_partial", n, len(size_group_files)
+            )
         )
         partial_hash_groups = self._adaptive_refine_partial_groups(partial_hash_groups, scan_id)
         
@@ -184,11 +189,15 @@ class GroupingEngine:
                 phase="hashing_full",
                 phase_description="Computing full hashes to confirm duplicates...",
             ))
+        full_hash_total = sum(len(g) for g in partial_hash_groups.values())
+        self._phase_started_at["hashing_full"] = time.time()
         
         confirmed_groups = confirm_duplicates(
             partial_hash_groups,
             self.hash_engine,
-            progress_cb=lambda n: self._on_hash_progress(scan_id, "hashing_full", n)
+            progress_cb=lambda n: self._on_hash_progress(
+                scan_id, "hashing_full", n, full_hash_total
+            )
         )
         
         # Convert to DuplicateGroup objects
@@ -216,14 +225,31 @@ class GroupingEngine:
         
         return duplicate_groups
     
-    def _on_hash_progress(self, scan_id: str, phase: str, count: int):
+    def _on_hash_progress(
+        self,
+        scan_id: str,
+        phase: str,
+        count: int,
+        total: Optional[int] = None,
+    ):
         """Report hash progress."""
         if self.progress_cb:
+            started = self._phase_started_at.get(phase, time.time())
+            elapsed = max(time.time() - started, 0.001)
+            rate = count / elapsed if count > 0 else None
+            eta = None
+            if total and rate and rate > 0 and count > 0:
+                # only show ETA once throughput is measured with non-trivial sample
+                if elapsed >= 1.0:
+                    eta = max((total - count) / rate, 0.0)
             self.progress_cb(ScanProgress(
                 scan_id=scan_id,
                 phase=phase,
                 phase_description=f"Computing {phase.replace('_', ' ')}: {count} files hashed",
                 files_found=count,
+                files_total=total,
+                files_per_second=rate,
+                estimated_remaining_seconds=eta,
             ))
 
 
