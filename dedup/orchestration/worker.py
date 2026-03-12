@@ -10,9 +10,10 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Optional, Dict, Any
 
-from ..engine.models import ScanConfig, ScanProgress, ScanResult
+from ..engine.models import ScanConfig, ScanProgress, ScanResult, FileMetadata
 from ..engine.pipeline import ScanPipeline, ResumableScanPipeline
 from .events import EventBus, ScanEvent, ScanEventType, get_event_bus
 
@@ -45,8 +46,8 @@ class ScanWorker:
         config: ScanConfig,
         event_bus: Optional[EventBus] = None,
         hash_cache_getter: Optional[Callable[[str], Optional[Dict[str, Any]]]] = None,
-        hash_cache_setter: Optional[Callable[[Any], bool]] = None,
-        checkpoint_dir: Optional[Any] = None,
+        hash_cache_setter: Optional[Callable[[FileMetadata], bool]] = None,
+        checkpoint_dir: Optional[Path] = None,
         resume_scan_id: Optional[str] = None,
     ):
         self.config = config
@@ -90,7 +91,6 @@ class ScanWorker:
             self._error = None
 
             # Use resumable pipeline when checkpoint_dir is set (save checkpoint on cancel)
-            from pathlib import Path
             if self._checkpoint_dir:
                 cp_path = Path(self._checkpoint_dir)
                 if self._resume_scan_id:

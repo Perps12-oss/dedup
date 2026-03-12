@@ -82,16 +82,26 @@ class ScanCoordinator:
             if allowed is None and scan_options.get('media_category'):
                 from ..engine.media_types import get_extensions_for_category
                 allowed = get_extensions_for_category(scan_options.get('media_category'))
+            exclude_dirs = scan_options.get('exclude_dirs')
             scan_config = ScanConfig(
                 roots=roots,
                 min_size_bytes=scan_options.get('min_size', self.config.default_min_size),
+                max_size_bytes=scan_options.get('max_size'),
                 include_hidden=scan_options.get('include_hidden', self.config.default_include_hidden),
                 follow_symlinks=scan_options.get('follow_symlinks', self.config.default_follow_symlinks),
                 scan_subfolders=scan_options.get('scan_subfolders', True),
+                partial_hash_bytes=scan_options.get('partial_hash_bytes', 4096),
                 hash_algorithm=scan_options.get('hash_algorithm', self.config.default_hash_algorithm),
-                full_hash_workers=self.config.max_workers,
-                batch_size=self.config.batch_size,
+                full_hash_workers=scan_options.get('full_hash_workers', self.config.max_workers),
+                batch_size=scan_options.get('batch_size', self.config.batch_size),
+                progress_interval_ms=scan_options.get('progress_interval_ms', 100),
                 allowed_extensions=allowed,
+                exclude_dirs=set(exclude_dirs) if exclude_dirs else {
+                    '.git', '.svn', '.hg',
+                    'node_modules', '__pycache__', '.pytest_cache',
+                    '.venv', 'venv', 'env',
+                    '$RECYCLE.BIN', 'System Volume Information',
+                },
             )
 
         checkpoint_dir = self.persistence.checkpoint_dir

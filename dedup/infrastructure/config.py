@@ -10,7 +10,7 @@ import json
 import os
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import List, Dict, Any
 
 
 @dataclass
@@ -24,7 +24,6 @@ class Config:
     default_hash_algorithm: str = "xxhash64"
     
     # UI settings
-    theme: str = "system"  # system, light, dark
     window_width: int = 1200
     window_height: int = 800
     
