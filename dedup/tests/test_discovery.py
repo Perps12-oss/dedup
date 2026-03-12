@@ -4,6 +4,7 @@ Discovery tests: streaming, cancellation, error handling.
 
 from __future__ import annotations
 
+import os
 import pytest
 from pathlib import Path
 
@@ -53,3 +54,51 @@ def test_discovery_stats(temp_dir, discovery_options):
     stats = discovery.get_stats()
     assert stats["files_found"] == 1
     assert stats["dirs_scanned"] >= 1
+
+
+def test_discovery_no_subfolders_skips_nested_files(temp_dir):
+    (temp_dir / "root.txt").write_text("abc")
+    nested = temp_dir / "nested"
+    nested.mkdir()
+    (nested / "inside.txt").write_text("xyz")
+    options = DiscoveryOptions(roots=[temp_dir], min_size_bytes=1, scan_subfolders=False)
+    discovery = FileDiscovery(options)
+    files = list(discovery.discover())
+    assert len(files) == 1
+    assert files[0].filename == "root.txt"
+
+
+def test_discovery_symlink_when_follow_enabled(temp_dir):
+    target = temp_dir / "target.txt"
+    target.write_text("hello")
+    link = temp_dir / "target_link.txt"
+    try:
+        os.symlink(target, link)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation not supported in this environment")
+
+    options = DiscoveryOptions(
+        roots=[temp_dir],
+        min_size_bytes=1,
+        follow_symlinks=True,
+        max_workers=1,
+    )
+    discovery = FileDiscovery(options)
+    files = list(discovery.discover())
+    names = [f.filename for f in files]
+    assert "target.txt" in names
+    assert "target_link.txt" in names
+
+
+def test_discovery_permission_error_does_not_crash(temp_dir, monkeypatch):
+    (temp_dir / "a.txt").write_text("x")
+    options = DiscoveryOptions(roots=[temp_dir], min_size_bytes=1, max_workers=1)
+    discovery = FileDiscovery(options)
+
+    def _boom(*args, **kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(discovery, "_scan_directory", _boom)
+    files = list(discovery.discover())
+    assert files == []
+    assert discovery.get_stats()["errors"] >= 1
