@@ -24,7 +24,7 @@ A simplified duplicate file finder with a production-grade engine, derived from 
 cd dedup
 
 # Optional: Install recommended dependencies
-pip install xxhash send2trash
+pip install xxhash send2trash tkinterdnd2 Pillow
 
 # Run
 python -m dedup
@@ -170,6 +170,14 @@ Based on analysis of the Cerebro repository:
 | Memory exhaustion on large scans | Low | Medium | Streaming discovery, batch processing |
 | Permission errors | Medium | Low | Graceful error handling, continues scan |
 | Hash collisions | Very Low | High | Use 64-bit+ hashes, verify on delete |
+
+## Future Work Backlog
+
+Phase 5 items are intentionally kept as a backlog unless prioritized:
+
+- **Streaming grouping:** remove full-list materialization in pipeline by feeding discovery batches directly into grouping.
+- **Results virtualization:** virtual/windowed rendering for very large duplicate-group sets (100k+ groups).
+- **Cross-platform CI:** automated Windows/macOS/Linux test matrix for unit and integration suites.
 
 ## License
 
