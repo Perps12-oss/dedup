@@ -1,13 +1,18 @@
 """
-DEDUP Main Application - Minimal tkinter-based UI.
-
-A clean, no-nonsense interface focused on functionality over aesthetics.
+CEREBRO Dedup Engine — Main Application
+========================================
+Modern-classic operations shell with:
+  - Fixed left nav rail (6 pages)
+  - Persistent top command bar with theme switcher
+  - Durable pipeline status strip
+  - Toggleable insight drawer
+  - 15-theme token system
+  - ProjectionHub: canonical state contract between engine and UI
 """
-
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox
 from pathlib import Path
 from typing import Optional
 
@@ -18,258 +23,401 @@ except Exception:
 
 from ..orchestration.coordinator import ScanCoordinator
 from ..infrastructure.config import load_config, save_config
-from .home_frame import HomeFrame
-from .scan_frame import ScanFrame
-from .results_frame import ResultsFrame
-from .history_frame import HistoryFrame
+from ..engine.models import ScanResult, DeletionResult
+
+from .theme.theme_manager import get_theme_manager
+from .utils.formatting import fmt_bytes, fmt_int, fmt_duration
+from .utils.ui_state import UIState, load_settings, save_settings
+
+from .shell.app_shell import AppShell
+from .pages.mission_page import MissionPage
+from .pages.scan_page import ScanPage
+from .pages.review_page import ReviewPage
+from .pages.history_page import HistoryPage
+from .pages.diagnostics_page import DiagnosticsPage
+from .pages.settings_page import SettingsPage
+
+from .projections.hub import ProjectionHub
 
 
-class DedupApp:
+class CerebroApp:
     """
-    Main application window.
-    
-    Provides a simple tabbed interface with four screens:
-    - Home: Start a new scan
-    - Scan: Monitor active scan
-    - Results: Review and delete duplicates
-    - History: View past scans
+    CEREBRO Dedup Engine — root application controller.
+
+    Owns the Tk root, AppShell, pages, coordinator, and ProjectionHub.
+
+    Projection wiring:
+      coordinator.event_bus
+        → ProjectionHub (subscribes to all ScanEventType events)
+          → StatusStrip.subscribe_to_hub()
+          → TopBar.subscribe_to_hub()
+          → ScanPage.attach_hub()
+          → DiagnosticsPage.attach_hub()  (shares phase + compat projections)
+
+    Pages are intentionally NOT all wired to the hub — only those that consume
+    live scan state need it.  Mission, History, Review, and Settings are
+    refreshed on demand (page focus, scan completion) to keep wiring simple.
     """
-    
-    APP_NAME = "DEDUP"
-    APP_VERSION = "1.0.0"
-    MIN_WIDTH = 900
-    MIN_HEIGHT = 600
-    
+
+    APP_NAME    = "CEREBRO"
+    APP_VERSION = "2.1.0"
+    MIN_WIDTH   = 1100
+    MIN_HEIGHT  = 700
+
     def __init__(self):
+        # ── Root window ──────────────────────────────────────────────
         if TkinterDnD is not None:
             self.root = TkinterDnD.Tk()
         else:
             self.root = tk.Tk()
-        self.root.title(f"{self.APP_NAME} v{self.APP_VERSION}")
+
+        self.root.title(f"{self.APP_NAME} Dedup Engine v{self.APP_VERSION}")
         self.root.minsize(self.MIN_WIDTH, self.MIN_HEIGHT)
-        self.root.geometry(f"{self.MIN_WIDTH}x{self.MIN_HEIGHT}")
-        
-        # Load config for window position
-        self.config = load_config()
-        
-        # Coordinator
+
+        # ── State & config ───────────────────────────────────────────
+        self.state    = UIState()
+        self.config   = load_config()
+        w = getattr(self.state.settings, "window_width",  self.MIN_WIDTH)
+        h = getattr(self.state.settings, "window_height", self.MIN_HEIGHT)
+        self.root.geometry(f"{max(w, self.MIN_WIDTH)}x{max(h, self.MIN_HEIGHT)}")
+
+        # ── Coordinator ───────────────────────────────────────────────
         self.coordinator = ScanCoordinator()
-        
-        # Current state
-        self.current_scan_id: Optional[str] = None
-        self.last_result: Optional[any] = None
-        
-        # Build UI
-        self._build_ui()
-        
-        # Handle window close
-        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
-    
-    def _build_ui(self):
-        """Build the main UI."""
-        # Main container with padding
-        self.main_frame = ttk.Frame(self.root, padding="10")
-        self.main_frame.grid(row=0, column=0, sticky="nsew")
-        
-        # Configure grid weights
+
+        # ── Apply initial theme ───────────────────────────────────────
+        tm = get_theme_manager()
+        tm.apply(self.state.settings.theme_key, self.root)
+
+        # ── Build shell ───────────────────────────────────────────────
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
-        self.main_frame.columnconfigure(0, weight=1)
-        self.main_frame.rowconfigure(1, weight=1)
-        
-        # Header with title and navigation
-        self._build_header()
-        
-        # Content area (notebook for tabs)
-        self._build_content()
-        
-        # Status bar
-        self._build_status_bar()
-    
-    def _build_header(self):
-        """Build the header with navigation."""
-        header = ttk.Frame(self.main_frame)
-        header.grid(row=0, column=0, sticky="ew", pady=(0, 10))
-        
-        # Title
-        title = ttk.Label(
-            header,
-            text=self.APP_NAME,
-            font=("TkDefaultFont", 16, "bold")
+
+        self.shell = AppShell(
+            self.root,
+            state=self.state,
+            on_navigate=self._navigate,
+            on_theme_change=self._on_theme_change,
         )
-        title.pack(side=tk.LEFT)
-        
-        # Navigation buttons
-        nav_frame = ttk.Frame(header)
-        nav_frame.pack(side=tk.RIGHT)
-        
-        self.nav_buttons = {}
-        
-        for label, frame_class in [
-            ("Home", "home"),
-            ("Scan", "scan"),
-            ("Results", "results"),
-            ("History", "history"),
-        ]:
-            btn = ttk.Button(
-                nav_frame,
-                text=label,
-                command=lambda f=frame_class: self._show_frame(f)
-            )
-            btn.pack(side=tk.LEFT, padx=5)
-            self.nav_buttons[frame_class] = btn
-        
-        # Separator
-        ttk.Separator(self.main_frame, orient=tk.HORIZONTAL).grid(
-            row=0, column=0, sticky="ew", pady=(40, 0)
+        self.shell.grid(row=0, column=0, sticky="nsew")
+
+        # ── Build pages ───────────────────────────────────────────────
+        self._build_pages()
+
+        # ── Create ProjectionHub (after root + pages exist) ───────────
+        self.hub = ProjectionHub(
+            event_bus=self.coordinator.event_bus,
+            tk_root=self.root,
         )
-    
-    def _build_content(self):
-        """Build the main content area with frames."""
-        # Container for frames
-        self.content_frame = ttk.Frame(self.main_frame)
-        self.content_frame.grid(row=1, column=0, sticky="nsew")
-        self.content_frame.columnconfigure(0, weight=1)
-        self.content_frame.rowconfigure(0, weight=1)
-        
-        # Create frames
-        self.frames = {}
-        
-        self.frames["home"] = HomeFrame(
-            self.content_frame,
+        self._wire_hub()
+
+        # ── Register app-level state listeners ───────────────────────
+        self.state.on("advanced_mode_changed", self._on_advanced_mode)
+
+        # ── Apply persisted UI preferences (drawer, density, etc) ────
+        self.shell.apply_preferences()
+
+        # ── Navigate home ─────────────────────────────────────────────
+        self._navigate("mission")
+
+        # ── Window close ─────────────────────────────────────────────
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # ------------------------------------------------------------------
+    # Hub wiring
+    # ------------------------------------------------------------------
+
+    def _wire_hub(self) -> None:
+        """Connect ProjectionHub to all shell widgets and pages that need live updates."""
+        import logging
+        _log = logging.getLogger(__name__)
+        # Shell widgets — always visible
+        try:
+            self.shell.status_strip.subscribe_to_hub(self.hub)
+        except AttributeError:
+            _log.debug("StatusStrip.subscribe_to_hub not available")
+        try:
+            self.shell.top_bar.subscribe_to_hub(self.hub)
+        except AttributeError:
+            _log.debug("TopBar.subscribe_to_hub not available")
+
+        # Scan page — primary live-update consumer
+        self._scan.attach_hub(self.hub)
+
+        # Diagnostics page — shares phase/compat projections
+        self._diagnostics.attach_hub(self.hub)
+
+        # App-level terminal handler — navigate to review on completion
+        def _on_terminal(proj) -> None:
+            if proj.status == "completed":
+                # Retrieve result and navigate to review
+                result = self.coordinator.get_last_result()
+                if result:
+                    self._review.load_result(result)
+                    self._navigate("review")
+        self.hub.subscribe("terminal", _on_terminal)
+
+    # ------------------------------------------------------------------
+    # Page construction
+    # ------------------------------------------------------------------
+
+    def _build_pages(self):
+        content = self.shell.content
+
+        self._mission = MissionPage(
+            content,
             on_start_scan=self._on_start_scan,
-            recent_folders=self.coordinator.get_recent_folders(),
+            on_resume_scan=self._on_resume_scan,
+            coordinator=self.coordinator,
         )
-        
-        self.frames["scan"] = ScanFrame(
-            self.content_frame,
+        self.shell.register_page("mission", self._mission)
+
+        self._scan = ScanPage(
+            content,
             coordinator=self.coordinator,
             on_complete=self._on_scan_complete,
-            on_cancel=self._on_scan_cancel
+            on_cancel=self._on_scan_cancel,
         )
-        
-        self.frames["results"] = ResultsFrame(
-            self.content_frame,
+        self.shell.register_page("scan", self._scan)
+
+        self._review = ReviewPage(
+            content,
             coordinator=self.coordinator,
-            on_delete_complete=self._on_delete_complete
+            on_delete_complete=self._on_delete_complete,
         )
-        
-        self.frames["history"] = HistoryFrame(
-            self.content_frame,
+        self.shell.register_page("review", self._review)
+
+        self._history = HistoryPage(
+            content,
             coordinator=self.coordinator,
             on_load_scan=self._on_load_history_scan,
             on_resume_scan=self._on_resume_scan,
         )
-        
-        # Grid all frames (they will be hidden/shown)
-        for frame in self.frames.values():
-            frame.grid(row=0, column=0, sticky="nsew")
-        
-        # Show home by default
-        self._show_frame("home")
-    
-    def _build_status_bar(self):
-        """Build the status bar."""
-        self.status_var = tk.StringVar(value="Ready")
-        
-        status_bar = ttk.Frame(self.main_frame)
-        status_bar.grid(row=2, column=0, sticky="ew", pady=(10, 0))
-        
-        ttk.Separator(status_bar, orient=tk.HORIZONTAL).pack(fill=tk.X)
-        
-        status_label = ttk.Label(status_bar, textvariable=self.status_var)
-        status_label.pack(side=tk.LEFT, pady=(5, 0))
-    
-    def _show_frame(self, name: str):
-        """Show a specific frame and hide others."""
-        # Hide all frames
-        for frame in self.frames.values():
-            frame.grid_remove()
-        
-        # Show requested frame
-        if name in self.frames:
-            self.frames[name].grid()
-            self.frames[name].on_show()
-            
-            # Update button states
-            for nav_name, btn in self.nav_buttons.items():
-                if nav_name == name:
-                    btn.state(["disabled"])
-                else:
-                    btn.state(["!disabled"])
-    
+        self.shell.register_page("history", self._history)
+
+        self._diagnostics = DiagnosticsPage(
+            content,
+            coordinator=self.coordinator,
+        )
+        self.shell.register_page("diagnostics", self._diagnostics)
+
+        self._settings = SettingsPage(
+            content,
+            state=self.state,
+            on_theme_change=self._on_theme_change,
+            on_preference_changed=self._apply_preferences,
+        )
+        self.shell.register_page("settings", self._settings)
+
+        # Apply persisted preferences to shell
+        self._apply_preferences()
+
+    # ------------------------------------------------------------------
+    # Navigation
+    # ------------------------------------------------------------------
+
+    def _navigate(self, page: str):
+        self.shell.show_page(page)
+        self._update_page_actions(page)
+        self._update_drawer_content(page)
+
+    def _update_page_actions(self, page: str):
+        action_map = {
+            "mission":     [
+                ("New Scan",     "Accent.TButton", lambda: self._navigate("scan")),
+                ("Resume",       "Ghost.TButton",  self._on_resume_latest),
+            ],
+            "scan":        [
+                ("Pause",        "Ghost.TButton",  lambda: None),
+                ("Cancel",       "Ghost.TButton",  lambda: self._on_scan_cancel()),
+                ("Copy Diag",    "Ghost.TButton",  self._copy_diagnostics),
+            ],
+            "review":      [
+                ("Dry Run",      "Ghost.TButton",  lambda: self._review._on_dry_run()),
+                ("Execute Plan", "Danger.TButton", lambda: self._review._on_execute()),
+            ],
+            "history":     [
+                ("Refresh",      "Ghost.TButton",  lambda: self._history._refresh()),
+                ("Export",       "Ghost.TButton",  lambda: None),
+            ],
+            "diagnostics": [
+                ("Refresh",      "Ghost.TButton",  lambda: self._diagnostics._refresh()),
+                ("Export",       "Ghost.TButton",  lambda: None),
+            ],
+            "settings":    [],
+        }
+        self.shell.set_page_actions(action_map.get(page, []))
+
+    def _update_drawer_content(self, page: str):
+        sections = []
+        hub_session = self.hub.session
+
+        if page == "scan":
+            sections = [
+                ("Session", [
+                    ("ID",      hub_session.session_id[:16] or "—"),
+                    ("Phase",   hub_session.current_phase or "—"),
+                    ("Status",  hub_session.status),
+                    ("Resume",  hub_session.resume_outcome_label or "—"),
+                ]),
+                ("Engine", [
+                    ("Health",  hub_session.engine_health),
+                    ("Warns",   str(hub_session.warnings_count)),
+                    ("Config",  hub_session.config_hash[:12] + "…"
+                                if hub_session.config_hash else "—"),
+                ]),
+            ]
+        elif page == "review":
+            sections = [
+                ("Review", [
+                    ("Groups",    str(self._review.vm.total_groups)),
+                    ("Delete",    str(self._review.vm.delete_count)),
+                    ("Keep",      str(self._review.vm.keep_count)),
+                    ("Reclaim",   fmt_bytes(self._review.vm.reclaimable_bytes)),
+                ]),
+                ("Safety", [
+                    ("Mode",      "Trash"),
+                    ("Revalidate","ON"),
+                    ("Audit",     "ACTIVE"),
+                ]),
+            ]
+        elif page == "history":
+            sections = [
+                ("Stats", [
+                    ("Total",     str(self._history.vm.total_scans)),
+                    ("Resumable", str(self._history.vm.resumable_count)),
+                ]),
+            ]
+        elif page == "diagnostics":
+            phases = self.hub.phases
+            running = next(
+                (p for p in phases.values() if p.status == "running"), None)
+            sections = [
+                ("Live Phase", [
+                    ("Current",  running.display_label if running else "—"),
+                    ("Status",   running.status if running else "—"),
+                ]),
+                ("Compat", [
+                    ("Outcome",  self.hub.compat.overall_resume_outcome or "—"),
+                ]),
+            ]
+        self.shell.set_drawer_content(sections)
+
+    # ------------------------------------------------------------------
+    # Scan lifecycle
+    # ------------------------------------------------------------------
+
     def _on_start_scan(self, path: Path, options: dict):
-        """Handle start scan request from home frame."""
-        try:
-            self.coordinator.add_recent_folder(path)
-        except Exception:
-            pass
-        self._show_frame("scan")
-        self.frames["scan"].start_scan(path, options)
-        self.status_var.set(f"Scanning: {path}")
-    
-    def _on_scan_complete(self, result):
-        """Handle scan completion."""
-        self.last_result = result
-        self.status_var.set(
-            f"Scan complete: {len(result.duplicate_groups)} duplicate groups found"
-        )
-        
-        # Auto-switch to results
-        self.frames["results"].load_result(result)
-        self._show_frame("results")
-    
-    def _on_scan_cancel(self):
-        """Handle scan cancellation."""
-        self.status_var.set("Scan cancelled")
-        self._show_frame("home")
-    
-    def _on_delete_complete(self, result):
-        """Handle deletion completion."""
-        self.status_var.set(
-            f"Deleted {len(result.deleted_files)} files, "
-            f"{len(result.failed_files)} failed"
-        )
-    
-    def _on_load_history_scan(self, scan_id: str):
-        """Handle loading a scan from history."""
-        result = self.coordinator.load_scan(scan_id)
-        if result:
-            self.last_result = result
-            self.frames["results"].load_result(result)
-            self._show_frame("results")
+        self._navigate("scan")
+        self._scan.start_scan(path, options)
+        self.state.scan_status = "Scanning"
 
     def _on_resume_scan(self, scan_id: str):
-        """Handle resume scan from History (continue from checkpoint)."""
-        self._show_frame("scan")
-        self.frames["scan"].start_resume(scan_id)
-        self.status_var.set("Resuming scan...")
-    
+        self._navigate("scan")
+        self._scan.start_resume(scan_id)
+        self.state.scan_status = "Resuming"
+
+    def _on_resume_latest(self):
+        try:
+            ids = self.coordinator.get_resumable_scan_ids() or []
+        except Exception:
+            ids = []
+        if ids:
+            self._on_resume_scan(ids[0])
+        else:
+            self._navigate("scan")
+
+    def _on_scan_complete(self, result: ScanResult):
+        """
+        Called via the ScanPage fallback on_complete callback.
+        With hub attached, the terminal projection handler also fires — the hub
+        path is primary; this callback fires independently and is safe to call
+        twice (ReviewPage.load_result is idempotent on the same result).
+        """
+        self.state.scan_status = "Completed"
+        self.state.scan_phase  = "Results"
+        self._review.load_result(result)
+        self._navigate("review")
+
+    def _on_scan_cancel(self):
+        self.state.scan_status = "Cancelled"
+        self._navigate("mission")
+
+    def _on_delete_complete(self, result: DeletionResult):
+        deleted = len(result.deleted_files)
+        failed  = len(result.failed_files)
+        self.state.emit("delete_complete", {"deleted": deleted, "failed": failed})
+
+    def _on_load_history_scan(self, scan_id: str):
+        result = self.coordinator.load_scan(scan_id)
+        if result:
+            self._review.load_result(result)
+            self._navigate("review")
+
+    # ------------------------------------------------------------------
+    # Theme & settings
+    # ------------------------------------------------------------------
+
+    def _on_theme_change(self, key: str):
+        self.state.settings.theme_key = key
+        tm = get_theme_manager()
+        tm.apply(key, self.root)
+        self.shell.top_bar.set_current_theme(key)
+
+    def _on_advanced_mode(self, active: bool):
+        self.shell.apply_preferences()
+
+    def _apply_preferences(self) -> None:
+        """Apply UI preferences from state.settings to shell and pages."""
+        self.shell.apply_preferences()
+
+    def _copy_diagnostics(self):
+        try:
+            sess = self.hub.session
+            data  = f"Session: {sess.session_id}\n"
+            data += f"Phase:   {sess.current_phase}\n"
+            data += f"Status:  {sess.status}\n"
+            data += f"Health:  {sess.engine_health}\n"
+            data += f"Resume:  {sess.resume_outcome_label}\n"
+            data += f"Reason:  {sess.resume_reason}\n"
+            self.root.clipboard_clear()
+            self.root.clipboard_append(data)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
     def _on_close(self):
-        """Handle window close."""
-        # Cancel any active scan
         if self.coordinator.is_scanning:
-            if messagebox.askyesno(
-                "Scan in progress",
-                "A scan is in progress. Cancel and exit?"
-            ):
-                self.coordinator.cancel_scan()
-            else:
+            if not messagebox.askyesno("Scan in progress",
+                                       "A scan is active. Cancel and exit?"):
                 return
-        
-        # Save config
+            self.coordinator.cancel_scan()
+        # Shut down hub to stop its poll loop
+        try:
+            self.hub.shutdown()
+        except Exception:
+            pass
+        # Persist geometry
+        try:
+            self.state.settings.window_width  = self.root.winfo_width()
+            self.state.settings.window_height = self.root.winfo_height()
+            self.state.save()
+        except Exception:
+            pass
         save_config(self.config)
-        
         self.root.destroy()
-    
+
     def run(self):
-        """Run the application."""
         self.root.mainloop()
 
 
+# ---------------------------------------------------------------------------
+# Legacy shim
+# ---------------------------------------------------------------------------
+DedupApp = CerebroApp
+
+
 def main():
-    """Main entry point."""
-    app = DedupApp()
+    app = CerebroApp()
     app.run()
 
 

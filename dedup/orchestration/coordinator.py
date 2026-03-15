@@ -8,6 +8,7 @@ for the UI layer.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional, List, Dict, Any, Callable
 from pathlib import Path
 
@@ -16,6 +17,44 @@ from ..infrastructure.persistence import Persistence, ScanStore
 from ..infrastructure.config import Config, load_config
 from .worker import ScanWorker
 from .events import EventBus, get_event_bus
+
+
+@dataclass(frozen=True)
+class ScanSession:
+    """Immutable scan session metadata."""
+
+    session_id: str
+    config: ScanConfig
+    status: str = "pending"
+    current_phase: str = "discovery"
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
+
+
+@dataclass
+class ScanSessionRegistry:
+    """In-memory registry for current scan sessions."""
+
+    _sessions: Dict[str, ScanSession] = field(default_factory=dict)
+
+    def add(self, session: ScanSession) -> None:
+        self._sessions[session.session_id] = session
+
+    def get(self, session_id: str) -> Optional[ScanSession]:
+        return self._sessions.get(session_id)
+
+    def update(self, session_id: str, status: str, current_phase: Optional[str] = None) -> None:
+        existing = self._sessions.get(session_id)
+        if not existing:
+            return
+        self._sessions[session_id] = ScanSession(
+            session_id=existing.session_id,
+            config=existing.config,
+            status=status,
+            current_phase=current_phase or existing.current_phase,
+            created_at=existing.created_at,
+            updated_at=datetime.now(),
+        )
 
 
 @dataclass
@@ -45,6 +84,7 @@ class ScanCoordinator:
     ))
     event_bus: EventBus = field(default_factory=get_event_bus)
     config: Config = field(default_factory=load_config)
+    session_registry: ScanSessionRegistry = field(default_factory=ScanSessionRegistry)
     
     _active_worker: Optional[ScanWorker] = None
     _last_result: Optional[ScanResult] = None
@@ -102,6 +142,7 @@ class ScanCoordinator:
         worker = ScanWorker(
             scan_config,
             self.event_bus,
+            persistence=self.persistence,
             hash_cache_getter=self.persistence.get_hash_cache,
             hash_cache_setter=self.persistence.set_hash_cache,
             checkpoint_dir=checkpoint_dir,
@@ -113,6 +154,7 @@ class ScanCoordinator:
         
         self._active_worker = worker
         scan_id = worker.start()
+        self.session_registry.add(ScanSession(session_id=scan_id, config=scan_config, status="running"))
         
         return scan_id
     
@@ -123,6 +165,7 @@ class ScanCoordinator:
         """Wrap user callback to save result."""
         def wrapper(result: ScanResult):
             self._last_result = result
+            self.session_registry.update(result.scan_id, "completed", current_phase="complete")
             
             # Save to history
             try:
@@ -139,6 +182,8 @@ class ScanCoordinator:
     def cancel_scan(self):
         """Cancel the active scan."""
         if self._active_worker:
+            if self._active_worker.scan_id:
+                self.session_registry.update(self._active_worker.scan_id, "cancelled", current_phase="cancelled")
             self._active_worker.cancel()
     
     @property
@@ -204,7 +249,7 @@ class ScanCoordinator:
             return None
         
         from ..engine.deletion import DeletionEngine
-        engine = DeletionEngine()
+        engine = DeletionEngine(persistence=self.persistence)
         return engine.create_plan_from_groups(
             scan_id=result.scan_id,
             groups=result.duplicate_groups,
@@ -232,7 +277,7 @@ class ScanCoordinator:
         """
         from ..engine.deletion import DeletionEngine
         
-        engine = DeletionEngine(dry_run=dry_run)
+        engine = DeletionEngine(dry_run=dry_run, persistence=self.persistence)
         result = engine.execute_plan(plan, progress_cb)
         
         # Log deletions

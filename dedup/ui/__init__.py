@@ -1,25 +1,10 @@
 """
-DEDUP UI - Minimal user interface.
+CEREBRO Dedup Engine — Modern-classic operations UI.
 
-A clean, minimal interface with only essential screens:
-- Home / Scan Setup
-- Live Scan
-- Results / Review
-- History
-
-Uses tkinter (built into Python) for zero external dependencies.
+Shell: fixed nav rail, top command bar, status strip, insight drawer.
+Pages: Mission, Scan, Review, History, Diagnostics, Settings.
+Themes: 15 multigradient themes via semantic token system.
 """
+from .app import CerebroApp, DedupApp, main
 
-from .app import DedupApp
-from .home_frame import HomeFrame
-from .scan_frame import ScanFrame
-from .results_frame import ResultsFrame
-from .history_frame import HistoryFrame
-
-__all__ = [
-    "DedupApp",
-    "HomeFrame",
-    "ScanFrame", 
-    "ResultsFrame",
-    "HistoryFrame",
-]
+__all__ = ["CerebroApp", "DedupApp", "main"]

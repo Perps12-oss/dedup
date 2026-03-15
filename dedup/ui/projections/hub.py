@@ -1,0 +1,532 @@
+"""
+ProjectionHub
+=============
+The single bottleneck between engine events and UI state.
+
+Threading contract
+------------------
+- Engine publishes ScanEvent objects on background threads via EventBus.
+- ProjectionHub._handle_event() is called on those background threads.
+  It updates internal snapshots under a lock and marks projection types dirty.
+- A Tk after() poll loop runs every POLL_MS on the main UI thread.
+  On each tick it checks dirty flags and, respecting per-type throttle intervals,
+  delivers the latest snapshot to subscribed UI callbacks.
+
+Design rules
+------------
+1. UI callbacks are ALWAYS called on the Tk main thread (no thread-crossing).
+2. Snapshots are replaced atomically (frozen dataclasses — no in-place mutation).
+3. Throttle intervals ensure the UI is never flooded with updates.
+4. Phase and session transitions are delivered immediately (throttle = 0 ms).
+5. Metrics updates are coalesced at 300 ms intervals.
+6. Event-log entries are batched at 750 ms.
+7. No widget should listen to raw EventBus events directly.
+
+UI event type labels (for subscription keys)
+--------------------------------------------
+  "session"       — SessionProjection delivered to SessionProjection subscribers
+  "phase"         — Dict[phase_name, PhaseProjection]
+  "metrics"       — MetricsProjection
+  "compatibility" — CompatibilityProjection
+  "deletion"      — DeletionReadinessProjection (not from engine; hub re-publishes on request)
+  "events_log"    — List[str]  (structured event log entries)
+  "terminal"      — SessionProjection  (scan finished / failed / cancelled)
+"""
+from __future__ import annotations
+
+import threading
+import time
+from typing import Any, Callable, Dict, List, Optional
+
+from ...orchestration.events import EventBus, ScanEvent, ScanEventType
+
+from .session_projection import (
+    SessionProjection, EMPTY_SESSION, build_session_from_event,
+)
+from .phase_projection import (
+    PhaseProjection, PHASE_ORDER, canonical_phase,
+    initial_phase_map, build_phase_from_checkpoint,
+)
+from .metrics_projection import (
+    MetricsProjection, EMPTY_METRICS, build_metrics_from_progress, merge_metrics,
+)
+from .compatibility_projection import (
+    CompatibilityProjection, EMPTY_COMPAT,
+    build_compat_from_event_payload,
+)
+from .deletion_projection import DeletionReadinessProjection, EMPTY_DELETION
+
+# Poll interval (ms): how often the Tk main thread checks for dirty projections.
+POLL_MS = 50
+
+# Throttle per projection type (ms between consecutive deliveries to UI).
+# 0 = deliver as soon as dirty (next poll tick).
+THROTTLE_MS: Dict[str, int] = {
+    "session":       0,
+    "phase":         0,
+    "compatibility": 0,
+    "terminal":      0,
+    "metrics":       300,
+    "events_log":    750,
+    "deletion":      0,
+}
+
+Callback = Callable[[Any], None]
+
+
+class ProjectionHub:
+    """
+    Central projection broker wired to the engine EventBus.
+    Must be created on the Tk main thread (owns the after() schedule).
+    """
+
+    def __init__(self, event_bus: EventBus, tk_root):
+        self._bus      = event_bus
+        self._root     = tk_root
+        self._lock     = threading.Lock()
+        self._alive    = True
+
+        # --- Current projection snapshots ---
+        self._session:  SessionProjection       = EMPTY_SESSION
+        self._phases:   Dict[str, PhaseProjection] = initial_phase_map()
+        self._metrics:  MetricsProjection        = EMPTY_METRICS
+        self._compat:   CompatibilityProjection  = EMPTY_COMPAT
+        self._deletion: DeletionReadinessProjection = EMPTY_DELETION
+        self._events_log: List[str]              = []
+
+        # --- Dirty flags and last-delivery timestamps ---
+        self._dirty: Dict[str, bool]  = {k: False for k in THROTTLE_MS}
+        self._last_delivered: Dict[str, float] = {k: 0.0 for k in THROTTLE_MS}
+
+        # --- UI subscribers: type -> list of callbacks ---
+        self._subscribers: Dict[str, List[Callback]] = {k: [] for k in THROTTLE_MS}
+        self._sub_lock = threading.Lock()
+
+        # Subscribe to every engine event type
+        for et in ScanEventType:
+            self._bus.subscribe(et, self._handle_event)
+
+        # Start the Tk poll loop
+        self._schedule_poll()
+
+    # ------------------------------------------------------------------
+    # Public subscription API
+    # ------------------------------------------------------------------
+
+    def subscribe(self, projection_type: str, callback: Callback) -> Callable[[], None]:
+        """
+        Subscribe to a projection type.
+        callback(snapshot) is always called on the Tk main thread.
+        Returns an unsubscribe function.
+        """
+        with self._sub_lock:
+            self._subscribers.setdefault(projection_type, []).append(callback)
+
+        def unsub():
+            with self._sub_lock:
+                try:
+                    self._subscribers[projection_type].remove(callback)
+                except (KeyError, ValueError):
+                    pass
+        return unsub
+
+    # ------------------------------------------------------------------
+    # Current snapshot accessors (thread-safe reads for initial pull)
+    # ------------------------------------------------------------------
+
+    @property
+    def session(self) -> SessionProjection:
+        with self._lock:
+            return self._session
+
+    @property
+    def phases(self) -> Dict[str, PhaseProjection]:
+        with self._lock:
+            return dict(self._phases)
+
+    @property
+    def metrics(self) -> MetricsProjection:
+        with self._lock:
+            return self._metrics
+
+    @property
+    def compat(self) -> CompatibilityProjection:
+        with self._lock:
+            return self._compat
+
+    @property
+    def deletion(self) -> DeletionReadinessProjection:
+        with self._lock:
+            return self._deletion
+
+    # ------------------------------------------------------------------
+    # External push (from ReviewPage keep-selection changes, etc.)
+    # ------------------------------------------------------------------
+
+    def push_deletion(self, proj: DeletionReadinessProjection) -> None:
+        """Allow the ReviewPage to push a new DeletionReadinessProjection."""
+        with self._lock:
+            self._deletion = proj
+            self._dirty["deletion"] = True
+
+    def push_event_log_entry(self, entry: str) -> None:
+        with self._lock:
+            self._events_log.insert(0, entry)
+            if len(self._events_log) > 500:
+                self._events_log = self._events_log[:500]
+            self._dirty["events_log"] = True
+
+    def shutdown(self) -> None:
+        self._alive = False
+
+    # ------------------------------------------------------------------
+    # Engine event handler  (called on background threads)
+    # ------------------------------------------------------------------
+
+    def _handle_event(self, event: ScanEvent) -> None:
+        """
+        Translate a raw engine ScanEvent into projection updates.
+        Called from background threads — must only touch self._lock protected state.
+        """
+        et      = event.event_type
+        sid     = event.scan_id
+        payload = event.payload or {}
+
+        with self._lock:
+            if et == ScanEventType.SESSION_STARTED:
+                self._session = build_session_from_event(
+                    session_id=sid,
+                    status="running",
+                    scan_root=self._extract_root(payload),
+                )
+                self._phases = initial_phase_map()
+                self._metrics = EMPTY_METRICS
+                self._events_log = []
+                self._dirty["session"] = True
+                self._dirty["phase"]   = True
+                self._dirty["metrics"] = True
+
+            elif et == ScanEventType.PHASE_STARTED:
+                phase_raw = payload.get("phase", "")
+                canon     = canonical_phase(phase_raw)
+                if canon in self._phases:
+                    old = self._phases[canon]
+                    self._phases[canon] = PhaseProjection(
+                        phase_name=old.phase_name,
+                        display_label=old.display_label,
+                        status="running",
+                        finalized=old.finalized,
+                        integrity_ok=old.integrity_ok,
+                        rows_written=old.rows_written,
+                        duration_ms=old.duration_ms,
+                        checkpoint_cursor=old.checkpoint_cursor,
+                        is_reused=old.is_reused,
+                        resume_outcome=old.resume_outcome,
+                        failure_reason=old.failure_reason,
+                    )
+                # Update session current_phase immediately
+                self._session = build_session_from_event(
+                    session_id=sid,
+                    status="running",
+                    phase=canon,
+                    phase_status="running",
+                    resume_policy=self._session.resume_policy,
+                    resume_reason=self._session.resume_reason,
+                    engine_health=self._session.engine_health,
+                    warnings_count=self._session.warnings_count,
+                    config_hash=self._session.config_hash,
+                    schema_version=self._session.schema_version,
+                    scan_root=self._session.scan_root,
+                )
+                self._dirty["phase"]   = True
+                self._dirty["session"] = True
+                ts = time.strftime("%H:%M:%S")
+                desc = payload.get("description", phase_raw)
+                self._events_log.insert(0, f"[{ts}] Phase started: {desc or canon}")
+                self._dirty["events_log"] = True
+
+            elif et == ScanEventType.PHASE_COMPLETED:
+                phase_raw = payload.get("phase", "")
+                canon = canonical_phase(phase_raw)
+                if canon in self._phases:
+                    old = self._phases[canon]
+                    self._phases[canon] = PhaseProjection(
+                        phase_name=old.phase_name,
+                        display_label=old.display_label,
+                        status="completed",
+                        finalized=True,
+                        integrity_ok=True,
+                        rows_written=payload.get("completed_units", old.rows_written),
+                        duration_ms=old.duration_ms,
+                        checkpoint_cursor=old.checkpoint_cursor,
+                        is_reused=old.is_reused,
+                        resume_outcome=old.resume_outcome,
+                        failure_reason="",
+                    )
+                self._dirty["phase"] = True
+                ts = time.strftime("%H:%M:%S")
+                self._events_log.insert(0, f"[{ts}] Phase completed: {canon}")
+                self._dirty["events_log"] = True
+
+            elif et == ScanEventType.SCAN_PROGRESS:
+                # Rebuild metrics from progress dict
+                self._metrics = self._metrics_from_dict(payload)
+                self._dirty["metrics"] = True
+                # Update phase rows
+                phase_raw = payload.get("phase", "")
+                if phase_raw:
+                    canon = canonical_phase(phase_raw)
+                    if canon in self._phases:
+                        old = self._phases[canon]
+                        self._phases[canon] = PhaseProjection(
+                            phase_name=old.phase_name,
+                            display_label=old.display_label,
+                            status="running",
+                            finalized=old.finalized,
+                            integrity_ok=old.integrity_ok,
+                            rows_written=payload.get("files_found", old.rows_written),
+                            duration_ms=old.duration_ms,
+                            checkpoint_cursor=old.checkpoint_cursor,
+                            is_reused=old.is_reused,
+                            resume_outcome=old.resume_outcome,
+                            failure_reason=old.failure_reason,
+                        )
+                        self._dirty["phase"] = True
+
+            elif et == ScanEventType.RESUME_VALIDATED:
+                compat = build_compat_from_event_payload(payload)
+                self._compat = compat
+                outcome  = payload.get("outcome", "safe_resume")
+                reason   = payload.get("reason", "")
+                self._session = build_session_from_event(
+                    session_id=sid,
+                    status="running",
+                    phase=self._session.current_phase,
+                    phase_status=self._session.phase_status,
+                    resume_policy=self._map_outcome_to_policy(outcome),
+                    resume_reason=reason,
+                    engine_health=self._session.engine_health,
+                    warnings_count=self._session.warnings_count,
+                    config_hash=payload.get("config_hash", self._session.config_hash),
+                    schema_version=payload.get("schema_version", self._session.schema_version),
+                    scan_root=self._session.scan_root,
+                )
+                self._dirty["compatibility"] = True
+                self._dirty["session"]       = True
+                ts = time.strftime("%H:%M:%S")
+                self._events_log.insert(0,
+                    f"[{ts}] Resume validated: {outcome} — {reason[:60]}")
+                self._dirty["events_log"] = True
+
+            elif et == ScanEventType.RESUME_REJECTED:
+                compat = build_compat_from_event_payload(
+                    {**payload, "outcome": "restart_required"})
+                self._compat = compat
+                reason = payload.get("reason", "")
+                self._session = build_session_from_event(
+                    session_id=sid,
+                    status="running",
+                    phase=self._session.current_phase,
+                    resume_policy="restart_required",
+                    resume_reason=reason,
+                    engine_health="Warning",
+                    warnings_count=self._session.warnings_count + 1,
+                    config_hash=self._session.config_hash,
+                    schema_version=self._session.schema_version,
+                    scan_root=self._session.scan_root,
+                )
+                self._dirty["compatibility"] = True
+                self._dirty["session"]       = True
+                ts = time.strftime("%H:%M:%S")
+                self._events_log.insert(0,
+                    f"[{ts}] Resume rejected: restart required — {reason[:60]}")
+                self._dirty["events_log"] = True
+
+            elif et in (ScanEventType.SESSION_COMPLETED, ScanEventType.SCAN_COMPLETED):
+                self._session = build_session_from_event(
+                    session_id=sid,
+                    status="completed",
+                    phase="result_assembly",
+                    phase_status="completed",
+                    resume_policy=self._session.resume_policy,
+                    resume_reason=self._session.resume_reason,
+                    engine_health="Healthy",
+                    warnings_count=self._session.warnings_count,
+                    config_hash=self._session.config_hash,
+                    schema_version=self._session.schema_version,
+                    scan_root=self._session.scan_root,
+                )
+                # Mark all running phases as completed
+                for pname, ph in self._phases.items():
+                    if ph.status == "running":
+                        self._phases[pname] = PhaseProjection(
+                            phase_name=ph.phase_name,
+                            display_label=ph.display_label,
+                            status="completed",
+                            finalized=True,
+                            integrity_ok=True,
+                            rows_written=ph.rows_written,
+                            duration_ms=ph.duration_ms,
+                            checkpoint_cursor=ph.checkpoint_cursor,
+                            is_reused=ph.is_reused,
+                            resume_outcome=ph.resume_outcome,
+                            failure_reason="",
+                        )
+                self._dirty["session"]  = True
+                self._dirty["phase"]    = True
+                self._dirty["terminal"] = True
+                ts = time.strftime("%H:%M:%S")
+                self._events_log.insert(0, f"[{ts}] Scan completed")
+                self._dirty["events_log"] = True
+
+            elif et in (ScanEventType.SESSION_CANCELLED, ScanEventType.SCAN_CANCELLED):
+                self._session = build_session_from_event(
+                    session_id=sid,
+                    status="cancelled",
+                    phase=self._session.current_phase,
+                    resume_policy=self._session.resume_policy,
+                    engine_health=self._session.engine_health,
+                    config_hash=self._session.config_hash,
+                    schema_version=self._session.schema_version,
+                    scan_root=self._session.scan_root,
+                )
+                self._dirty["session"]  = True
+                self._dirty["terminal"] = True
+
+            elif et in (ScanEventType.SESSION_FAILED, ScanEventType.SCAN_ERROR):
+                err = payload.get("error", "")
+                self._session = build_session_from_event(
+                    session_id=sid,
+                    status="failed",
+                    phase=self._session.current_phase,
+                    engine_health="Degraded",
+                    warnings_count=self._session.warnings_count + 1,
+                    config_hash=self._session.config_hash,
+                    schema_version=self._session.schema_version,
+                    scan_root=self._session.scan_root,
+                )
+                self._dirty["session"]  = True
+                self._dirty["terminal"] = True
+                ts = time.strftime("%H:%M:%S")
+                self._events_log.insert(0, f"[{ts}] ERROR: {err[:80]}")
+                self._dirty["events_log"] = True
+
+            elif et == ScanEventType.PHASE_CHECKPOINTED:
+                phase_raw = payload.get("phase", "")
+                canon = canonical_phase(phase_raw)
+                ts = time.strftime("%H:%M:%S")
+                self._events_log.insert(0, f"[{ts}] Checkpointed: {canon}")
+                self._dirty["events_log"] = True
+
+    # ------------------------------------------------------------------
+    # Throttled Tk poll loop
+    # ------------------------------------------------------------------
+
+    def _schedule_poll(self) -> None:
+        if not self._alive:
+            return
+        try:
+            self._root.after(POLL_MS, self._poll)
+        except Exception:
+            pass
+
+    def _poll(self) -> None:
+        """Called on Tk main thread every POLL_MS ms."""
+        if not self._alive:
+            return
+        now = time.monotonic()
+        try:
+            self._flush(now)
+        except Exception:
+            pass
+        self._schedule_poll()
+
+    def _flush(self, now: float) -> None:
+        """Deliver dirty projections to UI subscribers if throttle allows."""
+        deliveries: Dict[str, Any] = {}
+
+        with self._lock:
+            for ptype, throttle in THROTTLE_MS.items():
+                if not self._dirty.get(ptype):
+                    continue
+                elapsed_ms = (now - self._last_delivered.get(ptype, 0.0)) * 1000
+                if elapsed_ms >= throttle:
+                    self._dirty[ptype] = False
+                    self._last_delivered[ptype] = now
+                    deliveries[ptype] = self._snapshot(ptype)
+
+        for ptype, snapshot in deliveries.items():
+            with self._sub_lock:
+                callbacks = self._subscribers.get(ptype, [])[:]
+            for cb in callbacks:
+                try:
+                    cb(snapshot)
+                except Exception:
+                    pass
+
+    def _snapshot(self, ptype: str) -> Any:
+        """Return the current snapshot for a projection type (called under lock)."""
+        if ptype == "session" or ptype == "terminal":
+            return self._session
+        if ptype == "phase":
+            return dict(self._phases)
+        if ptype == "metrics":
+            return self._metrics
+        if ptype == "compatibility":
+            return self._compat
+        if ptype == "deletion":
+            return self._deletion
+        if ptype == "events_log":
+            return list(self._events_log[:200])
+        return None
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_root(payload: dict) -> str:
+        roots = payload.get("roots", [])
+        if roots:
+            from pathlib import Path
+            return Path(roots[0]).name if roots[0] else ""
+        config = payload.get("config", {})
+        if isinstance(config, dict):
+            r = config.get("roots", [])
+            if r:
+                from pathlib import Path
+                return Path(r[0]).name if r[0] else ""
+        return ""
+
+    @staticmethod
+    def _map_outcome_to_policy(outcome: str) -> str:
+        return {
+            "safe_resume":              "safe",
+            "rebuild_current_phase":    "rebuild_phase",
+            "restart_required":         "restart_required",
+        }.get(outcome, "none")
+
+    @staticmethod
+    def _metrics_from_dict(d: dict) -> MetricsProjection:
+        bps = d.get("bytes_per_second") or 0.0
+        fps = d.get("files_per_second") or 0.0
+        eta = d.get("estimated_remaining_seconds")
+        elapsed = d.get("elapsed_seconds") or 0.0
+        eta_conf = "unknown"
+        if eta is not None and elapsed > 30:
+            eta_conf = "medium" if elapsed < 120 else "high"
+        return MetricsProjection(
+            files_scanned=d.get("files_found", 0),
+            files_skipped=0,
+            candidates=0,
+            potential_duplicates=d.get("duplicates_found", 0),
+            duplicate_groups=d.get("groups_found", 0),
+            reclaimable_bytes=0,
+            disk_read_bps=bps,
+            rows_per_sec=fps,
+            cache_hit_rate=0.0,
+            eta_seconds=eta,
+            eta_confidence=eta_conf,
+            time_saved_estimate=0.0,
+            elapsed_s=elapsed,
+        )

@@ -10,6 +10,7 @@ Provides SQLite-based storage for:
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import sys
 import threading
@@ -19,7 +20,28 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
-from ..engine.models import ScanResult, FileMetadata
+from ..engine.models import (
+    CheckpointInfo,
+    FileMetadata,
+    FileRecord,
+    PhaseStatus,
+    ScanPhase,
+    ScanResult,
+)
+from .migrations import get_schema_version, run_migrations
+from .repositories import (
+    CheckpointRepository,
+    DeletionAuditRepository,
+    DeletionPlanRepository,
+    DuplicateGroupRepository,
+    FullHashRepository,
+    HashCacheRepository,
+    InventoryRepository,
+    PartialCandidateRepository,
+    PartialHashRepository,
+    SessionRepository,
+    SizeCandidateRepository,
+)
 
 
 @dataclass
@@ -29,6 +51,7 @@ class Persistence:
     db_path: Path
     _connection: Optional[sqlite3.Connection] = None
     _lock: threading.Lock = None
+    _schema_version: int = 0
     
     def __post_init__(self):
         if self._lock is None:
@@ -60,6 +83,7 @@ class Persistence:
         if self._connection is None:
             self._connection = sqlite3.connect(str(self.db_path), check_same_thread=False)
             self._connection.row_factory = sqlite3.Row
+            self._connection.execute("PRAGMA foreign_keys = ON")
         return self._connection
     
     def _init_db(self):
@@ -109,6 +133,133 @@ class Persistence:
             """)
             
             conn.commit()
+            migrations_dir = Path(__file__).with_name("migrations")
+            if migrations_dir.exists():
+                self._schema_version = run_migrations(conn, migrations_dir)
+
+    @property
+    def schema_version(self) -> int:
+        """Current durable schema version."""
+        with self._lock:
+            conn = self._get_connection()
+            self._schema_version = max(self._schema_version, get_schema_version(conn))
+            return self._schema_version
+
+    @property
+    def session_repo(self) -> SessionRepository:
+        return SessionRepository(self._get_connection())
+
+    @property
+    def checkpoint_repo(self) -> CheckpointRepository:
+        return CheckpointRepository(self._get_connection())
+
+    @property
+    def inventory_repo(self) -> InventoryRepository:
+        return InventoryRepository(self._get_connection())
+
+    @property
+    def size_candidate_repo(self) -> SizeCandidateRepository:
+        return SizeCandidateRepository(self._get_connection())
+
+    @property
+    def partial_hash_repo(self) -> PartialHashRepository:
+        return PartialHashRepository(self._get_connection())
+
+    @property
+    def partial_candidate_repo(self) -> PartialCandidateRepository:
+        return PartialCandidateRepository(self._get_connection())
+
+    @property
+    def full_hash_repo(self) -> FullHashRepository:
+        return FullHashRepository(self._get_connection())
+
+    @property
+    def duplicate_group_repo(self) -> DuplicateGroupRepository:
+        return DuplicateGroupRepository(self._get_connection())
+
+    @property
+    def hash_cache_repo(self) -> HashCacheRepository:
+        return HashCacheRepository(self._get_connection())
+
+    @property
+    def deletion_plan_repo(self) -> DeletionPlanRepository:
+        return DeletionPlanRepository(self._get_connection())
+
+    @property
+    def deletion_audit_repo(self) -> DeletionAuditRepository:
+        return DeletionAuditRepository(self._get_connection())
+
+    def shadow_write_session(
+        self,
+        session_id: str,
+        config_json: str,
+        config_hash: str,
+        root_fingerprint: Optional[str] = None,
+        status: str = "running",
+        current_phase: str = ScanPhase.DISCOVERY.value,
+    ) -> None:
+        """Persist a v2 session row without changing legacy callers."""
+        with self._lock:
+            self.session_repo.create(
+                session_id=session_id,
+                config_json=config_json,
+                config_hash=config_hash,
+                root_fingerprint=root_fingerprint,
+                status=status,
+                current_phase=current_phase,
+            )
+
+    def shadow_update_session(
+        self,
+        session_id: str,
+        status: str,
+        current_phase: Optional[str] = None,
+        failure_reason: Optional[str] = None,
+        metrics: Optional[Dict[str, Any]] = None,
+        completed: bool = False,
+    ) -> None:
+        with self._lock:
+            self.session_repo.update_status(
+                session_id=session_id,
+                status=status,
+                current_phase=current_phase,
+                failure_reason=failure_reason,
+                metrics=metrics,
+                completed=completed,
+            )
+
+    def shadow_write_checkpoint(
+        self,
+        session_id: str,
+        phase_name: ScanPhase,
+        completed_units: int,
+        total_units: Optional[int] = None,
+        chunk_cursor: Optional[str] = None,
+        status: PhaseStatus = PhaseStatus.RUNNING,
+        metadata_json: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        with self._lock:
+            self.checkpoint_repo.upsert(
+                CheckpointInfo(
+                    session_id=session_id,
+                    phase_name=phase_name,
+                    chunk_cursor=chunk_cursor,
+                    completed_units=completed_units,
+                    total_units=total_units,
+                    status=status,
+                    metadata_json=metadata_json or {},
+                )
+            )
+
+    def shadow_write_inventory(self, session_id: str, files: List[FileMetadata]) -> int:
+        with self._lock:
+            if self.session_repo.get(session_id) is None:
+                self.session_repo.create(
+                    session_id=session_id,
+                    config_json=json.dumps({"roots": []}),
+                    config_hash="shadow",
+                )
+            return self.inventory_repo.insert_batch(session_id, files)
     
     def save_scan(self, result: ScanResult) -> bool:
         """Save scan result to history."""
@@ -261,6 +412,26 @@ class Persistence:
                 ))
                 
                 conn.commit()
+                if file.hash_partial:
+                    self.hash_cache_repo.upsert(
+                        path=file.path,
+                        size_bytes=file.size,
+                        mtime_ns=file.mtime_ns,
+                        algorithm="legacy",
+                        strategy_version="v1",
+                        hash_kind="partial",
+                        hash_value=file.hash_partial,
+                    )
+                if file.hash_full:
+                    self.hash_cache_repo.upsert(
+                        path=file.path,
+                        size_bytes=file.size,
+                        mtime_ns=file.mtime_ns,
+                        algorithm="legacy",
+                        strategy_version="v1",
+                        hash_kind="full",
+                        hash_value=file.hash_full,
+                    )
                 return True
         except sqlite3.Error:
             return False

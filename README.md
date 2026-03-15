@@ -105,12 +105,14 @@ dedup/
 │   ├── logger.py     # Structured logging
 │   ├── persistence.py # SQLite storage
 │   └── utils.py      # Utilities
-├── ui/               # Minimal tkinter UI
-│   ├── app.py        # Main application
-│   ├── home_frame.py # Scan setup
-│   ├── scan_frame.py # Live scan
-│   ├── results_frame.py # Review/delete
-│   └── history_frame.py # Past scans
+├── ui/               # CEREBRO modern-classic UI shell
+│   ├── app.py        # Main application & ProjectionHub wiring
+│   ├── shell/        # AppShell, NavRail, TopBar, StatusStrip
+│   ├── pages/        # Mission, Scan, Review, History, Diagnostics, Settings
+│   ├── components/   # Reusable widgets (MetricCard, DataTable, etc.)
+│   ├── viewmodels/   # MVVM state holders per page
+│   ├── projections/  # Canonical UI state contract (ProjectionHub)
+│   └── theme/        # 15-theme token system
 └── main.py           # Entry point
 ```
 

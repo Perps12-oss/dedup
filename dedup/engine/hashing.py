@@ -15,7 +15,7 @@ import hashlib
 import mmap
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Iterator, List, Optional, Callable, Dict, Set, Tuple, Any
@@ -30,6 +30,59 @@ class HashStrategy(Enum):
     MD5 = "md5"  # Standard library, good speed
     SHA256 = "sha256"  # Cryptographic, slower
     BLAKE3 = "blake3"  # Fast cryptographic, requires blake3
+
+
+@dataclass(slots=True, frozen=True)
+class PartialHashSpec:
+    """Sampling description for partial-hash candidate reduction."""
+    strategy_name: str = "first_middle_last"
+    bytes_sampled: int = 4096
+    version: str = "v1"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "strategy_name": self.strategy_name,
+            "bytes_sampled": self.bytes_sampled,
+            "version": self.version,
+        }
+
+
+@dataclass(slots=True, frozen=True)
+class FullHashSpec:
+    """Confirmation-hash spec used for duplicate confirmation."""
+    algorithm: str
+    version: str = "v1"
+
+
+@dataclass(slots=True, frozen=True)
+class HashCacheKey:
+    """Normalized key for durable hash-cache lookups."""
+    path: str
+    size: int
+    mtime_ns: int
+    algorithm: str
+    strategy_version: str
+    hash_kind: str
+
+
+@dataclass(slots=True)
+class HashPolicy:
+    """Policy object that separates scheduling choices from hash execution."""
+    algorithm: HashStrategy = HashStrategy.XXHASH64
+    partial_spec: PartialHashSpec = field(default_factory=PartialHashSpec)
+    full_workers: int = 4
+
+    @classmethod
+    def from_config(cls, config: ScanConfig) -> "HashPolicy":
+        try:
+            algorithm = HashStrategy(config.hash_algorithm)
+        except ValueError:
+            algorithm = HashStrategy.XXHASH64
+        return cls(
+            algorithm=algorithm,
+            partial_spec=PartialHashSpec(bytes_sampled=config.partial_hash_bytes),
+            full_workers=config.full_hash_workers,
+        )
 
 
 @dataclass
@@ -49,6 +102,7 @@ class HashEngine:
     use_mmap: bool = True
     cache_getter: Optional[Callable[[str], Optional[Dict[str, Any]]]] = None
     cache_setter: Optional[Callable[[FileMetadata], bool]] = None
+    policy: Optional[HashPolicy] = None
     
     # Cache: path -> (mtime_ns, size, hash) to avoid re-hashing
     _hash_cache: Dict[str, Tuple[int, int, str]] = None
@@ -59,20 +113,27 @@ class HashEngine:
             self._hash_cache = {}
         if self._cache_lock is None:
             self._cache_lock = threading.Lock()
+        if self.policy is None:
+            self.policy = HashPolicy(
+                algorithm=self.algorithm,
+                partial_spec=PartialHashSpec(bytes_sampled=self.partial_bytes),
+                full_workers=self.workers,
+            )
     
     @classmethod
     def from_config(cls, config: ScanConfig) -> HashEngine:
         """Create hash engine from scan config."""
-        try:
-            strategy = HashStrategy(config.hash_algorithm)
-        except ValueError:
-            strategy = HashStrategy.XXHASH64
-        
+        policy = HashPolicy.from_config(config)
         return cls(
-            algorithm=strategy,
+            algorithm=policy.algorithm,
             partial_bytes=config.partial_hash_bytes,
             workers=config.full_hash_workers,
+            policy=policy,
         )
+
+    @property
+    def partial_spec(self) -> PartialHashSpec:
+        return self.policy.partial_spec if self.policy else PartialHashSpec(bytes_sampled=self.partial_bytes)
     
     def _get_hasher(self):
         """Get a hash object based on the selected algorithm."""
@@ -115,6 +176,10 @@ class HashEngine:
                 return None
             if cached.get("size") != file.size or cached.get("mtime_ns") != file.mtime_ns:
                 return None
+            if cached.get("algorithm") not in (None, self.algorithm.value, "legacy"):
+                return None
+            if cached.get("strategy_version") not in (None, self.partial_spec.version, "v1"):
+                return None
             return cached.get("hash_partial")
         except Exception:
             return None
@@ -128,6 +193,8 @@ class HashEngine:
             if not cached:
                 return None
             if cached.get("size") != file.size or cached.get("mtime_ns") != file.mtime_ns:
+                return None
+            if cached.get("algorithm") not in (None, self.algorithm.value, "legacy"):
                 return None
             return cached.get("hash_full")
         except Exception:
@@ -155,10 +222,10 @@ class HashEngine:
             
             hasher = self._get_hasher()
             size = file.size
-            chunk = min(self.partial_bytes, size)
+            chunk = min(self.partial_spec.bytes_sampled, size)
             
             with open(path, 'rb') as f:
-                if size <= self.partial_bytes:
+                if size <= self.partial_spec.bytes_sampled:
                     data = f.read(size)
                     hasher.update(data)
                 else:
@@ -166,14 +233,14 @@ class HashEngine:
                     data = f.read(chunk)
                     hasher.update(data)
                     # Middle chunk
-                    if size > 2 * self.partial_bytes:
-                        f.seek((size - self.partial_bytes) // 2)
-                        data = f.read(self.partial_bytes)
+                    if size > 2 * self.partial_spec.bytes_sampled:
+                        f.seek((size - self.partial_spec.bytes_sampled) // 2)
+                        data = f.read(self.partial_spec.bytes_sampled)
                         hasher.update(data)
                     # Last chunk
-                    if size > self.partial_bytes:
-                        f.seek(max(0, size - self.partial_bytes))
-                        data = f.read(self.partial_bytes)
+                    if size > self.partial_spec.bytes_sampled:
+                        f.seek(max(0, size - self.partial_spec.bytes_sampled))
+                        data = f.read(self.partial_spec.bytes_sampled)
                         hasher.update(data)
             
             hash_value = hasher.hexdigest()

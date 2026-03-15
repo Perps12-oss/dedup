@@ -15,11 +15,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator, Optional, Set, Callable, List, Dict
+from typing import Iterator, Optional, Set, Callable, List, Dict, Tuple
 from queue import Queue, Empty
 import threading
 
-from .models import FileMetadata, ScanConfig
+from .models import FileMetadata, FileRecord, ScanConfig
 
 @dataclass(slots=True)
 class DiscoveryOptions:
@@ -48,6 +48,19 @@ class DiscoveryOptions:
             exclude_dirs=config.exclude_dirs,
             max_workers=config.full_hash_workers,
         )
+
+
+@dataclass(slots=True)
+class DiscoveryCursor:
+    """Chunk cursor for durable discovery ingestion."""
+    files_emitted: int = 0
+
+
+@dataclass(slots=True)
+class DiscoveryStats:
+    """Summary counters emitted by chunked discovery."""
+    files_found: int = 0
+    bytes_found: int = 0
 
 
 class FileDiscovery:
@@ -279,3 +292,40 @@ def quick_discover(
     )
     discovery = FileDiscovery(options)
     yield from discovery.discover(progress_cb)
+
+
+class DiscoveryService:
+    """Chunked wrapper over FileDiscovery for persistence-backed pipeline phases."""
+
+    def __init__(self, options: DiscoveryOptions):
+        self.options = options
+        self.discovery = FileDiscovery(options)
+
+    def cancel(self) -> None:
+        self.discovery.cancel()
+
+    def discover_chunk(
+        self,
+        cursor: Optional[DiscoveryCursor] = None,
+        max_items: int = 1000,
+    ) -> Tuple[List[FileRecord], Optional[DiscoveryCursor], DiscoveryStats]:
+        cursor = cursor or DiscoveryCursor()
+        batch: List[FileRecord] = []
+        stats = DiscoveryStats()
+
+        iterator = self.discovery.discover()
+        for _ in range(cursor.files_emitted):
+            try:
+                next(iterator)
+            except StopIteration:
+                return [], None, stats
+
+        for file in iterator:
+            batch.append(FileRecord.from_file_metadata(file))
+            stats.files_found += 1
+            stats.bytes_found += file.size
+            cursor.files_emitted += 1
+            if len(batch) >= max_items:
+                return batch, cursor, stats
+
+        return batch, None, stats
