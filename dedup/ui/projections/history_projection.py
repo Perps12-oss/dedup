@@ -26,6 +26,8 @@ class HistorySessionProjection:
     warning_count: int
     is_resumable: bool
     phase_summary: str           # "5/5 phases completed" etc.
+    deletion_verification_summary: Dict[str, int] = field(default_factory=dict)
+    benchmark_summary: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def roots_display(self) -> str:
@@ -135,6 +137,8 @@ def build_history_from_coordinator(
             warning_count=int(d.get("warning_count", 0) or 0),
             is_resumable=is_res,
             phase_summary="",
+            deletion_verification_summary=dict(d.get("deletion_verification_summary") or {}),
+            benchmark_summary=dict(d.get("benchmark_summary") or {}),
         ))
 
     n = len(sessions)

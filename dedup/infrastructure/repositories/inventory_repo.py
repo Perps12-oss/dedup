@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import os
 from typing import Dict, Iterable, Iterator, List, Optional
 
 from ...engine.models import FileMetadata, FileRecord
@@ -82,6 +83,41 @@ class InventoryRepository:
             params.extend([limit, offset])
 
         rows = self.conn.execute(sql, tuple(params)).fetchall()
+        for row in rows:
+            yield FileMetadata(
+                path=row["path"],
+                size=row["size_bytes"],
+                mtime_ns=row["mtime_ns"],
+                inode=int(row["inode"]) if row["inode"] is not None else None,
+            )
+
+    def iter_under_directory(self, session_id: str, dir_path: str) -> Iterator[FileMetadata]:
+        norm = os.path.normpath(dir_path)
+        slash = norm.replace("\\", "/")
+        backslash = norm.replace("/", "\\")
+        eq1 = slash
+        eq2 = backslash
+        p1 = f"{slash}/%"
+        p2 = f"{backslash}\\%"
+        p3 = f"{slash}\\%"
+        p4 = f"{backslash}/%"
+        rows = self.conn.execute(
+            """
+            SELECT path, size_bytes, mtime_ns, inode
+            FROM inventory_files
+            WHERE session_id = ?
+              AND (
+                    path = ?
+                 OR path = ?
+                 OR path LIKE ?
+                 OR path LIKE ?
+                 OR path LIKE ?
+                 OR path LIKE ?
+              )
+            ORDER BY file_id ASC
+            """,
+            (session_id, eq1, eq2, p1, p2, p3, p4),
+        ).fetchall()
         for row in rows:
             yield FileMetadata(
                 path=row["path"],

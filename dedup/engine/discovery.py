@@ -11,8 +11,6 @@ Designed for 1M+ file datasets:
 from __future__ import annotations
 
 import os
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator, Optional, Set, Callable, List, Dict, Tuple
@@ -20,6 +18,14 @@ from queue import Queue, Empty
 import threading
 
 from .models import FileMetadata, FileRecord, ScanConfig
+from .discovery_compat import normalize_discovery_path
+from ..infrastructure.profiler import measure
+
+try:
+    from ..infrastructure.profiler import measure
+except ImportError:
+    from contextlib import nullcontext as _nc
+    measure = lambda n: _nc()
 
 @dataclass(slots=True)
 class DiscoveryOptions:
@@ -33,10 +39,14 @@ class DiscoveryOptions:
     allowed_extensions: Optional[Set[str]] = None
     exclude_dirs: Set[str] = field(default_factory=set)
     max_workers: int = 8
+    resolve_paths: bool = False
 
     @classmethod
     def from_config(cls, config: ScanConfig) -> DiscoveryOptions:
         """Create options from scan config."""
+        discovery_workers = getattr(config, "discovery_max_workers", None)
+        if discovery_workers is None or discovery_workers <= 0:
+            discovery_workers = config.full_hash_workers
         return cls(
             roots=config.roots,
             min_size_bytes=config.min_size_bytes,
@@ -46,7 +56,8 @@ class DiscoveryOptions:
             scan_subfolders=config.scan_subfolders,
             allowed_extensions=config.allowed_extensions,
             exclude_dirs=config.exclude_dirs,
-            max_workers=config.full_hash_workers,
+            max_workers=discovery_workers,
+            resolve_paths=getattr(config, "resolve_paths", False),
         )
 
 
@@ -73,15 +84,38 @@ class FileDiscovery:
     - Respects cancellation via callback
     """
     
-    def __init__(self, options: DiscoveryOptions):
+    def __init__(
+        self,
+        options: DiscoveryOptions,
+        *,
+        prior_session_id: Optional[str] = None,
+        prior_dir_mtimes: Optional[Dict[str, int]] = None,
+        get_prior_files_under_dir: Optional[Callable[[str], Iterator[FileMetadata]]] = None,
+        dir_mtimes_sink: Optional[Dict[str, int]] = None,
+    ):
         self.options = options
         self._cancelled = False
         self._stats = {
             "dirs_scanned": 0,
+            "dirs_reused": 0,
+            "dirs_skipped_via_manifest": 0,
             "files_found": 0,
+            "files_discovered_fresh": 0,
+            "files_reused_from_prior_inventory": 0,
             "files_filtered": 0,
+            "stat_calls": 0,
+            "resolve_calls": 0,
             "errors": 0,
         }
+        self._prior_session_id = prior_session_id
+        self._prior_dir_mtimes = (
+            {normalize_discovery_path(path): mtime for path, mtime in prior_dir_mtimes.items()}
+            if prior_dir_mtimes
+            else None
+        )
+        self._get_prior_files_under_dir = get_prior_files_under_dir
+        self._dir_mtimes_sink = dir_mtimes_sink if dir_mtimes_sink is not None else {}
+        self._dir_mtimes_lock = threading.Lock()
     
     def cancel(self):
         """Request cancellation of discovery."""
@@ -111,7 +145,12 @@ class FileDiscovery:
             work_queue.put(root)
 
         WORK_SENTINEL = None
-        num_workers = min(self.options.max_workers, 4)
+        configured = getattr(self.options, "max_workers", 4)
+        cpu_count = os.cpu_count() or 4
+        if configured is None or configured <= 0:
+            num_workers = min(8, max(2, cpu_count))
+        else:
+            num_workers = configured
         done_event = threading.Event()
 
         def worker():
@@ -181,6 +220,38 @@ class FileDiscovery:
     ):
         """Scan a single directory and queue results."""
         try:
+            dir_mtime_ns: Optional[int] = None
+            try:
+                dir_stat = directory.stat(follow_symlinks=self.options.follow_symlinks)
+                dir_mtime_ns = getattr(
+                    dir_stat,
+                    "st_mtime_ns",
+                    int(dir_stat.st_mtime * 1_000_000_000),
+                )
+                with self._dir_mtimes_lock:
+                    self._dir_mtimes_sink[str(directory)] = dir_mtime_ns
+            except (OSError, PermissionError):
+                dir_mtime_ns = None
+
+            dir_key = normalize_discovery_path(str(directory))
+            if (
+                self._prior_session_id
+                and self._prior_dir_mtimes is not None
+                and self._get_prior_files_under_dir is not None
+                and dir_mtime_ns is not None
+            ):
+                prior_mtime_ns = self._prior_dir_mtimes.get(dir_key)
+                if prior_mtime_ns is not None and prior_mtime_ns == dir_mtime_ns:
+                    for metadata in self._get_prior_files_under_dir(str(directory)):
+                        if self._cancelled:
+                            return
+                        self._stats["files_reused_from_prior_inventory"] += 1
+                        result_queue.put(metadata)
+                    self._stats["dirs_reused"] += 1
+                    self._stats["dirs_skipped_via_manifest"] += 1
+                    self._stats["dirs_scanned"] += 1
+                    return
+
             # Use str() for Windows/long-path compatibility with os.scandir
             with os.scandir(str(directory)) as entries:
                 for entry in entries:
@@ -205,7 +276,9 @@ class FileDiscovery:
                             continue
                         
                         # Get file stats
-                        st = entry.stat(follow_symlinks=self.options.follow_symlinks)
+                        self._stats["stat_calls"] += 1
+                        with measure("discovery.stat"):
+                            st = entry.stat(follow_symlinks=self.options.follow_symlinks)
                         size = st.st_size
                         
                         # Size filters
@@ -222,13 +295,21 @@ class FileDiscovery:
                         
                         # Create metadata
                         mtime_ns = getattr(st, 'st_mtime_ns', int(st.st_mtime * 1_000_000_000))
+                        self._stats["resolve_calls"] += 1
+                        with measure("discovery.resolve"):
+                            path_str = (
+                                str(Path(entry.path).resolve())
+                                if self.options.resolve_paths
+                                else entry.path
+                            )
                         metadata = FileMetadata(
-                            path=str(Path(entry.path).resolve()),
+                            path=path_str,
                             size=size,
                             mtime_ns=mtime_ns,
                             inode=st.st_ino,
                         )
                         
+                        self._stats["files_discovered_fresh"] += 1
                         result_queue.put(metadata)
                         
                     except (OSError, PermissionError) as e:

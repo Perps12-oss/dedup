@@ -10,8 +10,11 @@ from pathlib import Path
 from dedup.engine.models import (
     FileMetadata, DuplicateGroup, DeletionPlan, DeletionResult,
     DeletionPolicy,
+    DeletionVerificationGroupStatus,
+    DeletionVerificationTargetStatus,
 )
 from dedup.engine.deletion import DeletionEngine, DeletionVerifier, preview_deletion
+from dedup.infrastructure.persistence import Persistence
 
 
 def test_plan_keep_not_in_delete_list():
@@ -119,3 +122,95 @@ def test_verifier_rejects_changed_file(temp_dir):
         }
     )
     assert error in {"File size changed", "File mtime changed"}
+
+
+def test_post_delete_verification_marks_deleted_targets(temp_dir):
+    deleted_path = temp_dir / "deleted.txt"
+    deleted_path.write_text("x")
+    plan = DeletionPlan(
+        scan_id="scan-verify-1",
+        policy=DeletionPolicy.TRASH,
+        groups=[{
+            "group_id": "g1",
+            "keep": str(temp_dir / "keep.txt"),
+            "delete": [str(deleted_path)],
+            "delete_details": [{
+                "path": str(deleted_path),
+                "expected_size": deleted_path.stat().st_size,
+                "expected_mtime_ns": deleted_path.stat().st_mtime_ns,
+            }],
+        }],
+    )
+    result = DeletionResult(
+        scan_id=plan.scan_id,
+        policy=plan.policy,
+        deleted_files=[str(deleted_path)],
+    )
+
+    verification = DeletionEngine().verify_plan_result(plan, result)
+    assert verification.summary["deleted"] == 1
+    assert verification.summary["delete_targets_verified_deleted"] == 1
+    assert verification.summary["delete_groups_resolved"] == 1
+    assert verification.target_results[0].status == DeletionVerificationTargetStatus.DELETED
+    assert verification.group_results[0].status == DeletionVerificationGroupStatus.RESOLVED
+
+
+def test_post_delete_verification_marks_changed_after_plan(temp_dir):
+    changed_path = temp_dir / "changed.txt"
+    changed_path.write_text("before")
+    expected_size = changed_path.stat().st_size
+    expected_mtime_ns = changed_path.stat().st_mtime_ns
+    changed_path.write_text("after and longer")
+
+    plan = DeletionPlan(
+        scan_id="scan-verify-2",
+        policy=DeletionPolicy.TRASH,
+        groups=[{
+            "group_id": "g1",
+            "keep": str(temp_dir / "keep.txt"),
+            "delete": [str(changed_path)],
+            "delete_details": [{
+                "path": str(changed_path),
+                "expected_size": expected_size,
+                "expected_mtime_ns": expected_mtime_ns,
+            }],
+        }],
+    )
+
+    verification = DeletionEngine().verify_plan_result(
+        plan,
+        DeletionResult(scan_id=plan.scan_id, policy=plan.policy),
+    )
+    assert verification.summary["changed_after_plan"] == 1
+    assert verification.target_results[0].status == DeletionVerificationTargetStatus.CHANGED_AFTER_PLAN
+    assert verification.group_results[0].status == DeletionVerificationGroupStatus.UNRESOLVED
+
+
+def test_post_delete_verification_persists_summary(temp_dir):
+    persistence = Persistence(db_path=temp_dir / "delete-verify.db")
+    try:
+        target = temp_dir / "target.txt"
+        target.write_text("x")
+        plan = DeletionPlan(
+            scan_id="scan-verify-3",
+            policy=DeletionPolicy.TRASH,
+            groups=[{
+                "group_id": "g1",
+                "keep": str(temp_dir / "keep.txt"),
+                "delete": [str(target)],
+                "delete_details": [{
+                    "path": str(target),
+                    "expected_size": target.stat().st_size,
+                    "expected_mtime_ns": target.stat().st_mtime_ns,
+                }],
+            }],
+        )
+        verification = DeletionEngine(persistence=persistence).verify_plan_result(
+            plan,
+            DeletionResult(scan_id=plan.scan_id, policy=plan.policy),
+        )
+        stored = persistence.deletion_verification_repo.get_latest_for_session(plan.scan_id)
+        assert stored is not None
+        assert stored["summary_json"] == verification.summary
+    finally:
+        persistence.close()

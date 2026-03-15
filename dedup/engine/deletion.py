@@ -20,7 +20,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable
 import platform
 
-from .models import DeletionPlan, DeletionResult, DeletionPolicy, FileMetadata
+from .models import (
+    DeletionPlan,
+    DeletionPolicy,
+    DeletionResult,
+    DeletionVerificationGroup,
+    DeletionVerificationGroupStatus,
+    DeletionVerificationResult,
+    DeletionVerificationTarget,
+    DeletionVerificationTargetStatus,
+    FileMetadata,
+)
 
 
 class TrashStrategy:
@@ -105,6 +115,177 @@ class DeletionExecutor:
         progress_cb: Optional[Callable[[int, int, str], bool]] = None,
     ) -> DeletionResult:
         return self.engine._execute_plan(plan, progress_cb=progress_cb, verifier=self.verifier)
+
+
+@dataclass
+class DeletionOutcomeVerifier:
+    """Verify delete outcomes from the plan, not from a fresh scan."""
+
+    engine: "DeletionEngine"
+
+    def verify(self, plan: DeletionPlan, result: DeletionResult) -> DeletionVerificationResult:
+        verification = DeletionVerificationResult(
+            scan_id=plan.scan_id,
+            plan_id=plan.scan_id,
+            started_at=datetime.now(),
+        )
+        deleted_paths = set(result.deleted_files)
+
+        for group in plan.groups:
+            group_id = str(group.get("group_id", ""))
+            group_statuses: List[DeletionVerificationTargetStatus] = []
+            delete_details = group.get("delete_details") or [
+                {"path": path}
+                for path in group.get("delete", [])
+            ]
+
+            for target in delete_details:
+                path = str(target.get("path", ""))
+                status = DeletionVerificationTargetStatus.VERIFICATION_FAILED
+                detail = ""
+
+                if path in deleted_paths:
+                    status = DeletionVerificationTargetStatus.DELETED
+                else:
+                    file_path = Path(path)
+                    try:
+                        st = file_path.stat()
+                        current_mtime_ns = getattr(
+                            st, "st_mtime_ns", int(st.st_mtime * 1_000_000_000)
+                        )
+                        expected_size = target.get("expected_size")
+                        expected_mtime_ns = target.get("expected_mtime_ns")
+                        if expected_size is None or expected_mtime_ns is None:
+                            detail = "Missing expected metadata for verification"
+                        elif st.st_size != expected_size or current_mtime_ns != expected_mtime_ns:
+                            status = DeletionVerificationTargetStatus.CHANGED_AFTER_PLAN
+                            detail = "File changed after plan creation"
+                        else:
+                            status = DeletionVerificationTargetStatus.STILL_PRESENT
+                            detail = "File still present"
+                    except FileNotFoundError:
+                        status = DeletionVerificationTargetStatus.DELETED
+                    except (OSError, ValueError) as exc:
+                        detail = str(exc)
+
+                verification.target_results.append(
+                    DeletionVerificationTarget(
+                        path=path,
+                        status=status,
+                        group_id=group_id,
+                        detail=detail,
+                    )
+                )
+                group_statuses.append(status)
+
+            if any(
+                status == DeletionVerificationTargetStatus.VERIFICATION_FAILED
+                for status in group_statuses
+            ):
+                group_status = DeletionVerificationGroupStatus.VERIFICATION_INCOMPLETE
+                group_detail = "One or more targets could not be verified"
+            elif group_statuses and all(
+                status == DeletionVerificationTargetStatus.DELETED
+                for status in group_statuses
+            ):
+                group_status = DeletionVerificationGroupStatus.RESOLVED
+                group_detail = "All delete targets are gone"
+            elif any(
+                status == DeletionVerificationTargetStatus.DELETED
+                for status in group_statuses
+            ):
+                group_status = DeletionVerificationGroupStatus.PARTIALLY_RESOLVED
+                group_detail = "Some delete targets still need attention"
+            else:
+                group_status = DeletionVerificationGroupStatus.UNRESOLVED
+                group_detail = "No delete targets were confirmed removed"
+
+            verification.group_results.append(
+                DeletionVerificationGroup(
+                    group_id=group_id,
+                    status=group_status,
+                    keep_path=str(group.get("keep", "")),
+                    detail=group_detail,
+                )
+            )
+
+        verification.summary = {
+            "deleted": sum(
+                1
+                for item in verification.target_results
+                if item.status == DeletionVerificationTargetStatus.DELETED
+            ),
+            "still_present": sum(
+                1
+                for item in verification.target_results
+                if item.status == DeletionVerificationTargetStatus.STILL_PRESENT
+            ),
+            "changed_after_plan": sum(
+                1
+                for item in verification.target_results
+                if item.status == DeletionVerificationTargetStatus.CHANGED_AFTER_PLAN
+            ),
+            "verification_failed": sum(
+                1
+                for item in verification.target_results
+                if item.status == DeletionVerificationTargetStatus.VERIFICATION_FAILED
+            ),
+            "resolved_groups": sum(
+                1
+                for item in verification.group_results
+                if item.status == DeletionVerificationGroupStatus.RESOLVED
+            ),
+            "partially_resolved_groups": sum(
+                1
+                for item in verification.group_results
+                if item.status == DeletionVerificationGroupStatus.PARTIALLY_RESOLVED
+            ),
+            "unresolved_groups": sum(
+                1
+                for item in verification.group_results
+                if item.status == DeletionVerificationGroupStatus.UNRESOLVED
+            ),
+            "verification_incomplete_groups": sum(
+                1
+                for item in verification.group_results
+                if item.status == DeletionVerificationGroupStatus.VERIFICATION_INCOMPLETE
+            ),
+        }
+        verification.summary.update(
+            {
+                "delete_targets_planned": len(verification.target_results),
+                "delete_targets_verified_deleted": verification.summary["deleted"],
+                "delete_targets_still_present": verification.summary["still_present"],
+                "delete_targets_changed_after_plan": verification.summary["changed_after_plan"],
+                "delete_groups_resolved": verification.summary["resolved_groups"],
+                "delete_groups_partially_resolved": verification.summary["partially_resolved_groups"],
+                "delete_groups_unresolved": verification.summary["unresolved_groups"],
+            }
+        )
+        verification.completed_at = datetime.now()
+
+        if self.engine.persistence:
+            if self.engine.persistence.session_repo.get(plan.scan_id) is None:
+                self.engine.persistence.shadow_write_session(
+                    session_id=plan.scan_id,
+                    config_json='{"roots":[]}',
+                    config_hash="shadow",
+                    discovery_config_hash="shadow",
+                )
+            overall_status = "resolved"
+            if verification.summary["verification_failed"] or verification.summary["verification_incomplete_groups"]:
+                overall_status = "verification_incomplete"
+            elif verification.summary["still_present"] or verification.summary["changed_after_plan"]:
+                overall_status = "needs_attention"
+            self.engine.persistence.deletion_verification_repo.upsert(
+                plan_id=verification.plan_id,
+                session_id=plan.scan_id,
+                status=overall_status,
+                summary=verification.summary,
+                detail=verification.to_dict(),
+            )
+
+        return verification
 
 
 @dataclass
@@ -292,6 +473,13 @@ class DeletionEngine:
         progress_cb: Optional[Callable[[int, int, str], bool]] = None
     ) -> DeletionResult:
         return DeletionExecutor(self).execute(plan, progress_cb=progress_cb)
+
+    def verify_plan_result(
+        self,
+        plan: DeletionPlan,
+        result: DeletionResult,
+    ) -> DeletionVerificationResult:
+        return DeletionOutcomeVerifier(self).verify(plan, result)
 
     def _execute_plan(
         self,

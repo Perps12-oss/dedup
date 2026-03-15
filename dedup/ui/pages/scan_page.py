@@ -34,6 +34,12 @@ from ...orchestration.coordinator import ScanCoordinator
 from ...engine.models import ScanProgress, ScanResult
 
 
+def _fixed_width_path(path: str, width: int = 40) -> str:
+    """Truncate path to width and pad to fixed length to prevent layout flicker."""
+    s = truncate_path(path, width)
+    return s[:width].ljust(width)
+
+
 class ScanPage(ttk.Frame):
     """Live scan monitoring page — driven by ProjectionHub subscriptions."""
 
@@ -55,6 +61,8 @@ class ScanPage(ttk.Frame):
 
         self.vm           = ScanVM()
         self._after_id: Optional[str] = None
+        self._pending_defer: set = set()  # coalesce deferred renders
+        self._last_events_snapshot: Optional[tuple] = None  # (len, first, last) to skip no-op refresh
         self._build()
 
     # ------------------------------------------------------------------
@@ -83,33 +91,52 @@ class ScanPage(ttk.Frame):
     # Projection callbacks (always on Tk main thread via hub throttle)
     # ------------------------------------------------------------------
 
+    def _defer(self, fn, key: Optional[str] = None) -> None:
+        """Schedule a no-arg call on the next idle tick to avoid blocking hub delivery.
+        If key is set, only one pending call per key is scheduled (coalesce).
+        """
+        if key and key in self._pending_defer:
+            return
+        if key:
+            self._pending_defer.add(key)
+
+        def run():
+            if key:
+                self._pending_defer.discard(key)
+            if self.winfo_exists():
+                try:
+                    fn()
+                except Exception:
+                    pass
+        try:
+            self.after_idle(run)
+        except Exception:
+            if key:
+                self._pending_defer.discard(key)
+
     def _on_session(self, proj: SessionProjection) -> None:
         self.vm.session = proj
-        # Ribbon reflects resume policy
-        ribbon_variant = proj.resume_policy or "idle"
-        detail = proj.resume_reason or ""
+        detail = proj.current_phase.replace("_", " ").title() if proj.current_phase else ""
         if proj.status == "running":
-            self._ribbon.set_state(ribbon_variant or "scanning", detail=detail)
+            self._ribbon.set_state("scanning", detail=detail)
         elif proj.status == "completed":
             self._ribbon.set_state("completed", detail="Scan complete")
         elif proj.status in ("cancelled", "failed"):
-            self._ribbon.set_state("failed", detail=detail or proj.status)
-        self._render_phase_detail()
+            self._ribbon.set_state("failed", detail=proj.resume_reason or proj.status)
+        self._defer(self._render_phase_detail, "phase_detail")
 
     def _on_phases(self, phases: Dict[str, PhaseProjection]) -> None:
         self.vm.phases = phases
-        # Update timeline
         for pname, proj in phases.items():
             self._timeline.set_phase_state(pname, proj.timeline_state)
-        self._render_phase_detail()
+        self._defer(self._render_phase_detail, "phase_detail")
 
     def _on_metrics(self, proj: MetricsProjection) -> None:
         self.vm.metrics = proj
-        self._render_metrics()
+        self._defer(self._render_metrics, "metrics")
 
     def _on_compat(self, proj: CompatibilityProjection) -> None:
         self.vm.compat = proj
-        # Push resume info to ribbon if more specific than session projection
         if proj.overall_resume_outcome not in ("unknown", ""):
             state_map = {
                 "safe_resume":             "safe_resume",
@@ -120,11 +147,11 @@ class ScanPage(ttk.Frame):
             ribbon_state = state_map.get(proj.overall_resume_outcome, "idle")
             self._ribbon.set_state(ribbon_state,
                                    detail=proj.overall_resume_reason[:60])
-        self._render_work_saved()
+        self._defer(self._render_work_saved, "work_saved")
 
     def _on_events_log(self, entries: List[str]) -> None:
         self.vm.events_log = entries
-        self._render_events()
+        self._defer(self._render_events, "events")
 
     def _on_terminal(self, proj: SessionProjection) -> None:
         """Scan finished (any terminal status)."""
@@ -157,11 +184,17 @@ class ScanPage(ttk.Frame):
         self._metric_cards["reclaim"].update(
             fmt_bytes(m.reclaimable_bytes) if m.reclaimable_bytes else "—")
         self._metric_cards["elapsed"].update(fmt_duration(m.elapsed_s))
+        self._metric_cards["eta"].update(m.eta_label)
         self._phase_vars["Time"].set(fmt_duration(m.elapsed_s))
-        pct = (m.files_scanned / max(1, m.files_scanned + m.files_skipped) * 100
-               if (m.files_scanned + m.files_skipped) else 0)
-        if pct > 0:
+        # Progress: only show % when we have a meaningful total (files_skipped > 0).
+        # During discovery, files_skipped=0 so pct would wrongly show 100% — show file count instead.
+        if m.files_skipped > 0:
+            pct = (m.files_scanned / max(1, m.files_scanned + m.files_skipped) * 100)
             self._phase_vars["Progress"].set(f"{pct:.0f}%")
+        elif m.files_scanned > 0:
+            self._phase_vars["Progress"].set(f"{fmt_int(m.files_scanned)} files")
+        else:
+            self._phase_vars["Progress"].set("—")
 
     def _render_phase_detail(self) -> None:
         s = self.vm.session
@@ -178,14 +211,16 @@ class ScanPage(ttk.Frame):
             var.set(ws.get(key, "—"))
 
     def _render_events(self) -> None:
+        log = self.vm.events_log
+        display = log[:80]
+        snapshot = (len(log), display[0] if display else "", display[-1] if display else "")
+        if snapshot == self._last_events_snapshot:
+            return
+        self._last_events_snapshot = snapshot
         self._events_list.delete(0, "end")
-        for entry in self.vm.events_log[:100]:
+        for entry in display:
             self._events_list.insert("end", entry)
-        # Scroll to bottom so newest events (e.g. "Scan completed") are visible
-        if self.vm.events_log:
-            self._events_list.see("end")
-        # Scroll to bottom so newest events (e.g. "Scan completed") are visible
-        if self.vm.events_log:
+        if display:
             self._events_list.see("end")
 
     # ------------------------------------------------------------------
@@ -258,17 +293,20 @@ class ScanPage(ttk.Frame):
             ("skipped", f"{IC.SKIPPED} Skipped",   "0",  "neutral"),
             ("cands",   f"{IC.CANDIDATES} Cands",  "0",  "neutral"),
             ("groups",  f"{IC.GROUPS} Groups",     "0",  "accent"),
-            ("reclaim", f"{IC.RECLAIM} Estimate",  "—",  "positive"),
+            ("reclaim", f"{IC.RECLAIM} Reclaim",   "—",  "positive"),
             ("elapsed", f"{IC.SPEED}  Elapsed",    "0s", "neutral"),
+            ("eta",     "ETA",                     "—",  "neutral"),
         ]
+        # Fixed width so cards don't resize when values change (avoids flicker)
+        card_width = 110
         for i, (key, label, val, variant) in enumerate(specs):
-            c = MetricCard(body, label=label, value=val, variant=variant, width=0)
+            c = MetricCard(body, label=label, value=val, variant=variant, width=card_width)
             c.grid(row=i // 3, column=i % 3, sticky="nsew", padx=3, pady=3)
             self._metric_cards[key] = c
 
     def _build_work_saved(self, body: ttk.Frame):
-        body.columnconfigure(0, weight=1)
-        body.columnconfigure(1, weight=1)
+        body.columnconfigure(0, minsize=90)
+        body.columnconfigure(1, weight=1, minsize=140)
         self._work_vars: Dict[str, tk.StringVar] = {}
         rows = [
             ("Discovery reused",  "—"),
@@ -288,7 +326,9 @@ class ScanPage(ttk.Frame):
             self._work_vars[label] = var
 
     def _build_phase_detail(self, body: ttk.Frame):
-        body.columnconfigure(1, weight=1)
+        # Fixed column width so value text doesn't cause container resize/flicker
+        body.columnconfigure(0, minsize=92)
+        body.columnconfigure(1, weight=1, minsize=240)
         self._phase_vars: Dict[str, tk.StringVar] = {}
         rows = [
             ("Phase",          "—"),
@@ -301,9 +341,9 @@ class ScanPage(ttk.Frame):
             ttk.Label(body, text=label + ":", style="Panel.Muted.TLabel",
                       font=("Segoe UI", 8)).grid(row=i, column=0, sticky="w", pady=2)
             var = tk.StringVar(value=default)
-            ttk.Label(body, textvariable=var, style="Panel.TLabel",
-                      font=("Segoe UI", 8), wraplength=220).grid(
-                row=i, column=1, sticky="w", padx=(6, 0))
+            lbl = ttk.Label(body, textvariable=var, style="Panel.TLabel",
+                           font=("Segoe UI", 8), wraplength=240)
+            lbl.grid(row=i, column=1, sticky="w", padx=(6, 0))
             self._phase_vars[label] = var
         self._progress_bar = ttk.Progressbar(
             body, mode="indeterminate", length=240)
@@ -369,7 +409,7 @@ class ScanPage(ttk.Frame):
         if self._hub:
             if progress.current_file:
                 self.after(0, lambda f=progress.current_file:
-                           self._phase_vars["Current file"].set(truncate_path(f, 40)))
+                           self._phase_vars["Current file"].set(_fixed_width_path(f, 40)))
         else:
             # No hub — fall back to direct progress update
             self.after(0, lambda p=progress: self._update_display_direct(p))
@@ -380,7 +420,7 @@ class ScanPage(ttk.Frame):
         self._on_metrics(build_metrics_from_progress(progress))
         if progress.current_file:
             self._phase_vars["Current file"].set(
-                truncate_path(progress.current_file, 40))
+                _fixed_width_path(progress.current_file, 40))
         # Phase timeline
         from ..projections.phase_projection import canonical_phase
         canon = canonical_phase(progress.phase or "")

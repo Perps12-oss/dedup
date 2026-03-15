@@ -113,6 +113,8 @@ class DiagnosticsPage(ttk.Frame):
             ("Config Hash",      "—"),
             ("Schema Version",   "—"),
             ("Root Fingerprint", "—"),
+            ("Delete Verify",    "—"),
+            ("Bench",            "—"),
         ]
         for i, (label, default) in enumerate(fields):
             col = (i % 2) * 2
@@ -308,6 +310,23 @@ class DiagnosticsPage(ttk.Frame):
         self._ov_vars["Root Fingerprint"].set(
             (self.vm.root_fingerprint[:20] + "…") if len(self.vm.root_fingerprint) > 20
             else (self.vm.root_fingerprint or "—"))
+        verify = self.vm.deletion_verification_summary
+        self._ov_vars["Delete Verify"].set(
+            (
+                f"deleted={verify.get('deleted', 0)}, "
+                f"still={verify.get('still_present', 0)}, "
+                f"changed={verify.get('changed_after_plan', 0)}, "
+                f"failed={verify.get('verification_failed', 0)}"
+            ) if verify else "—"
+        )
+        bench = self.vm.benchmark_summary
+        self._ov_vars["Bench"].set(
+            (
+                f"{bench.get('discovery_reuse_mode', 'none')} "
+                f"disc={bench.get('discovery_elapsed_ms', 0)}ms "
+                f"total={bench.get('total_elapsed_ms', 0)}ms"
+            ) if bench else "—"
+        )
 
     def _populate_phases(self):
         self._phases_table.clear()

@@ -20,6 +20,7 @@ class SessionRepository:
         config_json: str,
         config_hash: str,
         root_fingerprint: Optional[str] = None,
+        discovery_config_hash: Optional[str] = None,
         status: str = "pending",
         current_phase: str = "discovery",
     ) -> None:
@@ -28,8 +29,8 @@ class SessionRepository:
             """
             INSERT OR REPLACE INTO scan_sessions (
                 session_id, created_at, updated_at, status, current_phase,
-                config_json, config_hash, root_fingerprint, started_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                config_json, config_hash, root_fingerprint, discovery_config_hash, started_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 session_id,
@@ -40,6 +41,7 @@ class SessionRepository:
                 config_json,
                 config_hash,
                 root_fingerprint,
+                discovery_config_hash,
                 now,
             ),
         )
@@ -92,5 +94,22 @@ class SessionRepository:
         rows = self.conn.execute(
             "SELECT * FROM scan_sessions WHERE status = ? ORDER BY updated_at DESC",
             (status,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_by_root_fingerprint(
+        self,
+        root_fingerprint: str,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        rows = self.conn.execute(
+            """
+            SELECT *
+            FROM scan_sessions
+            WHERE root_fingerprint = ?
+            ORDER BY updated_at DESC
+            LIMIT ?
+            """,
+            (root_fingerprint, limit),
         ).fetchall()
         return [dict(row) for row in rows]

@@ -83,6 +83,8 @@ class DiagnosticsVM:
                             "config_hash": str(h.get("config_hash", "")),
                             "schema_version": h.get("schema_version"),
                             "root_fingerprint": str(h.get("root_fingerprint", "")),
+                            "deletion_verification_summary": dict(h.get("deletion_verification_summary") or {}),
+                            "benchmark_summary": dict(h.get("benchmark_summary") or {}),
                         }
                         break
             except Exception:
@@ -122,6 +124,14 @@ class DiagnosticsVM:
     def root_fingerprint(self) -> str:
         return self._loaded_overview.get("root_fingerprint", "") or getattr(
             self.session, "scan_root", "")
+
+    @property
+    def deletion_verification_summary(self) -> Dict[str, int]:
+        return dict(self._loaded_overview.get("deletion_verification_summary") or {})
+
+    @property
+    def benchmark_summary(self) -> Dict[str, Any]:
+        return dict(self._loaded_overview.get("benchmark_summary") or {})
 
     @property
     def phases_table(self) -> List[Any]:
@@ -190,6 +200,7 @@ class DiagnosticsVM:
             "duplicate_groups",
             "deletion_plans",
             "deletion_audit",
+            "deletion_verifications",
         ]
         rows: List[ArtifactRow] = []
         for tbl in tables:

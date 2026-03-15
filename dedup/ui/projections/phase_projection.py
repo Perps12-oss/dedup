@@ -25,9 +25,11 @@ PHASE_LABELS: Dict[str, str] = {
     "result_assembly":"Results",
 }
 
-# Timeline key aliases — pipeline emits short names
+# Timeline key aliases — pipeline emits short names (including engine progress.phase)
 PHASE_ALIASES: Dict[str, str] = {
     "scanning":          "discovery",
+    "discovering":       "discovery",
+    "grouping":          "size_reduction",
     "size":              "size_reduction",
     "size_reduction":    "size_reduction",
     "partial":           "partial_hash",
