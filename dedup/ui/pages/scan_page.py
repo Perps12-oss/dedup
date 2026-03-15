@@ -55,6 +55,8 @@ class ScanPage(ttk.Frame):
 
         self.vm           = ScanVM()
         self._after_id: Optional[str] = None
+        self._pending_defer: set = set()  # coalesce deferred renders
+        self._last_events_snapshot: Optional[tuple] = None  # (len, first, last) to skip no-op refresh
         self._build()
 
     # ------------------------------------------------------------------
@@ -83,9 +85,31 @@ class ScanPage(ttk.Frame):
     # Projection callbacks (always on Tk main thread via hub throttle)
     # ------------------------------------------------------------------
 
+    def _defer(self, fn, key: Optional[str] = None) -> None:
+        """Schedule a no-arg call on the next idle tick to avoid blocking hub delivery.
+        If key is set, only one pending call per key is scheduled (coalesce).
+        """
+        if key and key in self._pending_defer:
+            return
+        if key:
+            self._pending_defer.add(key)
+
+        def run():
+            if key:
+                self._pending_defer.discard(key)
+            if self.winfo_exists():
+                try:
+                    fn()
+                except Exception:
+                    pass
+        try:
+            self.after_idle(run)
+        except Exception:
+            if key:
+                self._pending_defer.discard(key)
+
     def _on_session(self, proj: SessionProjection) -> None:
         self.vm.session = proj
-        # Ribbon reflects resume policy
         ribbon_variant = proj.resume_policy or "idle"
         detail = proj.resume_reason or ""
         if proj.status == "running":
@@ -94,22 +118,20 @@ class ScanPage(ttk.Frame):
             self._ribbon.set_state("completed", detail="Scan complete")
         elif proj.status in ("cancelled", "failed"):
             self._ribbon.set_state("failed", detail=detail or proj.status)
-        self._render_phase_detail()
+        self._defer(self._render_phase_detail, "phase_detail")
 
     def _on_phases(self, phases: Dict[str, PhaseProjection]) -> None:
         self.vm.phases = phases
-        # Update timeline
         for pname, proj in phases.items():
             self._timeline.set_phase_state(pname, proj.timeline_state)
-        self._render_phase_detail()
+        self._defer(self._render_phase_detail, "phase_detail")
 
     def _on_metrics(self, proj: MetricsProjection) -> None:
         self.vm.metrics = proj
-        self._render_metrics()
+        self._defer(self._render_metrics, "metrics")
 
     def _on_compat(self, proj: CompatibilityProjection) -> None:
         self.vm.compat = proj
-        # Push resume info to ribbon if more specific than session projection
         if proj.overall_resume_outcome not in ("unknown", ""):
             state_map = {
                 "safe_resume":             "safe_resume",
@@ -120,11 +142,11 @@ class ScanPage(ttk.Frame):
             ribbon_state = state_map.get(proj.overall_resume_outcome, "idle")
             self._ribbon.set_state(ribbon_state,
                                    detail=proj.overall_resume_reason[:60])
-        self._render_work_saved()
+        self._defer(self._render_work_saved, "work_saved")
 
     def _on_events_log(self, entries: List[str]) -> None:
         self.vm.events_log = entries
-        self._render_events()
+        self._defer(self._render_events, "events")
 
     def _on_terminal(self, proj: SessionProjection) -> None:
         """Scan finished (any terminal status)."""
@@ -178,14 +200,16 @@ class ScanPage(ttk.Frame):
             var.set(ws.get(key, "—"))
 
     def _render_events(self) -> None:
+        log = self.vm.events_log
+        display = log[:80]
+        snapshot = (len(log), display[0] if display else "", display[-1] if display else "")
+        if snapshot == self._last_events_snapshot:
+            return
+        self._last_events_snapshot = snapshot
         self._events_list.delete(0, "end")
-        for entry in self.vm.events_log[:100]:
+        for entry in display:
             self._events_list.insert("end", entry)
-        # Scroll to bottom so newest events (e.g. "Scan completed") are visible
-        if self.vm.events_log:
-            self._events_list.see("end")
-        # Scroll to bottom so newest events (e.g. "Scan completed") are visible
-        if self.vm.events_log:
+        if display:
             self._events_list.see("end")
 
     # ------------------------------------------------------------------

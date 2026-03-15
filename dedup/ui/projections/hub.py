@@ -60,17 +60,17 @@ from .compatibility_projection import (
 from .deletion_projection import DeletionReadinessProjection, EMPTY_DELETION
 
 # Poll interval (ms): how often the Tk main thread checks for dirty projections.
-POLL_MS = 50
+POLL_MS = 80
 
 # Throttle per projection type (ms between consecutive deliveries to UI).
-# 0 = deliver as soon as dirty (next poll tick).
+# 0 = deliver as soon as dirty (next poll tick). Larger values reduce UI work on large scans.
 THROTTLE_MS: Dict[str, int] = {
     "session":       0,
-    "phase":         0,
+    "phase":         150,   # was 0; avoid flooding timeline on rapid progress
     "compatibility": 0,
     "terminal":      0,
-    "metrics":       300,
-    "events_log":    750,
+    "metrics":       400,   # was 300
+    "events_log":    1200,  # was 750; listbox refresh is costly
     "deletion":      0,
 }
 
