@@ -15,6 +15,15 @@ import threading
 
 class ScanEventType(Enum):
     """Types of scan events."""
+    SESSION_STARTED = auto()
+    SESSION_COMPLETED = auto()
+    SESSION_CANCELLED = auto()
+    SESSION_FAILED = auto()
+    PHASE_STARTED = auto()
+    PHASE_PROGRESS = auto()
+    PHASE_CHECKPOINTED = auto()
+    PHASE_COMPLETED = auto()
+
     SCAN_STARTED = auto()
     SCAN_PROGRESS = auto()
     SCAN_COMPLETED = auto()

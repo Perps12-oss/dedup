@@ -11,7 +11,7 @@ from dedup.engine.models import (
     FileMetadata, DuplicateGroup, DeletionPlan, DeletionResult,
     DeletionPolicy,
 )
-from dedup.engine.deletion import DeletionEngine, preview_deletion
+from dedup.engine.deletion import DeletionEngine, DeletionVerifier, preview_deletion
 
 
 def test_plan_keep_not_in_delete_list():
@@ -84,3 +84,38 @@ def test_execute_plan_never_deletes_keep(temp_dir):
     # In dry run we don't actually delete; keep_file must not be in failed with "Cannot delete keep"
     for fail in result.failed_files:
         assert "keep" not in fail.get("error", "").lower() or "designated keep" in fail.get("error", "")
+
+
+def test_plan_records_delete_target_metadata():
+    group = DuplicateGroup(
+        group_id="g2",
+        group_hash="h2",
+        files=[
+            FileMetadata(path="/keep", size=10, mtime_ns=1, hash_full="full-1"),
+            FileMetadata(path="/delete", size=10, mtime_ns=2, hash_full="full-1"),
+        ],
+    )
+    engine = DeletionEngine()
+    plan = engine.create_plan_from_groups("s2", [group])
+    details = plan.groups[0]["delete_details"]
+    assert details[0]["path"] == "/delete"
+    assert details[0]["expected_size"] == 10
+    assert details[0]["expected_mtime_ns"] == 2
+
+
+def test_verifier_rejects_changed_file(temp_dir):
+    path = temp_dir / "file.txt"
+    path.write_text("old")
+    expected_size = path.stat().st_size
+    expected_mtime_ns = path.stat().st_mtime_ns
+    path.write_text("new content")
+
+    verifier = DeletionVerifier()
+    error = verifier.verify_target(
+        {
+            "path": str(path),
+            "expected_size": expected_size,
+            "expected_mtime_ns": expected_mtime_ns,
+        }
+    )
+    assert error in {"File size changed", "File mtime changed"}

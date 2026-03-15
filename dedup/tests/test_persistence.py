@@ -72,3 +72,39 @@ def test_hash_cache_set_get(persistence):
     assert cached["hash_full"] == "def"
     assert cached["size"] == 100
     assert cached["mtime_ns"] == 123
+
+
+def test_shadow_session_and_checkpoint_writes(persistence):
+    persistence.shadow_write_session(
+        session_id="session-1",
+        config_json='{"roots":[]}',
+        config_hash="cfg-hash",
+    )
+    row = persistence.session_repo.get("session-1")
+    assert row is not None
+    assert row["config_hash"] == "cfg-hash"
+
+    from dedup.engine.models import ScanPhase, PhaseStatus
+
+    persistence.shadow_write_checkpoint(
+        session_id="session-1",
+        phase_name=ScanPhase.DISCOVERY,
+        completed_units=25,
+        total_units=100,
+        status=PhaseStatus.RUNNING,
+        metadata_json={"bytes_found": 1234},
+    )
+    checkpoint = persistence.checkpoint_repo.get("session-1", ScanPhase.DISCOVERY)
+    assert checkpoint is not None
+    assert checkpoint.completed_units == 25
+    assert checkpoint.metadata_json["bytes_found"] == 1234
+
+
+def test_shadow_inventory_write(persistence):
+    files = [
+        FileMetadata(path="/a", size=10, mtime_ns=1),
+        FileMetadata(path="/b", size=20, mtime_ns=2),
+    ]
+    written = persistence.shadow_write_inventory("session-2", files)
+    assert written == 2
+    assert persistence.inventory_repo.count("session-2") == 2

@@ -26,6 +26,19 @@ class ScanWorkerCallbacks:
     on_cancel: Optional[Callable[[], None]] = None
 
 
+class CancellationToken:
+    """Cooperative cancellation token shared with the worker pipeline."""
+
+    def __init__(self):
+        self._event = threading.Event()
+
+    def cancel(self) -> None:
+        self._event.set()
+
+    def is_cancelled(self) -> bool:
+        return self._event.is_set()
+
+
 class ScanWorker:
     """
     Background worker for scan execution.
@@ -44,6 +57,7 @@ class ScanWorker:
         self,
         config: ScanConfig,
         event_bus: Optional[EventBus] = None,
+        persistence: Optional[Any] = None,
         hash_cache_getter: Optional[Callable[[str], Optional[Dict[str, Any]]]] = None,
         hash_cache_setter: Optional[Callable[[Any], bool]] = None,
         checkpoint_dir: Optional[Any] = None,
@@ -52,6 +66,7 @@ class ScanWorker:
         self.config = config
         self.event_bus = event_bus or get_event_bus()
         self.callbacks = ScanWorkerCallbacks()
+        self.persistence = persistence
         self._hash_cache_getter = hash_cache_getter
         self._hash_cache_setter = hash_cache_setter
         self._checkpoint_dir = checkpoint_dir
@@ -63,6 +78,7 @@ class ScanWorker:
         self._error: Optional[str] = None
         self._cancelled = False
         self._lock = threading.Lock()
+        self.cancellation_token = CancellationToken()
     
     @property
     def is_running(self) -> bool:
@@ -103,6 +119,7 @@ class ScanWorker:
                         resume_config,
                         scan_id=self._resume_scan_id,
                         checkpoint_dir=cp_path,
+                        persistence=self.persistence,
                         hash_cache_getter=self._hash_cache_getter,
                         hash_cache_setter=self._hash_cache_setter,
                     )
@@ -110,12 +127,14 @@ class ScanWorker:
                     self._pipeline = ResumableScanPipeline(
                         self.config,
                         checkpoint_dir=cp_path,
+                        persistence=self.persistence,
                         hash_cache_getter=self._hash_cache_getter,
                         hash_cache_setter=self._hash_cache_setter,
                     )
             else:
                 self._pipeline = ScanPipeline(
                     self.config,
+                    persistence=self.persistence,
                     hash_cache_getter=self._hash_cache_getter,
                     hash_cache_setter=self._hash_cache_setter,
                 )
@@ -127,6 +146,11 @@ class ScanWorker:
             
             # Publish event
             self.event_bus.publish(ScanEvent(
+                event_type=ScanEventType.SESSION_STARTED,
+                scan_id=scan_id,
+            ))
+
+            self.event_bus.publish(ScanEvent(
                 event_type=ScanEventType.SCAN_STARTED,
                 scan_id=scan_id,
             ))
@@ -136,6 +160,8 @@ class ScanWorker:
     def _run(self):
         """Internal run method (executed in background thread)."""
         try:
+            self._last_phase = None
+
             def on_progress(progress: ScanProgress):
                 # Throttle progress updates (max 10 per second)
                 current_time = time.time()
@@ -144,6 +170,19 @@ class ScanWorker:
                 
                 if current_time - self._last_progress_time >= 0.1:
                     self._last_progress_time = current_time
+                    if progress.phase != self._last_phase:
+                        if self._last_phase is not None:
+                            self.event_bus.publish(ScanEvent(
+                                event_type=ScanEventType.PHASE_COMPLETED,
+                                scan_id=progress.scan_id,
+                                payload={"phase": self._last_phase},
+                            ))
+                        self._last_phase = progress.phase
+                        self.event_bus.publish(ScanEvent(
+                            event_type=ScanEventType.PHASE_STARTED,
+                            scan_id=progress.scan_id,
+                            payload={"phase": progress.phase, "description": progress.phase_description},
+                        ))
                     
                     # Call user callback
                     if self.callbacks.on_progress:
@@ -158,6 +197,16 @@ class ScanWorker:
                         scan_id=progress.scan_id,
                         payload=progress.to_dict(),
                     ))
+                    self.event_bus.publish(ScanEvent(
+                        event_type=ScanEventType.PHASE_PROGRESS,
+                        scan_id=progress.scan_id,
+                        payload=progress.to_dict(),
+                    ))
+                    self.event_bus.publish(ScanEvent(
+                        event_type=ScanEventType.PHASE_CHECKPOINTED,
+                        scan_id=progress.scan_id,
+                        payload={"phase": progress.phase, "files_found": progress.files_found},
+                    ))
             
             # Run the scan
             self._result = self._pipeline.run(progress_cb=on_progress)
@@ -171,6 +220,11 @@ class ScanWorker:
                         pass
                 
                 self.event_bus.publish(ScanEvent(
+                    event_type=ScanEventType.SESSION_CANCELLED,
+                    scan_id=self._pipeline.scan_id,
+                ))
+
+                self.event_bus.publish(ScanEvent(
                     event_type=ScanEventType.SCAN_CANCELLED,
                     scan_id=self._pipeline.scan_id,
                 ))
@@ -182,6 +236,12 @@ class ScanWorker:
                     except Exception:
                         pass
                 
+                self.event_bus.publish(ScanEvent(
+                    event_type=ScanEventType.SESSION_COMPLETED,
+                    scan_id=self._pipeline.scan_id,
+                    payload={"result": self._result.to_dict()},
+                ))
+
                 self.event_bus.publish(ScanEvent(
                     event_type=ScanEventType.SCAN_COMPLETED,
                     scan_id=self._pipeline.scan_id,
@@ -198,6 +258,12 @@ class ScanWorker:
                     pass
             
             self.event_bus.publish(ScanEvent(
+                event_type=ScanEventType.SESSION_FAILED,
+                scan_id=self._pipeline.scan_id if self._pipeline else "unknown",
+                payload={"error": self._error},
+            ))
+
+            self.event_bus.publish(ScanEvent(
                 event_type=ScanEventType.SCAN_ERROR,
                 scan_id=self._pipeline.scan_id if self._pipeline else "unknown",
                 payload={"error": self._error},
@@ -207,6 +273,7 @@ class ScanWorker:
         """Request cancellation of the scan."""
         with self._lock:
             self._cancelled = True
+            self.cancellation_token.cancel()
             if self._pipeline:
                 self._pipeline.cancel()
     

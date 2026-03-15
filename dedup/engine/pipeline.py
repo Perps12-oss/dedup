@@ -13,22 +13,146 @@ All phases support cancellation and progress reporting.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator, Optional, Callable, List, Dict, Any
+from typing import Any, Callable, Dict, Iterator, List, Optional, Protocol
 import threading
 
 from .models import (
-    FileMetadata, DuplicateGroup, ScanConfig, ScanProgress,
-    ScanResult, DeletionPlan, DeletionResult, DeletionPolicy
+    CheckpointInfo,
+    DeletionPlan,
+    DeletionPolicy,
+    DeletionResult,
+    FileMetadata,
+    PhaseStatus,
+    ScanConfig,
+    ScanPhase,
+    ScanProgress,
+    ScanResult,
 )
-from .discovery import FileDiscovery, DiscoveryOptions
+from .discovery import DiscoveryOptions, FileDiscovery
 from .hashing import HashEngine
 from .grouping import GroupingEngine
 from .deletion import DeletionEngine
+
+
+@dataclass
+class PhaseChunkResult:
+    """Result metadata for a single phase execution step."""
+    completed_units: int = 0
+    total_units: Optional[int] = None
+    next_cursor: Optional[str] = None
+    events: List[Dict[str, Any]] = field(default_factory=list)
+    artifacts_written: List[str] = field(default_factory=list)
+    is_complete: bool = True
+    payload: Any = None
+
+
+@dataclass
+class PhaseSummary:
+    """Small phase completion summary."""
+    phase_name: ScanPhase
+    completed_units: int = 0
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+class PhaseRunner(Protocol):
+    """Protocol for persistence-aware pipeline phases."""
+
+    phase_name: ScanPhase
+
+    def can_resume(self, pipeline: "ScanPipeline", checkpoint: Optional[CheckpointInfo]) -> bool: ...
+    def run_chunk(
+        self,
+        pipeline: "ScanPipeline",
+        checkpoint: Optional[CheckpointInfo],
+        progress_cb: Optional[Callable[[ScanProgress], None]] = None,
+    ) -> PhaseChunkResult: ...
+    def finalize(self, pipeline: "ScanPipeline", result: PhaseChunkResult) -> PhaseSummary: ...
+
+
+@dataclass
+class DiscoveryPhaseRunner:
+    """Discovery phase with optional durable inventory shadow writes."""
+
+    phase_name: ScanPhase = ScanPhase.DISCOVERY
+
+    def can_resume(self, pipeline: "ScanPipeline", checkpoint: Optional[CheckpointInfo]) -> bool:
+        return checkpoint is not None and checkpoint.status == PhaseStatus.COMPLETED
+
+    def run_chunk(
+        self,
+        pipeline: "ScanPipeline",
+        checkpoint: Optional[CheckpointInfo],
+        progress_cb: Optional[Callable[[ScanProgress], None]] = None,
+    ) -> PhaseChunkResult:
+        files = pipeline._discover_files(progress_cb)
+        return PhaseChunkResult(
+            completed_units=len(files),
+            total_units=len(files),
+            artifacts_written=["inventory_files"] if pipeline.persistence else [],
+            payload=files,
+        )
+
+    def finalize(self, pipeline: "ScanPipeline", result: PhaseChunkResult) -> PhaseSummary:
+        return PhaseSummary(
+            phase_name=self.phase_name,
+            completed_units=result.completed_units,
+            metadata={"bytes_found": pipeline._bytes_found},
+        )
+
+
+@dataclass
+class GroupingPhaseRunner:
+    """Grouping/hash confirmation phase with durable artifact persistence."""
+
+    phase_name: ScanPhase = ScanPhase.RESULT_ASSEMBLY
+
+    def can_resume(self, pipeline: "ScanPipeline", checkpoint: Optional[CheckpointInfo]) -> bool:
+        return checkpoint is not None and checkpoint.status == PhaseStatus.COMPLETED
+
+    def run_chunk(
+        self,
+        pipeline: "ScanPipeline",
+        checkpoint: Optional[CheckpointInfo],
+        progress_cb: Optional[Callable[[ScanProgress], None]] = None,
+    ) -> PhaseChunkResult:
+        if progress_cb:
+            progress_cb(pipeline._create_progress(
+                phase="grouping",
+                phase_description="Finding duplicates...",
+                files_found=pipeline._files_found,
+                bytes_found=pipeline._bytes_found,
+            ))
+        duplicate_groups = pipeline.grouping.find_duplicates(
+            iter(pipeline._discovered_files),
+            pipeline.scan_id,
+            cancel_check=lambda: pipeline._cancelled,
+            persistence=pipeline.persistence,
+        )
+        return PhaseChunkResult(
+            completed_units=len(duplicate_groups),
+            total_units=len(duplicate_groups),
+            artifacts_written=[
+                "size_candidates",
+                "partial_hashes",
+                "partial_candidates",
+                "full_hashes",
+                "duplicate_groups",
+            ] if pipeline.persistence else [],
+            payload=duplicate_groups,
+        )
+
+    def finalize(self, pipeline: "ScanPipeline", result: PhaseChunkResult) -> PhaseSummary:
+        return PhaseSummary(
+            phase_name=self.phase_name,
+            completed_units=result.completed_units,
+        )
 
 
 @dataclass
@@ -50,6 +174,7 @@ class ScanPipeline:
     scan_id: str = field(default_factory=lambda: str(uuid.uuid4())[:12])
     hash_cache_getter: Optional[Callable[[str], Optional[Dict[str, Any]]]] = None
     hash_cache_setter: Optional[Callable[[FileMetadata], bool]] = None
+    persistence: Optional[Any] = None
     
     # Components
     discovery: FileDiscovery = field(init=False)
@@ -62,6 +187,8 @@ class ScanPipeline:
     _files_found: int = field(default=0, repr=False)
     _bytes_found: int = field(default=0, repr=False)
     _errors: List[str] = field(default_factory=list, repr=False)
+    _discovered_files: List[FileMetadata] = field(default_factory=list, repr=False)
+    phase_runners: List[PhaseRunner] = field(default_factory=list, init=False, repr=False)
     
     def __post_init__(self):
         # Initialize components
@@ -74,6 +201,10 @@ class ScanPipeline:
             hash_engine=self.hash_engine,
             progress_cb=None,
         )
+        self.phase_runners = [
+            DiscoveryPhaseRunner(),
+            GroupingPhaseRunner(),
+        ]
     
     def cancel(self):
         """Request cancellation of the scan."""
@@ -96,6 +227,49 @@ class ScanPipeline:
             timestamp=time.time(),
             **kwargs
         )
+
+    def _config_hash(self) -> str:
+        payload = json.dumps(self.config.to_dict(), sort_keys=True).encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
+
+    def _initialize_durable_session(self) -> None:
+        if not self.persistence:
+            return
+        roots = [str(root) for root in self.config.roots]
+        root_fingerprint = hashlib.sha256("|".join(sorted(roots)).encode("utf-8")).hexdigest()
+        self.persistence.shadow_write_session(
+            session_id=self.scan_id,
+            config_json=json.dumps(self.config.to_dict()),
+            config_hash=self._config_hash(),
+            root_fingerprint=root_fingerprint,
+            status="running",
+            current_phase=ScanPhase.DISCOVERY.value,
+        )
+
+    def _update_phase_checkpoint(
+        self,
+        phase_name: ScanPhase,
+        completed_units: int,
+        total_units: Optional[int],
+        status: PhaseStatus,
+        metadata_json: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not self.persistence:
+            return
+        self.persistence.shadow_write_checkpoint(
+            session_id=self.scan_id,
+            phase_name=phase_name,
+            completed_units=completed_units,
+            total_units=total_units,
+            status=status,
+            metadata_json=metadata_json or {},
+        )
+        self.persistence.shadow_update_session(
+            session_id=self.scan_id,
+            status="running" if status != PhaseStatus.FAILED else "failed",
+            current_phase=phase_name.value,
+            failure_reason=(metadata_json or {}).get("error"),
+        )
     
     def run(
         self,
@@ -112,6 +286,7 @@ class ScanPipeline:
         """
         self._start_time = time.time()
         self.grouping.progress_cb = progress_cb
+        self._initialize_durable_session()
         
         result = ScanResult(
             scan_id=self.scan_id,
@@ -120,40 +295,51 @@ class ScanPipeline:
         )
         
         try:
-            # Phase 1: Discovery
-            if progress_cb:
-                progress_cb(self._create_progress(
-                    phase="discovering",
-                    phase_description="Discovering files...",
-                ))
-            
-            discovered_files = self._discover_files(progress_cb)
-            
-            if self._cancelled:
-                result.errors.append("Scan cancelled by user")
-                result.completed_at = datetime.now()
-                return result
+            duplicate_groups = []
+            for runner in self.phase_runners:
+                checkpoint = None
+                if self.persistence:
+                    checkpoint = self.persistence.checkpoint_repo.get(self.scan_id, runner.phase_name)
+                if checkpoint and runner.can_resume(self, checkpoint):
+                    if runner.phase_name == ScanPhase.DISCOVERY and self.persistence:
+                        self._discovered_files = list(self.persistence.inventory_repo.iter_by_session(self.scan_id))
+                        self._files_found = len(self._discovered_files)
+                        self._bytes_found = sum(file.size for file in self._discovered_files)
+                    continue
 
-            if not discovered_files and self.config.roots:
-                result.errors.append(
-                    "No files were found. Check that the folder path is correct, "
-                    "readable, and contains files (check filters: min size, extensions)."
+                phase_status = PhaseStatus.RUNNING
+                self._update_phase_checkpoint(runner.phase_name, 0, None, phase_status)
+                phase_result = runner.run_chunk(self, checkpoint, progress_cb)
+                summary = runner.finalize(self, phase_result)
+                self._update_phase_checkpoint(
+                    runner.phase_name,
+                    phase_result.completed_units,
+                    phase_result.total_units,
+                    PhaseStatus.COMPLETED,
+                    metadata_json=summary.metadata,
                 )
-            
-            # Phase 2-4: Grouping and hashing
-            if progress_cb:
-                progress_cb(self._create_progress(
-                    phase="grouping",
-                    phase_description="Finding duplicates...",
-                    files_found=self._files_found,
-                    bytes_found=self._bytes_found,
-                ))
-            
-            duplicate_groups = self.grouping.find_duplicates(
-                iter(discovered_files),
-                self.scan_id,
-                cancel_check=lambda: self._cancelled
-            )
+
+                if runner.phase_name == ScanPhase.DISCOVERY:
+                    self._discovered_files = phase_result.payload or []
+                    if not self._discovered_files and self.config.roots:
+                        result.errors.append(
+                            "No files were found. Check that the folder path is correct, "
+                            "readable, and contains files (check filters: min size, extensions)."
+                        )
+                else:
+                    duplicate_groups = phase_result.payload or []
+
+                if self._cancelled:
+                    result.errors.append("Scan cancelled by user")
+                    result.completed_at = datetime.now()
+                    if self.persistence:
+                        self.persistence.shadow_update_session(
+                            session_id=self.scan_id,
+                            status="cancelled",
+                            current_phase=runner.phase_name.value,
+                            completed=True,
+                        )
+                    return result
             
             # Build result
             result.files_scanned = self._files_found
@@ -169,6 +355,14 @@ class ScanPipeline:
         except Exception as e:
             self._errors.append(str(e))
             result.errors = self._errors
+            if self.persistence:
+                self.persistence.shadow_update_session(
+                    session_id=self.scan_id,
+                    status="failed",
+                    current_phase=ScanPhase.RESULT_ASSEMBLY.value,
+                    failure_reason=str(e),
+                    completed=True,
+                )
             if progress_cb:
                 progress_cb(self._create_progress(
                     phase="error",
@@ -179,6 +373,18 @@ class ScanPipeline:
         
         finally:
             result.completed_at = datetime.now()
+            if self.persistence and not self._cancelled and not result.errors:
+                self.persistence.shadow_update_session(
+                    session_id=self.scan_id,
+                    status="completed",
+                    current_phase=ScanPhase.RESULT_ASSEMBLY.value,
+                    metrics={
+                        "files_scanned": result.files_scanned,
+                        "duplicates_found": result.total_duplicates,
+                        "reclaimable_bytes": result.total_reclaimable_bytes,
+                    },
+                    completed=True,
+                )
             
             if progress_cb:
                 progress_cb(self._create_progress(
@@ -204,13 +410,26 @@ class ScanPipeline:
         last_progress_time = 0
         progress_interval = self.config.progress_interval_ms / 1000
         
+        batch: List[FileMetadata] = []
         for file in self.discovery.discover():
             if self._cancelled:
                 break
             
             files.append(file)
+            batch.append(file)
             self._files_found += 1
             self._bytes_found += file.size
+
+            if self.persistence and len(batch) >= self.config.batch_size:
+                self.persistence.shadow_write_inventory(self.scan_id, batch)
+                self._update_phase_checkpoint(
+                    ScanPhase.DISCOVERY,
+                    completed_units=self._files_found,
+                    total_units=None,
+                    status=PhaseStatus.RUNNING,
+                    metadata_json={"bytes_found": self._bytes_found},
+                )
+                batch = []
             
             # Throttle progress updates
             current_time = time.time()
@@ -223,6 +442,16 @@ class ScanPipeline:
                     current_file=file.path,
                 ))
                 last_progress_time = current_time
+
+        if self.persistence and batch:
+            self.persistence.shadow_write_inventory(self.scan_id, batch)
+            self._update_phase_checkpoint(
+                ScanPhase.DISCOVERY,
+                completed_units=self._files_found,
+                total_units=self._files_found,
+                status=PhaseStatus.RUNNING,
+                metadata_json={"bytes_found": self._bytes_found},
+            )
         
         return files
     
@@ -243,7 +472,7 @@ class ScanPipeline:
         Returns:
             DeletionPlan
         """
-        engine = DeletionEngine()
+        engine = DeletionEngine(persistence=self.persistence)
         return engine.create_plan_from_groups(
             scan_id=result.scan_id,
             groups=result.duplicate_groups,
@@ -268,7 +497,7 @@ class ScanPipeline:
         Returns:
             DeletionResult
         """
-        engine = DeletionEngine(dry_run=dry_run)
+        engine = DeletionEngine(dry_run=dry_run, persistence=self.persistence)
         return engine.execute_plan(plan, progress_cb)
 
 

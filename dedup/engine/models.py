@@ -41,6 +41,97 @@ class DeletionPolicy(str, Enum):
     PERMANENT = "permanent"
 
 
+class ScanPhase(str, Enum):
+    """Durable pipeline phases."""
+    DISCOVERY = "discovery"
+    SIZE_REDUCTION = "size_reduction"
+    PARTIAL_HASH = "partial_hash"
+    FULL_HASH = "full_hash"
+    RESULT_ASSEMBLY = "result_assembly"
+    DELETE_PLAN = "delete_plan"
+
+
+class PhaseStatus(str, Enum):
+    """Status for phase checkpoint state."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+@dataclass(slots=True, frozen=True)
+class FileRecord:
+    """Durable inventory row used by the persistence-backed pipeline."""
+    path: str
+    size_bytes: int
+    mtime_ns: int
+    inode: Optional[int] = None
+    device: Optional[str] = None
+    extension: Optional[str] = None
+    media_kind: Optional[str] = None
+    discovery_status: str = "discovered"
+
+    def to_file_metadata(self) -> "FileMetadata":
+        return FileMetadata(
+            path=self.path,
+            size=self.size_bytes,
+            mtime_ns=self.mtime_ns,
+            inode=self.inode,
+            status=FileStatus.SCANNED,
+        )
+
+    @classmethod
+    def from_file_metadata(cls, file: "FileMetadata") -> "FileRecord":
+        return cls(
+            path=file.path,
+            size_bytes=file.size,
+            mtime_ns=file.mtime_ns,
+            inode=file.inode,
+            extension=file.extension or None,
+        )
+
+
+@dataclass(slots=True)
+class CheckpointInfo:
+    """Durable checkpoint metadata for resumable phase execution."""
+    session_id: str
+    phase_name: ScanPhase
+    chunk_cursor: Optional[str] = None
+    completed_units: int = 0
+    total_units: Optional[int] = None
+    status: PhaseStatus = PhaseStatus.PENDING
+    updated_at: datetime = field(default_factory=datetime.now)
+    metadata_json: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "session_id": self.session_id,
+            "phase_name": self.phase_name.value,
+            "chunk_cursor": self.chunk_cursor,
+            "completed_units": self.completed_units,
+            "total_units": self.total_units,
+            "status": self.status.value,
+            "updated_at": self.updated_at.isoformat(),
+            "metadata_json": self.metadata_json,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "CheckpointInfo":
+        return cls(
+            session_id=data["session_id"],
+            phase_name=ScanPhase(data["phase_name"]),
+            chunk_cursor=data.get("chunk_cursor"),
+            completed_units=data.get("completed_units", 0),
+            total_units=data.get("total_units"),
+            status=PhaseStatus(data.get("status", PhaseStatus.PENDING.value)),
+            updated_at=datetime.fromisoformat(data["updated_at"])
+            if data.get("updated_at")
+            else datetime.now(),
+            metadata_json=data.get("metadata_json") or {},
+        )
+
+
 @dataclass(slots=True, frozen=True)
 class FileMetadata:
     """
