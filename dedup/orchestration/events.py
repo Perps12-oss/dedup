@@ -138,9 +138,21 @@ class EventBus:
         for callback in callbacks:
             try:
                 callback(event)
-            except Exception:
-                # Don't let subscriber errors break the bus
-                pass
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Event bus subscriber error (event_type=%s): %s",
+                    getattr(event, "event_type", "?"), e,
+                )
+                try:
+                    from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
+                    get_diagnostics_recorder().record(
+                        CATEGORY_CALLBACK,
+                        "Event subscriber failed",
+                        f"{getattr(event, 'event_type', '?')}: {e}",
+                    )
+                except Exception:
+                    pass
 
 
 # Global event bus instance

@@ -34,11 +34,14 @@ UI event type labels (for subscription keys)
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from typing import Any, Callable, Dict, List, Optional
 
 from ...orchestration.events import EventBus, ScanEvent, ScanEventType
+
+_log = logging.getLogger(__name__)
 
 from .session_projection import (
     SessionProjection, EMPTY_SESSION, build_session_from_event,
@@ -427,8 +430,14 @@ class ProjectionHub:
             return
         try:
             self._root.after(POLL_MS, self._poll)
-        except Exception:
-            pass
+        except Exception as e:
+            if self._alive:
+                _log.warning("Hub poll schedule failed (root may be destroyed): %s", e)
+                try:
+                    from ...infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_HUB_DELIVERY
+                    get_diagnostics_recorder().record(CATEGORY_HUB_DELIVERY, "Poll schedule failed", str(e))
+                except Exception:
+                    pass
 
     def _poll(self) -> None:
         """Called on Tk main thread every POLL_MS ms."""
@@ -437,8 +446,13 @@ class ProjectionHub:
         now = time.monotonic()
         try:
             self._flush(now)
-        except Exception:
-            pass
+        except Exception as e:
+            _log.warning("Hub flush failed: %s", e)
+            try:
+                from ...infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_HUB_DELIVERY
+                get_diagnostics_recorder().record(CATEGORY_HUB_DELIVERY, "Flush failed", str(e))
+            except Exception:
+                pass
         self._schedule_poll()
 
     def _flush(self, now: float) -> None:
@@ -461,8 +475,15 @@ class ProjectionHub:
             for cb in callbacks:
                 try:
                     cb(snapshot)
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log.warning("Hub delivery callback failed for %s: %s", ptype, e)
+                    try:
+                        from ...infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_HUB_DELIVERY
+                        get_diagnostics_recorder().record(
+                            CATEGORY_HUB_DELIVERY, f"Callback failed ({ptype})", str(e)
+                        )
+                    except Exception:
+                        pass
 
     def _snapshot(self, ptype: str) -> Any:
         """Return the current snapshot for a projection type (called under lock)."""

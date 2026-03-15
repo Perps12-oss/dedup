@@ -188,8 +188,14 @@ class ScanWorker:
                     if self.callbacks.on_progress:
                         try:
                             self.callbacks.on_progress(progress)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            import logging
+                            logging.getLogger(__name__).warning("Progress callback failed: %s", e)
+                            try:
+                                from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
+                                get_diagnostics_recorder().record(CATEGORY_CALLBACK, "Progress callback failed", str(e))
+                            except Exception:
+                                pass
                     
                     # Publish event
                     self.event_bus.publish(ScanEvent(
@@ -219,8 +225,14 @@ class ScanWorker:
                 if self.callbacks.on_cancel:
                     try:
                         self.callbacks.on_cancel()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        import logging
+                        logging.getLogger(__name__).warning("Cancel callback failed: %s", e)
+                        try:
+                            from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
+                            get_diagnostics_recorder().record(CATEGORY_CALLBACK, "Cancel callback failed", str(e))
+                        except Exception:
+                            pass
                 
                 self.event_bus.publish(ScanEvent(
                     event_type=ScanEventType.SESSION_CANCELLED,
@@ -236,8 +248,14 @@ class ScanWorker:
                 if self.callbacks.on_complete:
                     try:
                         self.callbacks.on_complete(self._result)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        import logging
+                        logging.getLogger(__name__).warning("Complete callback failed: %s", e)
+                        try:
+                            from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
+                            get_diagnostics_recorder().record(CATEGORY_CALLBACK, "Complete callback failed", str(e))
+                        except Exception:
+                            pass
                 
                 self.event_bus.publish(ScanEvent(
                     event_type=ScanEventType.SESSION_COMPLETED,
@@ -257,8 +275,14 @@ class ScanWorker:
             if self.callbacks.on_error:
                 try:
                     self.callbacks.on_error(self._error)
-                except Exception:
-                    pass
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).warning("Error callback failed: %s", e)
+                    try:
+                        from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
+                        get_diagnostics_recorder().record(CATEGORY_CALLBACK, "Error callback failed", str(e))
+                    except Exception:
+                        pass
             
             self.event_bus.publish(ScanEvent(
                 event_type=ScanEventType.SESSION_FAILED,
