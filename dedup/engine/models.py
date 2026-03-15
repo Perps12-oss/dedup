@@ -82,6 +82,22 @@ class ResumeReason(str, Enum):
     NEW_SCAN = "new_scan"
 
 
+class DeletionVerificationTargetStatus(str, Enum):
+    """Verification outcome for an individual delete target."""
+    DELETED = "deleted"
+    STILL_PRESENT = "still_present"
+    CHANGED_AFTER_PLAN = "changed_after_plan"
+    VERIFICATION_FAILED = "verification_failed"
+
+
+class DeletionVerificationGroupStatus(str, Enum):
+    """Verification outcome for a duplicate group after deletion."""
+    RESOLVED = "resolved"
+    PARTIALLY_RESOLVED = "partially_resolved"
+    UNRESOLVED = "unresolved"
+    VERIFICATION_INCOMPLETE = "verification_incomplete"
+
+
 @dataclass(slots=True)
 class PhaseCompatibilityReport:
     """Per-phase compatibility result for resume decision."""
@@ -403,9 +419,15 @@ class ScanConfig:
     full_hash_workers: int = 4  # Parallel hash workers
     
     # Performance options
-    batch_size: int = 1000  # Process files in batches
+    batch_size: int = 5000  # Process files in batches (inventory writes)
     progress_interval_ms: int = 100  # Progress update interval
-    
+    resolve_paths: bool = False  # Path.resolve() per file; expensive on Windows/OneDrive
+    checkpoint_every_files: int = 5000  # Checkpoint write cadence during discovery
+    discovery_max_workers: Optional[int] = None  # Discovery threads (None = auto, 4 default)
+    sqlite_wal: bool = True  # Use WAL mode for faster writes
+    sqlite_synchronous: str = "NORMAL"  # OFF | NORMAL | FULL
+    incremental_discovery: bool = True  # Reuse compatible prior discovery state when safe
+
     # Mode
     mode: PipelineMode = PipelineMode.EXACT
     
@@ -436,6 +458,12 @@ class ScanConfig:
             "full_hash_workers": self.full_hash_workers,
             "batch_size": self.batch_size,
             "progress_interval_ms": self.progress_interval_ms,
+            "resolve_paths": self.resolve_paths,
+            "checkpoint_every_files": self.checkpoint_every_files,
+            "discovery_max_workers": self.discovery_max_workers,
+            "sqlite_wal": self.sqlite_wal,
+            "sqlite_synchronous": self.sqlite_synchronous,
+            "incremental_discovery": self.incremental_discovery,
             "mode": self.mode.value,
         }
     
@@ -454,8 +482,14 @@ class ScanConfig:
             hash_algorithm=data.get("hash_algorithm", "xxhash64"),
             partial_hash_bytes=data.get("partial_hash_bytes", 4096),
             full_hash_workers=data.get("full_hash_workers", 4),
-            batch_size=data.get("batch_size", 1000),
+            batch_size=data.get("batch_size", 5000),
             progress_interval_ms=data.get("progress_interval_ms", 100),
+            resolve_paths=data.get("resolve_paths", False),
+            checkpoint_every_files=data.get("checkpoint_every_files", 5000),
+            discovery_max_workers=data.get("discovery_max_workers"),
+            sqlite_wal=data.get("sqlite_wal", True),
+            sqlite_synchronous=data.get("sqlite_synchronous", "NORMAL"),
+            incremental_discovery=data.get("incremental_discovery", True),
             mode=PipelineMode(data.get("mode", "exact")),
         )
         return config
@@ -569,6 +603,8 @@ class ScanResult:
     
     # Errors
     errors: List[str] = field(default_factory=list)
+    incremental_discovery_report: Optional[Dict[str, Any]] = None
+    benchmark_report: Optional[Dict[str, Any]] = None
     
     @property
     def duration_seconds(self) -> float:
@@ -596,6 +632,8 @@ class ScanResult:
             "total_duplicates": self.total_duplicates,
             "total_reclaimable_bytes": self.total_reclaimable_bytes,
             "errors": self.errors,
+            "incremental_discovery_report": self.incremental_discovery_report,
+            "benchmark_report": self.benchmark_report,
         }
     
     @classmethod
@@ -613,6 +651,8 @@ class ScanResult:
             total_duplicates=data.get("total_duplicates", 0),
             total_reclaimable_bytes=data.get("total_reclaimable_bytes", 0),
             errors=data.get("errors", []),
+            incremental_discovery_report=data.get("incremental_discovery_report"),
+            benchmark_report=data.get("benchmark_report"),
         )
 
 
@@ -660,6 +700,7 @@ class DeletionResult:
     deleted_files: List[str] = field(default_factory=list)
     failed_files: List[Dict[str, str]] = field(default_factory=list)
     bytes_reclaimed: int = 0
+    verification_summary: Optional[Dict[str, int]] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     
@@ -684,6 +725,64 @@ class DeletionResult:
             "deleted_files": self.deleted_files,
             "failed_files": self.failed_files,
             "bytes_reclaimed": self.bytes_reclaimed,
+            "verification_summary": self.verification_summary,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+        }
+
+
+@dataclass(slots=True)
+class DeletionVerificationTarget:
+    """Verification result for one delete target."""
+    path: str
+    status: DeletionVerificationTargetStatus
+    group_id: str = ""
+    detail: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "path": self.path,
+            "status": self.status.value,
+            "group_id": self.group_id,
+            "detail": self.detail,
+        }
+
+
+@dataclass(slots=True)
+class DeletionVerificationGroup:
+    """Verification result for one duplicate group."""
+    group_id: str
+    status: DeletionVerificationGroupStatus
+    keep_path: str = ""
+    detail: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "group_id": self.group_id,
+            "status": self.status.value,
+            "keep_path": self.keep_path,
+            "detail": self.detail,
+        }
+
+
+@dataclass(slots=True)
+class DeletionVerificationResult:
+    """Summary of post-delete verification without running a rescan."""
+    scan_id: str
+    plan_id: str
+    target_results: List[DeletionVerificationTarget] = field(default_factory=list)
+    group_results: List[DeletionVerificationGroup] = field(default_factory=list)
+    summary: Dict[str, int] = field(default_factory=dict)
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "scan_id": self.scan_id,
+            "plan_id": self.plan_id,
+            "target_results": [item.to_dict() for item in self.target_results],
+            "group_results": [item.to_dict() for item in self.group_results],
+            "summary": dict(self.summary),
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
         }

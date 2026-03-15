@@ -34,6 +34,12 @@ from ...orchestration.coordinator import ScanCoordinator
 from ...engine.models import ScanProgress, ScanResult
 
 
+def _fixed_width_path(path: str, width: int = 40) -> str:
+    """Truncate path to width and pad to fixed length to prevent layout flicker."""
+    s = truncate_path(path, width)
+    return s[:width].ljust(width)
+
+
 class ScanPage(ttk.Frame):
     """Live scan monitoring page — driven by ProjectionHub subscriptions."""
 
@@ -110,14 +116,13 @@ class ScanPage(ttk.Frame):
 
     def _on_session(self, proj: SessionProjection) -> None:
         self.vm.session = proj
-        ribbon_variant = proj.resume_policy or "idle"
-        detail = proj.resume_reason or ""
+        detail = proj.current_phase.replace("_", " ").title() if proj.current_phase else ""
         if proj.status == "running":
-            self._ribbon.set_state(ribbon_variant or "scanning", detail=detail)
+            self._ribbon.set_state("scanning", detail=detail)
         elif proj.status == "completed":
             self._ribbon.set_state("completed", detail="Scan complete")
         elif proj.status in ("cancelled", "failed"):
-            self._ribbon.set_state("failed", detail=detail or proj.status)
+            self._ribbon.set_state("failed", detail=proj.resume_reason or proj.status)
         self._defer(self._render_phase_detail, "phase_detail")
 
     def _on_phases(self, phases: Dict[str, PhaseProjection]) -> None:
@@ -179,11 +184,17 @@ class ScanPage(ttk.Frame):
         self._metric_cards["reclaim"].update(
             fmt_bytes(m.reclaimable_bytes) if m.reclaimable_bytes else "—")
         self._metric_cards["elapsed"].update(fmt_duration(m.elapsed_s))
+        self._metric_cards["eta"].update(m.eta_label)
         self._phase_vars["Time"].set(fmt_duration(m.elapsed_s))
-        pct = (m.files_scanned / max(1, m.files_scanned + m.files_skipped) * 100
-               if (m.files_scanned + m.files_skipped) else 0)
-        if pct > 0:
+        # Progress: only show % when we have a meaningful total (files_skipped > 0).
+        # During discovery, files_skipped=0 so pct would wrongly show 100% — show file count instead.
+        if m.files_skipped > 0:
+            pct = (m.files_scanned / max(1, m.files_scanned + m.files_skipped) * 100)
             self._phase_vars["Progress"].set(f"{pct:.0f}%")
+        elif m.files_scanned > 0:
+            self._phase_vars["Progress"].set(f"{fmt_int(m.files_scanned)} files")
+        else:
+            self._phase_vars["Progress"].set("—")
 
     def _render_phase_detail(self) -> None:
         s = self.vm.session
@@ -282,17 +293,20 @@ class ScanPage(ttk.Frame):
             ("skipped", f"{IC.SKIPPED} Skipped",   "0",  "neutral"),
             ("cands",   f"{IC.CANDIDATES} Cands",  "0",  "neutral"),
             ("groups",  f"{IC.GROUPS} Groups",     "0",  "accent"),
-            ("reclaim", f"{IC.RECLAIM} Estimate",  "—",  "positive"),
+            ("reclaim", f"{IC.RECLAIM} Reclaim",   "—",  "positive"),
             ("elapsed", f"{IC.SPEED}  Elapsed",    "0s", "neutral"),
+            ("eta",     "ETA",                     "—",  "neutral"),
         ]
+        # Fixed width so cards don't resize when values change (avoids flicker)
+        card_width = 110
         for i, (key, label, val, variant) in enumerate(specs):
-            c = MetricCard(body, label=label, value=val, variant=variant, width=0)
+            c = MetricCard(body, label=label, value=val, variant=variant, width=card_width)
             c.grid(row=i // 3, column=i % 3, sticky="nsew", padx=3, pady=3)
             self._metric_cards[key] = c
 
     def _build_work_saved(self, body: ttk.Frame):
-        body.columnconfigure(0, weight=1)
-        body.columnconfigure(1, weight=1)
+        body.columnconfigure(0, minsize=90)
+        body.columnconfigure(1, weight=1, minsize=140)
         self._work_vars: Dict[str, tk.StringVar] = {}
         rows = [
             ("Discovery reused",  "—"),
@@ -312,7 +326,9 @@ class ScanPage(ttk.Frame):
             self._work_vars[label] = var
 
     def _build_phase_detail(self, body: ttk.Frame):
-        body.columnconfigure(1, weight=1)
+        # Fixed column width so value text doesn't cause container resize/flicker
+        body.columnconfigure(0, minsize=92)
+        body.columnconfigure(1, weight=1, minsize=240)
         self._phase_vars: Dict[str, tk.StringVar] = {}
         rows = [
             ("Phase",          "—"),
@@ -325,9 +341,9 @@ class ScanPage(ttk.Frame):
             ttk.Label(body, text=label + ":", style="Panel.Muted.TLabel",
                       font=("Segoe UI", 8)).grid(row=i, column=0, sticky="w", pady=2)
             var = tk.StringVar(value=default)
-            ttk.Label(body, textvariable=var, style="Panel.TLabel",
-                      font=("Segoe UI", 8), wraplength=220).grid(
-                row=i, column=1, sticky="w", padx=(6, 0))
+            lbl = ttk.Label(body, textvariable=var, style="Panel.TLabel",
+                           font=("Segoe UI", 8), wraplength=240)
+            lbl.grid(row=i, column=1, sticky="w", padx=(6, 0))
             self._phase_vars[label] = var
         self._progress_bar = ttk.Progressbar(
             body, mode="indeterminate", length=240)
@@ -393,7 +409,7 @@ class ScanPage(ttk.Frame):
         if self._hub:
             if progress.current_file:
                 self.after(0, lambda f=progress.current_file:
-                           self._phase_vars["Current file"].set(truncate_path(f, 40)))
+                           self._phase_vars["Current file"].set(_fixed_width_path(f, 40)))
         else:
             # No hub — fall back to direct progress update
             self.after(0, lambda p=progress: self._update_display_direct(p))
@@ -404,7 +420,7 @@ class ScanPage(ttk.Frame):
         self._on_metrics(build_metrics_from_progress(progress))
         if progress.current_file:
             self._phase_vars["Current file"].set(
-                truncate_path(progress.current_file, 40))
+                _fixed_width_path(progress.current_file, 40))
         # Phase timeline
         from ..projections.phase_projection import canonical_phase
         canon = canonical_phase(progress.phase or "")

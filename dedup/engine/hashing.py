@@ -107,12 +107,20 @@ class HashEngine:
     # Cache: path -> (mtime_ns, size, hash) to avoid re-hashing
     _hash_cache: Dict[str, Tuple[int, int, str]] = None
     _cache_lock: threading.Lock = None
+    _metrics: Dict[str, int] = None
     
     def __post_init__(self):
         if self._hash_cache is None:
             self._hash_cache = {}
         if self._cache_lock is None:
             self._cache_lock = threading.Lock()
+        if self._metrics is None:
+            self._metrics = {
+                "hash_cache_hits": 0,
+                "hash_cache_misses": 0,
+                "partial_hash_computed": 0,
+                "full_hash_computed": 0,
+            }
         if self.policy is None:
             self.policy = HashPolicy(
                 algorithm=self.algorithm,
@@ -158,6 +166,7 @@ class HashEngine:
         with self._cache_lock:
             cached = self._hash_cache.get(path)
             if cached and cached[0] == mtime_ns and cached[1] == size:
+                self._metrics["hash_cache_hits"] += 1
                 return cached[2]
         return None
     
@@ -212,8 +221,12 @@ class HashEngine:
             return cached
         cached_external = self._check_external_partial_cache(file)
         if cached_external:
+            with self._cache_lock:
+                self._metrics["hash_cache_hits"] += 1
             self._update_cache(file.path, file.mtime_ns, file.size, cached_external)
             return cached_external
+        with self._cache_lock:
+            self._metrics["hash_cache_misses"] += 1
         
         try:
             path = Path(file.path)
@@ -244,6 +257,8 @@ class HashEngine:
                         hasher.update(data)
             
             hash_value = hasher.hexdigest()
+            with self._cache_lock:
+                self._metrics["partial_hash_computed"] += 1
             self._update_cache(file.path, file.mtime_ns, file.size, hash_value)
             if self.cache_setter:
                 try:
@@ -268,7 +283,11 @@ class HashEngine:
                 return None
             cached_external = self._check_external_full_cache(file)
             if cached_external:
+                with self._cache_lock:
+                    self._metrics["hash_cache_hits"] += 1
                 return cached_external
+            with self._cache_lock:
+                self._metrics["hash_cache_misses"] += 1
             
             hasher = self._get_hasher()
             file_size = file.size
@@ -295,6 +314,8 @@ class HashEngine:
                         hasher.update(chunk)
             
             hash_value = hasher.hexdigest()
+            with self._cache_lock:
+                self._metrics["full_hash_computed"] += 1
             if self.cache_setter:
                 try:
                     self.cache_setter(file.with_hash_full(hash_value))
@@ -304,6 +325,15 @@ class HashEngine:
             
         except (OSError, PermissionError, IOError):
             return None
+
+    def metrics_snapshot(self) -> Dict[str, int]:
+        with self._cache_lock:
+            return dict(self._metrics)
+
+    def reset_metrics(self) -> None:
+        with self._cache_lock:
+            for key in self._metrics:
+                self._metrics[key] = 0
     
     def hash_batch_partial(
         self,

@@ -21,6 +21,8 @@ def test_durable_schema_migrations_create_expected_tables(temp_dir):
         assert "partial_hashes" in names
         assert "full_hashes" in names
         assert "deletion_plans" in names
-        assert persistence.schema_version >= 4
+        assert "discovery_dir_mtimes" in names
+        assert "deletion_verifications" in names
+        assert persistence.schema_version >= 8
     finally:
         persistence.close()

@@ -145,6 +145,8 @@ class HistoryPage(ttk.Frame):
             ("Started", "—"),   ("Duration", "—"),
             ("Config Hash", "—"), ("Roots", "—"),
             ("Resume Outcome", "—"), ("Resume Reason", "—"),
+            ("Delete Verify", "—"),
+            ("Bench", "—"),
         ]
         for i, (label, default) in enumerate(fields):
             col = i % 2
@@ -224,6 +226,25 @@ class HistoryPage(ttk.Frame):
             ", ".join(Path(r).name for r in e.roots[:3]) or "—")
         self._detail_vars["Resume Outcome"].set(e.resume_outcome or "—")
         self._detail_vars["Resume Reason"].set(e.resume_reason or "—")
+        verify = e.deletion_verification_summary or {}
+        if verify:
+            self._detail_vars["Delete Verify"].set(
+                f"deleted={verify.get('deleted', 0)}, "
+                f"still={verify.get('still_present', 0)}, "
+                f"changed={verify.get('changed_after_plan', 0)}, "
+                f"failed={verify.get('verification_failed', 0)}"
+            )
+        else:
+            self._detail_vars["Delete Verify"].set("—")
+        bench = e.benchmark_summary or {}
+        if bench:
+            self._detail_vars["Bench"].set(
+                f"{bench.get('discovery_reuse_mode', 'none')} "
+                f"disc={bench.get('discovery_elapsed_ms', 0)}ms "
+                f"total={bench.get('total_elapsed_ms', 0)}ms"
+            )
+        else:
+            self._detail_vars["Bench"].set("—")
 
     def _on_load(self):
         if not self.vm.selected_id:

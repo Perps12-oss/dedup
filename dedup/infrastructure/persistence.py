@@ -31,8 +31,10 @@ from ..engine.models import (
 from .migrations import get_schema_version, run_migrations
 from .repositories import (
     CheckpointRepository,
+    DiscoveryDirectoryRepository,
     DeletionAuditRepository,
     DeletionPlanRepository,
+    DeletionVerificationRepository,
     DuplicateGroupRepository,
     FullHashRepository,
     HashCacheRepository,
@@ -52,6 +54,8 @@ class Persistence:
     _connection: Optional[sqlite3.Connection] = None
     _lock: threading.Lock = None
     _schema_version: int = 0
+    _sqlite_wal: bool = True
+    _sqlite_synchronous: str = "NORMAL"
     
     def __post_init__(self):
         if self._lock is None:
@@ -81,9 +85,19 @@ class Persistence:
     def _get_connection(self) -> sqlite3.Connection:
         """Get or create database connection."""
         if self._connection is None:
+            import logging
+            _log = logging.getLogger(__name__)
             self._connection = sqlite3.connect(str(self.db_path), check_same_thread=False)
             self._connection.row_factory = sqlite3.Row
-            self._connection.execute("PRAGMA foreign_keys = ON")
+            wal = getattr(self, "_sqlite_wal", True)
+            sync = getattr(self, "_sqlite_synchronous", "NORMAL")
+            if wal:
+                try:
+                    self._connection.execute("PRAGMA journal_mode=WAL;")
+                except sqlite3.DatabaseError as e:
+                    _log.warning("Could not enable WAL mode for %s: %s", self.db_path, e)
+            self._connection.execute(f"PRAGMA synchronous={sync};")
+            self._connection.execute("PRAGMA foreign_keys=ON;")
         return self._connection
     
     def _init_db(self):
@@ -189,12 +203,21 @@ class Persistence:
     def deletion_audit_repo(self) -> DeletionAuditRepository:
         return DeletionAuditRepository(self._get_connection())
 
+    @property
+    def discovery_dir_repo(self) -> DiscoveryDirectoryRepository:
+        return DiscoveryDirectoryRepository(self._get_connection())
+
+    @property
+    def deletion_verification_repo(self) -> DeletionVerificationRepository:
+        return DeletionVerificationRepository(self._get_connection())
+
     def shadow_write_session(
         self,
         session_id: str,
         config_json: str,
         config_hash: str,
         root_fingerprint: Optional[str] = None,
+        discovery_config_hash: Optional[str] = None,
         status: str = "running",
         current_phase: str = ScanPhase.DISCOVERY.value,
     ) -> None:
@@ -205,6 +228,7 @@ class Persistence:
                 config_json=config_json,
                 config_hash=config_hash,
                 root_fingerprint=root_fingerprint,
+                discovery_config_hash=discovery_config_hash,
                 status=status,
                 current_phase=current_phase,
             )
@@ -258,6 +282,7 @@ class Persistence:
                     session_id=session_id,
                     config_json=json.dumps({"roots": []}),
                     config_hash="shadow",
+                    discovery_config_hash="shadow",
                 )
             return self.inventory_repo.insert_batch(session_id, files)
     
@@ -322,10 +347,16 @@ class Persistence:
                 cursor = conn.cursor()
                 
                 cursor.execute("""
-                    SELECT scan_id, started_at, completed_at, config,
-                           files_scanned, duplicates_found, reclaimable_bytes, status
-                    FROM scan_history
-                    ORDER BY started_at DESC
+                    SELECT h.scan_id, h.started_at, h.completed_at, h.config,
+                           h.files_scanned, h.duplicates_found, h.reclaimable_bytes, h.status,
+                           s.config_hash, s.root_fingerprint, s.discovery_config_hash, s.metrics_json,
+                           dv.summary_json AS deletion_verification_summary
+                    FROM scan_history h
+                    LEFT JOIN scan_sessions s
+                      ON s.session_id = h.scan_id
+                    LEFT JOIN deletion_verifications dv
+                      ON dv.session_id = h.scan_id
+                    ORDER BY h.started_at DESC
                     LIMIT ? OFFSET ?
                 """, (limit, offset))
                 
@@ -349,6 +380,19 @@ class Persistence:
                         "reclaimable_bytes": r['reclaimable_bytes'],
                         "status": r['status'],
                         "roots": roots,
+                        "config_hash": r.get("config_hash") or "",
+                        "root_fingerprint": r.get("root_fingerprint") or "",
+                        "discovery_config_hash": r.get("discovery_config_hash") or "",
+                        "benchmark_summary": (
+                            (json.loads(r["metrics_json"]) or {}).get("benchmark", {})
+                            if r.get("metrics_json")
+                            else {}
+                        ),
+                        "deletion_verification_summary": (
+                            json.loads(r["deletion_verification_summary"])
+                            if r.get("deletion_verification_summary")
+                            else {}
+                        ),
                     })
                 return out
         except sqlite3.Error:

@@ -371,3 +371,51 @@ class DeletionAuditRepository:
             ),
         )
         self.conn.commit()
+
+
+class DeletionVerificationRepository:
+    def __init__(self, conn: sqlite3.Connection):
+        self.conn = conn
+
+    def upsert(
+        self,
+        plan_id: str,
+        session_id: str,
+        status: str,
+        summary: Dict[str, object],
+        detail: Dict[str, object],
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT OR REPLACE INTO deletion_verifications (
+                plan_id, session_id, created_at, status, summary_json, detail_json
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                plan_id,
+                session_id,
+                datetime.now().isoformat(),
+                status,
+                json.dumps(summary),
+                json.dumps(detail),
+            ),
+        )
+        self.conn.commit()
+
+    def get_latest_for_session(self, session_id: str) -> Optional[Dict[str, object]]:
+        row = self.conn.execute(
+            """
+            SELECT *
+            FROM deletion_verifications
+            WHERE session_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (session_id,),
+        ).fetchone()
+        if not row:
+            return None
+        data = dict(row)
+        data["summary_json"] = json.loads(data.get("summary_json") or "{}")
+        data["detail_json"] = json.loads(data.get("detail_json") or "{}")
+        return data

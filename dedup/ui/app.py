@@ -227,7 +227,7 @@ class CerebroApp:
                 ("Resume",       "Ghost.TButton",  self._on_resume_latest),
             ],
             "scan":        [
-                ("Pause",        "Ghost.TButton",  lambda: None),
+                ("Pause",        "Ghost.TButton",  self._on_scan_pause),
                 ("Cancel",       "Ghost.TButton",  lambda: self._on_scan_cancel()),
                 ("Copy Diag",    "Ghost.TButton",  self._copy_diagnostics),
             ],
@@ -338,7 +338,16 @@ class CerebroApp:
         self._review.load_result(result)
         self._navigate("review")
 
+    def _on_scan_pause(self):
+        """Stop the scan and return to mission so the user can resume later."""
+        if self.coordinator.is_scanning:
+            self.coordinator.cancel_scan()
+        self.state.scan_status = "Paused"
+        self._navigate("mission")
+
     def _on_scan_cancel(self):
+        if self.coordinator.is_scanning:
+            self.coordinator.cancel_scan()
         self.state.scan_status = "Cancelled"
         self._navigate("mission")
 

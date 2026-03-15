@@ -307,6 +307,8 @@ class ScanCoordinator:
         
         engine = DeletionEngine(dry_run=dry_run, persistence=self.persistence)
         result = engine.execute_plan(plan, progress_cb)
+        verification = engine.verify_plan_result(plan, result)
+        result.verification_summary = verification.summary
         
         # Log deletions
         for file_path in result.deleted_files:

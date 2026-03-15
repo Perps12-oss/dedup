@@ -79,10 +79,12 @@ def test_shadow_session_and_checkpoint_writes(persistence):
         session_id="session-1",
         config_json='{"roots":[]}',
         config_hash="cfg-hash",
+        discovery_config_hash="disc-hash",
     )
     row = persistence.session_repo.get("session-1")
     assert row is not None
     assert row["config_hash"] == "cfg-hash"
+    assert row["discovery_config_hash"] == "disc-hash"
 
     from dedup.engine.models import ScanPhase, PhaseStatus
 
@@ -108,3 +110,37 @@ def test_shadow_inventory_write(persistence):
     written = persistence.shadow_write_inventory("session-2", files)
     assert written == 2
     assert persistence.inventory_repo.count("session-2") == 2
+
+
+def test_list_scans_includes_session_metadata_and_verification_summary(persistence):
+    result = ScanResult(
+        scan_id="scan-meta",
+        config=ScanConfig(roots=[]),
+        started_at=datetime.now(),
+        completed_at=datetime.now(),
+        files_scanned=1,
+    )
+    assert persistence.save_scan(result) is True
+    persistence.shadow_write_session(
+        session_id="scan-meta",
+        config_json='{"roots":[]}',
+        config_hash="cfg-hash",
+        root_fingerprint="root-hash",
+        discovery_config_hash="disc-hash",
+        status="completed",
+    )
+    persistence.deletion_verification_repo.upsert(
+        plan_id="scan-meta",
+        session_id="scan-meta",
+        status="resolved",
+        summary={"deleted": 1},
+        detail={"deleted": 1},
+    )
+
+    listing = persistence.list_scans(limit=10)
+    row = next(item for item in listing if item["scan_id"] == "scan-meta")
+    assert row["config_hash"] == "cfg-hash"
+    assert row["root_fingerprint"] == "root-hash"
+    assert row["discovery_config_hash"] == "disc-hash"
+    assert row["benchmark_summary"] == {}
+    assert row["deletion_verification_summary"] == {"deleted": 1}

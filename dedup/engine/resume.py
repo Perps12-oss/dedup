@@ -19,6 +19,7 @@ from .models import (
     ScanConfig,
     ScanPhase,
 )
+from .discovery_compat import root_fingerprint
 from ..infrastructure.resume_support import (
     PHASE_ORDER,
     get_phase_artifact_stats,
@@ -37,8 +38,7 @@ def _config_hash(config: ScanConfig) -> str:
 
 
 def _root_fingerprint(config: ScanConfig) -> str:
-    roots = sorted(str(r) for r in config.roots)
-    return hashlib.sha256("|".join(roots).encode("utf-8")).hexdigest()
+    return root_fingerprint(config)
 
 
 def _hash_strategy_fingerprint(config: ScanConfig) -> str:

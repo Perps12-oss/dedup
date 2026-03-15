@@ -97,6 +97,9 @@ class ProjectionHub:
         self._deletion: DeletionReadinessProjection = EMPTY_DELETION
         self._events_log: List[str]              = []
 
+        # --- Checkpoint throttling: per-phase {phase: files} and timestamps ---
+        self._last_checkpoint: Dict[str, Any] = {}  # phase -> files, phase_ts -> time
+
         # --- Dirty flags and last-delivery timestamps ---
         self._dirty: Dict[str, bool]  = {k: False for k in THROTTLE_MS}
         self._last_delivered: Dict[str, float] = {k: 0.0 for k in THROTTLE_MS}
@@ -205,6 +208,7 @@ class ProjectionHub:
                 self._phases = initial_phase_map()
                 self._metrics = EMPTY_METRICS
                 self._events_log = []
+                self._last_checkpoint = {}
                 self._dirty["session"] = True
                 self._dirty["phase"]   = True
                 self._dirty["metrics"] = True
@@ -272,11 +276,28 @@ class ProjectionHub:
                 self._dirty["events_log"] = True
 
             elif et == ScanEventType.SCAN_PROGRESS:
-                # Rebuild metrics from progress dict
+                # Rebuild metrics from progress dict (with ETA estimate when engine doesn't provide)
                 self._metrics = self._metrics_from_dict(payload)
                 self._dirty["metrics"] = True
-                # Update phase rows
+                # Update session.current_phase so StatusRibbon shows correct phase
                 phase_raw = payload.get("phase", "")
+                if phase_raw and self._session.status == "running":
+                    canon = canonical_phase(phase_raw)
+                    self._session = build_session_from_event(
+                        session_id=sid,
+                        status="running",
+                        phase=canon,
+                        phase_status="running",
+                        resume_policy=self._session.resume_policy,
+                        resume_reason=self._session.resume_reason,
+                        engine_health=self._session.engine_health,
+                        warnings_count=self._session.warnings_count,
+                        config_hash=self._session.config_hash,
+                        schema_version=self._session.schema_version,
+                        scan_root=self._session.scan_root,
+                    )
+                    self._dirty["session"] = True
+                # Update phase rows
                 if phase_raw:
                     canon = canonical_phase(phase_raw)
                     if canon in self._phases:
@@ -304,8 +325,8 @@ class ProjectionHub:
                 self._session = build_session_from_event(
                     session_id=sid,
                     status="running",
-                    phase=self._session.current_phase,
-                    phase_status=self._session.phase_status,
+                    phase=payload.get("first_phase", self._session.current_phase),
+                    phase_status="running",
                     resume_policy=self._map_outcome_to_policy(outcome),
                     resume_reason=reason,
                     engine_health=self._session.engine_health,
@@ -314,6 +335,28 @@ class ProjectionHub:
                     schema_version=payload.get("schema_version", self._session.schema_version),
                     scan_root=self._session.scan_root,
                 )
+                # Mark reused phases and merge time_saved for Work Saved panel
+                reused = payload.get("reused_phases") or []
+                for pname, ph in self._phases.items():
+                    if pname in reused:
+                        self._phases[pname] = PhaseProjection(
+                            phase_name=ph.phase_name,
+                            display_label=ph.display_label,
+                            status="completed",  # Reused = completed in prior run
+                            finalized=True,
+                            integrity_ok=ph.integrity_ok,
+                            rows_written=ph.rows_written,
+                            duration_ms=ph.duration_ms,
+                            checkpoint_cursor=ph.checkpoint_cursor,
+                            is_reused=True,
+                            resume_outcome=ph.resume_outcome,
+                            failure_reason=ph.failure_reason,
+                        )
+                time_saved = payload.get("time_saved_estimate") or 0.0
+                if time_saved > 0:
+                    self._metrics = merge_metrics(self._metrics, time_saved_estimate=time_saved)
+                    self._dirty["metrics"] = True
+                self._dirty["phase"]        = True
                 self._dirty["compatibility"] = True
                 self._dirty["session"]       = True
                 ts = time.strftime("%H:%M:%S")
@@ -415,11 +458,19 @@ class ProjectionHub:
                 self._dirty["events_log"] = True
 
             elif et == ScanEventType.PHASE_CHECKPOINTED:
+                # Throttle: only log when files_found jumped by 1000+ or 5s since last
                 phase_raw = payload.get("phase", "")
                 canon = canonical_phase(phase_raw)
-                ts = time.strftime("%H:%M:%S")
-                self._events_log.insert(0, f"[{ts}] Checkpointed: {canon}")
-                self._dirty["events_log"] = True
+                files = payload.get("files_found", 0)
+                now = time.monotonic()
+                last = getattr(self, "_last_checkpoint", {})
+                last_files = last.get(canon, -1)
+                last_ts = last.get(f"{canon}_ts", 0.0)
+                if (files - last_files >= 1000 or (now - last_ts) >= 5.0) and canon in self._phases:
+                    self._last_checkpoint = {canon: files, f"{canon}_ts": now}
+                    ts = time.strftime("%H:%M:%S")
+                    self._events_log.insert(0, f"[{ts}] Checkpointed: {canon} ({files:,} files)")
+                    self._dirty["events_log"] = True
 
     # ------------------------------------------------------------------
     # Throttled Tk poll loop
@@ -533,9 +584,19 @@ class ProjectionHub:
         fps = d.get("files_per_second") or 0.0
         eta = d.get("estimated_remaining_seconds")
         elapsed = d.get("elapsed_seconds") or 0.0
-        eta_conf = "unknown"
-        if eta is not None and elapsed > 30:
-            eta_conf = "medium" if elapsed < 120 else "high"
+        files_found = d.get("files_found", 0)
+        files_total = d.get("files_total")
+        # Estimate ETA when engine doesn't provide it: remaining files / rate
+        if eta is None and files_total and files_total > 0 and fps and fps > 0:
+            remaining = max(0, files_total - files_found)
+            if remaining > 0:
+                eta = remaining / fps
+                eta_conf = "low"
+        eta_conf = "unknown" if eta is None else (
+            "medium" if elapsed > 30 else "low" if eta is not None else "unknown"
+        )
+        if eta is not None and elapsed > 120:
+            eta_conf = "high"
         return MetricsProjection(
             files_scanned=d.get("files_found", 0),
             files_skipped=0,
