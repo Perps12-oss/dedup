@@ -194,6 +194,24 @@ class ThemeManager:
         style.configure("TPanedwindow", background=bg)
         style.configure("Sash", sashrelief="flat", sashthickness=4, background=bsoft)
 
+    def _apply_tk_defaults(self, root: tk.Tk) -> None:
+        """Apply theme tokens to raw Tk widgets via option_add (Listbox, Canvas, etc.)."""
+        t = self._tokens
+        bg = t["bg_base"]
+        fg = t["text_primary"]
+        panel = t["bg_panel"]
+        sel = t["selection_bg"]
+        root.option_add("*Background", bg)
+        root.option_add("*Foreground", fg)
+        root.option_add("*HighlightBackground", bg)
+        root.option_add("*HighlightColor", fg)
+        root.option_add("*Listbox*Background", panel)
+        root.option_add("*Listbox*Foreground", fg)
+        root.option_add("*Listbox*SelectBackground", sel)
+        root.option_add("*Listbox*SelectForeground", fg)
+        root.option_add("*Canvas*Background", panel)
+        root.option_add("*Canvas*HighlightBackground", panel)
+
     def t(self, key: str) -> str:
         """Shorthand token lookup."""
         return self._tokens.get(key, self._tokens.get("danger", "#ff00ff"))
