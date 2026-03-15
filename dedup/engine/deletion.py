@@ -144,8 +144,14 @@ class DeletionEngine:
             
             with open(self.audit_log_path, 'a', encoding='utf-8') as f:
                 f.write(f"[{timestamp}] {status} | {operation} | {path}{error_str}\n")
-        except Exception:
-            pass  # Audit logging should not break the operation
+        except (OSError, IOError) as e:
+            import logging
+            logging.getLogger(__name__).warning("Audit log write failed: %s", e)
+            try:
+                from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_AUDIT_LOG
+                get_diagnostics_recorder().record(CATEGORY_AUDIT_LOG, "Audit log write failed", str(e))
+            except Exception:
+                pass
     
     def _move_to_trash_fallback(self, path: Path) -> tuple[bool, Optional[str]]:
         """Move file to ~/.dedup/trash (always works if we have write access)."""

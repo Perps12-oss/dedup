@@ -16,6 +16,7 @@ from ..viewmodels.diagnostics_vm import DiagnosticsVM
 from ..utils.formatting import fmt_int, fmt_duration, fmt_dt
 from ..utils.icons import IC
 from ...orchestration.coordinator import ScanCoordinator
+from ...infrastructure.diagnostics import get_diagnostics_recorder
 
 
 class DiagnosticsPage(ttk.Frame):
@@ -59,7 +60,7 @@ class DiagnosticsPage(ttk.Frame):
 
     def _build(self):
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(2, weight=1)
+        self.rowconfigure(3, weight=1)
 
         # ── Page header ──────────────────────────────────────────────
         hdr = ttk.Frame(self, padding=(16, 12, 16, 0))
@@ -71,14 +72,19 @@ class DiagnosticsPage(ttk.Frame):
                    style="Ghost.TButton",
                    command=self._refresh).grid(row=0, column=2, sticky="e")
 
+        # ── Operational warnings (exception hygiene surface) ──────────
+        self._warn_card = SectionCard(self, title=f"{IC.WARN}  Operational Warnings")
+        self._warn_card.grid(row=1, column=0, sticky="ew", padx=16, pady=(4, 4))
+        self._build_warnings_section(self._warn_card.body)
+
         # ── Session overview ─────────────────────────────────────────
         ov_card = SectionCard(self, title=f"{IC.INFO}  Session Overview")
-        ov_card.grid(row=1, column=0, sticky="ew", padx=16, pady=8)
+        ov_card.grid(row=2, column=0, sticky="ew", padx=16, pady=8)
         self._build_overview(ov_card.body)
 
         # ── Tab notebook ─────────────────────────────────────────────
         self._notebook = ttk.Notebook(self)
-        self._notebook.grid(row=2, column=0, sticky="nsew", padx=16, pady=(0, 12))
+        self._notebook.grid(row=3, column=0, sticky="nsew", padx=16, pady=(0, 12))
 
         self._tab_phases  = ttk.Frame(self._notebook)
         self._tab_arts    = ttk.Frame(self._notebook)
@@ -129,6 +135,41 @@ class DiagnosticsPage(ttk.Frame):
             sel_frame, textvariable=self._session_var, state="readonly", width=36)
         self._session_combo.pack(side="left", padx=(6, 0))
         self._session_combo.bind("<<ComboboxSelected>>", self._on_session_change)
+
+    def _build_warnings_section(self, body: ttk.Frame):
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(1, weight=1)
+        self._warn_summary_var = tk.StringVar(value="No operational warnings recorded.")
+        ttk.Label(body, textvariable=self._warn_summary_var, style="Panel.Muted.TLabel",
+                  font=("Segoe UI", 8)).grid(row=0, column=0, sticky="w", pady=(0, 4))
+        self._warn_table = DataTable(
+            body,
+            columns=[
+                ("category", "Category", 120, "w"),
+                ("message",  "Message",  280, "w"),
+                ("detail",   "Detail",   200, "w"),
+            ],
+            height=5,
+        )
+        self._warn_table.grid(row=1, column=0, sticky="nsew", pady=(0, 4))
+
+    def _populate_warnings(self):
+        rec = get_diagnostics_recorder()
+        counts = rec.get_counts()
+        total = sum(counts.values())
+        if total == 0:
+            self._warn_summary_var.set("No operational warnings recorded.")
+            self._warn_table.clear()
+            return
+        parts = [f"{k}: {v}" for k, v in sorted(counts.items()) if v > 0]
+        self._warn_summary_var.set(f"Degraded: {total} warning(s) — " + ", ".join(parts))
+        self._warn_table.clear()
+        for e in rec.get_recent(limit=30):
+            self._warn_table.insert_row(
+                f"{e.timestamp}_{e.category}",
+                (e.category, e.message[:60], (e.detail or "")[:40]),
+                tags=("warn",),
+            )
 
     def _build_phases_tab(self):
         tab = self._tab_phases
@@ -228,6 +269,7 @@ class DiagnosticsPage(ttk.Frame):
         self._refresh()
 
     def _refresh(self):
+        self._populate_warnings()
         # Populate session selector
         try:
             history = self.coordinator.get_history(limit=50) or []

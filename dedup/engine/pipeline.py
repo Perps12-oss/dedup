@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -22,6 +23,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Protocol
 import threading
+
+_log = logging.getLogger(__name__)
 
 from .models import (
     CheckpointInfo,
@@ -500,8 +503,15 @@ class ScanPipeline:
                             self.scan_id,
                             {"reason": decision.reason, "outcome": decision.outcome.value},
                         ))
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log.warning("Failed to publish resume decision event: %s", e)
+                    try:
+                        from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
+                        get_diagnostics_recorder().record(
+                            CATEGORY_CALLBACK, "Resume decision event publish failed", str(e)
+                        )
+                    except Exception:
+                        pass
             only_if_missing = decision.outcome.value in ("safe_resume", "rebuild_current_phase")
             if decision.outcome.value == "restart_required":
                 self._initialize_durable_session()
@@ -552,8 +562,15 @@ class ScanPipeline:
                             self.scan_id,
                             {"phase": runner.phase_name.value},
                         ))
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        _log.warning("Failed to publish phase rebuild event: %s", e)
+                        try:
+                            from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
+                            get_diagnostics_recorder().record(
+                                CATEGORY_CALLBACK, "Phase rebuild event publish failed", str(e)
+                            )
+                        except Exception:
+                            pass
 
                 phase_status = PhaseStatus.RUNNING
                 self._update_phase_checkpoint(runner.phase_name, 0, None, phase_status)
@@ -792,9 +809,17 @@ class ResumableScanPipeline(ScanPipeline):
             
             with open(checkpoint_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
-        
-        except Exception:
-            pass  # Checkpoint failure should not stop the scan
+        except (OSError, IOError, TypeError, ValueError) as e:
+            _log.warning("Checkpoint write failed (scan continues): %s", e)
+            try:
+                from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CHECKPOINT
+                get_diagnostics_recorder().record(
+                    CATEGORY_CHECKPOINT,
+                    "Checkpoint write failed",
+                    str(e),
+                )
+            except Exception:
+                pass
     
     def _load_checkpoint(self) -> Optional[List[FileMetadata]]:
         """Load state from disk if available."""
@@ -812,8 +837,8 @@ class ResumableScanPipeline(ScanPipeline):
                 data = json.load(f)
             
             return [FileMetadata.from_dict(f) for f in data.get("files", [])]
-        
-        except Exception:
+        except (OSError, IOError, json.JSONDecodeError, KeyError, TypeError) as e:
+            _log.debug("Checkpoint load failed or invalid: %s", e)
             return None
 
     @staticmethod
@@ -827,7 +852,8 @@ class ResumableScanPipeline(ScanPipeline):
             with open(path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             return ScanConfig.from_dict(data.get("config", {}))
-        except Exception:
+        except (OSError, IOError, json.JSONDecodeError, KeyError, TypeError) as e:
+            _log.debug("Checkpoint config load failed: %s", e)
             return None
 
     def _clear_checkpoint(self) -> None:
@@ -838,8 +864,8 @@ class ResumableScanPipeline(ScanPipeline):
             checkpoint_file = self.checkpoint_dir / f"{self.scan_id}_checkpoint.json"
             if checkpoint_file.exists():
                 checkpoint_file.unlink()
-        except Exception:
-            pass
+        except OSError as e:
+            _log.debug("Checkpoint cleanup unlink failed: %s", e)
 
     def run(
         self,

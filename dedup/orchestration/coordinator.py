@@ -7,16 +7,23 @@ for the UI layer.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, List, Dict, Any, Callable
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
 
 from ..engine.models import ScanConfig, ScanResult, ScanProgress, DeletionPlan, DeletionResult, DeletionPolicy
 from ..infrastructure.persistence import Persistence, ScanStore
 from ..infrastructure.config import Config, load_config
+from ..infrastructure.diagnostics import (
+    get_diagnostics_recorder,
+    CATEGORY_REPOSITORY,
+)
 from .worker import ScanWorker
 from .events import EventBus, get_event_bus
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -117,6 +124,8 @@ class ScanCoordinator:
             self._active_worker.cancel()
             self._active_worker.join(timeout=5.0)
 
+        get_diagnostics_recorder().clear()
+
         if resume_scan_id:
             scan_config = ScanConfig(roots=[Path(".")])  # Replaced by checkpoint config
         else:
@@ -170,8 +179,11 @@ class ScanCoordinator:
             # Save to history
             try:
                 self.persistence.save_scan(result)
-            except Exception:
-                pass
+            except Exception as e:
+                _log.warning("Failed to save scan to history: %s", e)
+                get_diagnostics_recorder().record(
+                    CATEGORY_REPOSITORY, "Save scan failed", str(e)
+                )
             
             # Call user callback
             if user_callback:
@@ -203,28 +215,44 @@ class ScanCoordinator:
         """Get scan history."""
         try:
             return self.persistence.list_scans(limit=limit)
-        except Exception:
+        except Exception as e:
+            _log.warning("Failed to list scans: %s", e)
+            get_diagnostics_recorder().record(
+                CATEGORY_REPOSITORY, "List scans failed", str(e)
+            )
             return []
 
     def get_resumable_scan_ids(self) -> List[str]:
         """List scan_ids that have a checkpoint and can be resumed."""
         try:
             return self.persistence.list_resumable_scan_ids()
-        except Exception:
+        except Exception as e:
+            _log.warning("Failed to list resumable scans: %s", e)
+            get_diagnostics_recorder().record(
+                CATEGORY_REPOSITORY, "List resumable failed", str(e)
+            )
             return []
     
     def load_scan(self, scan_id: str) -> Optional[ScanResult]:
         """Load a scan result by ID."""
         try:
             return self.persistence.get_scan(scan_id)
-        except Exception:
+        except Exception as e:
+            _log.warning("Failed to load scan %s: %s", scan_id, e)
+            get_diagnostics_recorder().record(
+                CATEGORY_REPOSITORY, "Load scan failed", str(e)
+            )
             return None
     
     def delete_scan(self, scan_id: str) -> bool:
         """Delete a scan from history."""
         try:
             return self.persistence.delete_scan(scan_id)
-        except Exception:
+        except Exception as e:
+            _log.warning("Failed to delete scan %s: %s", scan_id, e)
+            get_diagnostics_recorder().record(
+                CATEGORY_REPOSITORY, "Delete scan failed", str(e)
+            )
             return False
     
     def create_deletion_plan(
