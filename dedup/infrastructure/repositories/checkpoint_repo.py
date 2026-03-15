@@ -26,6 +26,7 @@ class CheckpointRepository:
         ).fetchone()
         if not row:
             return None
+        meta = json.loads(row["metadata_json"]) if row["metadata_json"] else {}
         return CheckpointInfo(
             session_id=row["session_id"],
             phase_name=ScanPhase(row["phase_name"]),
@@ -34,7 +35,14 @@ class CheckpointRepository:
             total_units=row["total_units"],
             status=PhaseStatus(row["status"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
-            metadata_json=json.loads(row["metadata_json"]) if row["metadata_json"] else {},
+            metadata_json=meta,
+            schema_version=meta.get("schema_version"),
+            phase_version=meta.get("phase_version"),
+            config_hash=meta.get("config_hash"),
+            input_artifact_fingerprint=meta.get("input_artifact_fingerprint"),
+            output_artifact_fingerprint=meta.get("output_artifact_fingerprint"),
+            is_finalized=bool(meta.get("is_finalized", False)),
+            resume_policy=str(meta.get("resume_policy", "safe")),
         )
 
     def upsert(self, checkpoint: CheckpointInfo) -> None:
@@ -74,8 +82,10 @@ class CheckpointRepository:
             """,
             (session_id,),
         ).fetchall()
-        return [
-            CheckpointInfo(
+        result = []
+        for row in rows:
+            meta = json.loads(row["metadata_json"]) if row["metadata_json"] else {}
+            result.append(CheckpointInfo(
                 session_id=row["session_id"],
                 phase_name=ScanPhase(row["phase_name"]),
                 chunk_cursor=row["chunk_cursor"],
@@ -83,7 +93,13 @@ class CheckpointRepository:
                 total_units=row["total_units"],
                 status=PhaseStatus(row["status"]),
                 updated_at=datetime.fromisoformat(row["updated_at"]),
-                metadata_json=json.loads(row["metadata_json"]) if row["metadata_json"] else {},
-            )
-            for row in rows
-        ]
+                metadata_json=meta,
+                schema_version=meta.get("schema_version"),
+                phase_version=meta.get("phase_version"),
+                config_hash=meta.get("config_hash"),
+                input_artifact_fingerprint=meta.get("input_artifact_fingerprint"),
+                output_artifact_fingerprint=meta.get("output_artifact_fingerprint"),
+                is_finalized=bool(meta.get("is_finalized", False)),
+                resume_policy=str(meta.get("resume_policy", "safe")),
+            ))
+        return result

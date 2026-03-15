@@ -60,6 +60,50 @@ class PhaseStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class ResumeOutcome(str, Enum):
+    """Result of resume compatibility check. No vague middle state."""
+    SAFE_RESUME = "safe_resume"
+    REBUILD_CURRENT_PHASE = "rebuild_current_phase"
+    RESTART_REQUIRED = "restart_required"
+
+
+class ResumeReason(str, Enum):
+    """Why a given resume outcome was chosen."""
+    NO_SESSION = "no_session"
+    SESSION_NOT_RESUMABLE = "session_not_resumable"
+    SCHEMA_VERSION_MISMATCH = "schema_version_mismatch"
+    CONFIG_HASH_MISMATCH = "config_hash_mismatch"
+    ROOT_SET_CHANGED = "root_set_changed"
+    HASH_STRATEGY_CHANGED = "hash_strategy_changed"
+    PHASE_NOT_FINALIZED = "phase_not_finalized"
+    ARTIFACT_INCOMPLETE = "artifact_incomplete"
+    ARTIFACT_COUNT_MISMATCH = "artifact_count_mismatch"
+    COMPATIBLE = "compatible"
+    NEW_SCAN = "new_scan"
+
+
+@dataclass(slots=True)
+class PhaseCompatibilityReport:
+    """Per-phase compatibility result for resume decision."""
+    phase: ScanPhase
+    compatible: bool
+    reasons: List[str] = field(default_factory=list)
+    artifact_stats: Optional[Dict[str, Any]] = None
+
+
+@dataclass(slots=True)
+class ResumeDecision:
+    """Authoritative resume decision: outcome, first runnable phase, and reason."""
+    outcome: ResumeOutcome
+    first_runnable_phase: ScanPhase
+    reason: str
+    compatibility_reports: List[PhaseCompatibilityReport] = field(default_factory=list)
+    cursor_or_context: Optional[Dict[str, Any]] = None
+
+    def log_message(self) -> str:
+        return f"Resume decision: {self.outcome.value} from phase {self.first_runnable_phase.value}; reason={self.reason}"
+
+
 @dataclass(slots=True, frozen=True)
 class FileRecord:
     """Durable inventory row used by the persistence-backed pipeline."""
@@ -103,8 +147,24 @@ class CheckpointInfo:
     status: PhaseStatus = PhaseStatus.PENDING
     updated_at: datetime = field(default_factory=datetime.now)
     metadata_json: Dict[str, Any] = field(default_factory=dict)
+    # Compatibility fields (stored in metadata_json if columns missing)
+    schema_version: Optional[int] = None
+    phase_version: Optional[str] = None
+    config_hash: Optional[str] = None
+    input_artifact_fingerprint: Optional[str] = None
+    output_artifact_fingerprint: Optional[str] = None
+    is_finalized: bool = False
+    resume_policy: str = "safe"
 
     def to_dict(self) -> Dict[str, Any]:
+        meta = dict(self.metadata_json)
+        meta.setdefault("schema_version", self.schema_version)
+        meta.setdefault("phase_version", self.phase_version)
+        meta.setdefault("config_hash", self.config_hash)
+        meta.setdefault("input_artifact_fingerprint", self.input_artifact_fingerprint)
+        meta.setdefault("output_artifact_fingerprint", self.output_artifact_fingerprint)
+        meta.setdefault("is_finalized", self.is_finalized)
+        meta.setdefault("resume_policy", self.resume_policy)
         return {
             "session_id": self.session_id,
             "phase_name": self.phase_name.value,
@@ -113,11 +173,12 @@ class CheckpointInfo:
             "total_units": self.total_units,
             "status": self.status.value,
             "updated_at": self.updated_at.isoformat(),
-            "metadata_json": self.metadata_json,
+            "metadata_json": meta,
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "CheckpointInfo":
+        meta = data.get("metadata_json") or {}
         return cls(
             session_id=data["session_id"],
             phase_name=ScanPhase(data["phase_name"]),
@@ -128,7 +189,14 @@ class CheckpointInfo:
             updated_at=datetime.fromisoformat(data["updated_at"])
             if data.get("updated_at")
             else datetime.now(),
-            metadata_json=data.get("metadata_json") or {},
+            metadata_json=meta,
+            schema_version=meta.get("schema_version"),
+            phase_version=meta.get("phase_version"),
+            config_hash=meta.get("config_hash"),
+            input_artifact_fingerprint=meta.get("input_artifact_fingerprint"),
+            output_artifact_fingerprint=meta.get("output_artifact_fingerprint"),
+            is_finalized=bool(meta.get("is_finalized", False)),
+            resume_policy=str(meta.get("resume_policy", "safe")),
         )
 
 

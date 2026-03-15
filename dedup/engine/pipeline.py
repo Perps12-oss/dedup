@@ -28,6 +28,7 @@ from .models import (
     DeletionPlan,
     DeletionPolicy,
     DeletionResult,
+    DuplicateGroup,
     FileMetadata,
     PhaseStatus,
     ScanConfig,
@@ -37,8 +38,15 @@ from .models import (
 )
 from .discovery import DiscoveryOptions, FileDiscovery
 from .hashing import HashEngine
-from .grouping import GroupingEngine
+from .grouping import (
+    FullHashReducer,
+    GroupingEngine,
+    PartialHashReducer,
+    SizeReducer,
+)
 from .deletion import DeletionEngine
+from .resume import ResumeResolver
+from ..infrastructure.resume_support import PHASE_ORDER
 
 
 @dataclass
@@ -107,14 +115,21 @@ class DiscoveryPhaseRunner:
         )
 
 
-@dataclass
-class GroupingPhaseRunner:
-    """Grouping/hash confirmation phase with durable artifact persistence."""
+PHASE_VERSION = "v1"
 
-    phase_name: ScanPhase = ScanPhase.RESULT_ASSEMBLY
+
+@dataclass
+class SizeReductionPhaseRunner:
+    """Size grouping: read inventory, write size_candidates."""
+
+    phase_name: ScanPhase = ScanPhase.SIZE_REDUCTION
 
     def can_resume(self, pipeline: "ScanPipeline", checkpoint: Optional[CheckpointInfo]) -> bool:
-        return checkpoint is not None and checkpoint.status == PhaseStatus.COMPLETED
+        return (
+            checkpoint is not None
+            and checkpoint.status == PhaseStatus.COMPLETED
+            and checkpoint.is_finalized
+        )
 
     def run_chunk(
         self,
@@ -125,34 +140,135 @@ class GroupingPhaseRunner:
         if progress_cb:
             progress_cb(pipeline._create_progress(
                 phase="grouping",
-                phase_description="Finding duplicates...",
+                phase_description="Grouping by size...",
                 files_found=pipeline._files_found,
-                bytes_found=pipeline._bytes_found,
             ))
-        duplicate_groups = pipeline.grouping.find_duplicates(
-            iter(pipeline._discovered_files),
-            pipeline.scan_id,
-            cancel_check=lambda: pipeline._cancelled,
-            persistence=pipeline.persistence,
+        size_groups = SizeReducer(progress_cb=pipeline.grouping.progress_cb).reduce(
+            pipeline._discovered_files, pipeline.scan_id, pipeline.persistence
         )
+        total_candidates = sum(len(g) for g in size_groups.values())
+        return PhaseChunkResult(
+            completed_units=total_candidates,
+            total_units=total_candidates,
+            artifacts_written=["size_candidates"] if pipeline.persistence else [],
+            payload=size_groups,
+        )
+
+    def finalize(self, pipeline: "ScanPipeline", result: PhaseChunkResult) -> PhaseSummary:
+        return PhaseSummary(phase_name=self.phase_name, completed_units=result.completed_units)
+
+
+@dataclass
+class PartialHashPhaseRunner:
+    """Partial hash: read size_candidates, write partial_hashes and partial_candidates."""
+
+    phase_name: ScanPhase = ScanPhase.PARTIAL_HASH
+
+    def can_resume(self, pipeline: "ScanPipeline", checkpoint: Optional[CheckpointInfo]) -> bool:
+        return (
+            checkpoint is not None
+            and checkpoint.status == PhaseStatus.COMPLETED
+            and checkpoint.is_finalized
+        )
+
+    def run_chunk(
+        self,
+        pipeline: "ScanPipeline",
+        checkpoint: Optional[CheckpointInfo],
+        progress_cb: Optional[Callable[[ScanProgress], None]] = None,
+    ) -> PhaseChunkResult:
+        if progress_cb:
+            progress_cb(pipeline._create_progress(
+                phase="hashing_partial",
+                phase_description="Computing partial hashes...",
+            ))
+        size_groups = pipeline._size_groups or {}
+        partial_hash_groups = PartialHashReducer(
+            hash_engine=pipeline.hash_engine,
+            progress_cb=pipeline.grouping.progress_cb,
+        ).reduce(size_groups, pipeline.scan_id, pipeline.persistence)
+        total = sum(len(g) for g in partial_hash_groups.values())
+        return PhaseChunkResult(
+            completed_units=total,
+            total_units=total,
+            artifacts_written=["partial_hashes", "partial_candidates"] if pipeline.persistence else [],
+            payload=partial_hash_groups,
+        )
+
+    def finalize(self, pipeline: "ScanPipeline", result: PhaseChunkResult) -> PhaseSummary:
+        return PhaseSummary(phase_name=self.phase_name, completed_units=result.completed_units)
+
+
+@dataclass
+class FullHashPhaseRunner:
+    """Full hash: read partial_candidates, write full_hashes and duplicate_groups."""
+
+    phase_name: ScanPhase = ScanPhase.FULL_HASH
+
+    def can_resume(self, pipeline: "ScanPipeline", checkpoint: Optional[CheckpointInfo]) -> bool:
+        return (
+            checkpoint is not None
+            and checkpoint.status == PhaseStatus.COMPLETED
+            and checkpoint.is_finalized
+        )
+
+    def run_chunk(
+        self,
+        pipeline: "ScanPipeline",
+        checkpoint: Optional[CheckpointInfo],
+        progress_cb: Optional[Callable[[ScanProgress], None]] = None,
+    ) -> PhaseChunkResult:
+        if progress_cb:
+            progress_cb(pipeline._create_progress(
+                phase="hashing_full",
+                phase_description="Computing full hashes...",
+            ))
+        partial_hash_groups = pipeline._partial_hash_groups or {}
+        duplicate_groups = FullHashReducer(
+            hash_engine=pipeline.hash_engine,
+            progress_cb=pipeline.grouping.progress_cb,
+        ).reduce(partial_hash_groups, pipeline.scan_id, pipeline.persistence)
         return PhaseChunkResult(
             completed_units=len(duplicate_groups),
             total_units=len(duplicate_groups),
-            artifacts_written=[
-                "size_candidates",
-                "partial_hashes",
-                "partial_candidates",
-                "full_hashes",
-                "duplicate_groups",
-            ] if pipeline.persistence else [],
+            artifacts_written=["full_hashes", "duplicate_groups", "duplicate_group_members"]
+            if pipeline.persistence
+            else [],
             payload=duplicate_groups,
         )
 
     def finalize(self, pipeline: "ScanPipeline", result: PhaseChunkResult) -> PhaseSummary:
-        return PhaseSummary(
-            phase_name=self.phase_name,
-            completed_units=result.completed_units,
+        return PhaseSummary(phase_name=self.phase_name, completed_units=result.completed_units)
+
+
+@dataclass
+class ResultAssemblyPhaseRunner:
+    """Assemble final duplicate groups from DB or from previous phase payload."""
+
+    phase_name: ScanPhase = ScanPhase.RESULT_ASSEMBLY
+
+    def can_resume(self, pipeline: "ScanPipeline", checkpoint: Optional[CheckpointInfo]) -> bool:
+        return (
+            checkpoint is not None
+            and checkpoint.status == PhaseStatus.COMPLETED
+            and checkpoint.is_finalized
         )
+
+    def run_chunk(
+        self,
+        pipeline: "ScanPipeline",
+        checkpoint: Optional[CheckpointInfo],
+        progress_cb: Optional[Callable[[ScanProgress], None]] = None,
+    ) -> PhaseChunkResult:
+        duplicate_groups = pipeline._duplicate_groups or []
+        return PhaseChunkResult(
+            completed_units=len(duplicate_groups),
+            total_units=len(duplicate_groups),
+            payload=duplicate_groups,
+        )
+
+    def finalize(self, pipeline: "ScanPipeline", result: PhaseChunkResult) -> PhaseSummary:
+        return PhaseSummary(phase_name=self.phase_name, completed_units=result.completed_units)
 
 
 @dataclass
@@ -188,8 +304,11 @@ class ScanPipeline:
     _bytes_found: int = field(default=0, repr=False)
     _errors: List[str] = field(default_factory=list, repr=False)
     _discovered_files: List[FileMetadata] = field(default_factory=list, repr=False)
+    _size_groups: Optional[Dict[int, List[FileMetadata]]] = field(default=None, repr=False)
+    _partial_hash_groups: Optional[Dict[str, List[FileMetadata]]] = field(default=None, repr=False)
+    _duplicate_groups: List[DuplicateGroup] = field(default_factory=list, repr=False)
     phase_runners: List[PhaseRunner] = field(default_factory=list, init=False, repr=False)
-    
+
     def __post_init__(self):
         # Initialize components
         discovery_options = DiscoveryOptions.from_config(self.config)
@@ -203,7 +322,10 @@ class ScanPipeline:
         )
         self.phase_runners = [
             DiscoveryPhaseRunner(),
-            GroupingPhaseRunner(),
+            SizeReductionPhaseRunner(),
+            PartialHashPhaseRunner(),
+            FullHashPhaseRunner(),
+            ResultAssemblyPhaseRunner(),
         ]
     
     def cancel(self):
@@ -232,8 +354,10 @@ class ScanPipeline:
         payload = json.dumps(self.config.to_dict(), sort_keys=True).encode("utf-8")
         return hashlib.sha256(payload).hexdigest()
 
-    def _initialize_durable_session(self) -> None:
+    def _initialize_durable_session(self, only_if_missing: bool = False) -> None:
         if not self.persistence:
+            return
+        if only_if_missing and self.persistence.session_repo.get(self.scan_id) is not None:
             return
         roots = [str(root) for root in self.config.roots]
         root_fingerprint = hashlib.sha256("|".join(sorted(roots)).encode("utf-8")).hexdigest()
@@ -253,16 +377,20 @@ class ScanPipeline:
         total_units: Optional[int],
         status: PhaseStatus,
         metadata_json: Optional[Dict[str, Any]] = None,
+        is_finalized: bool = False,
     ) -> None:
         if not self.persistence:
             return
+        meta = dict(metadata_json or {})
+        if is_finalized:
+            meta.update(self._finalized_checkpoint_metadata())
         self.persistence.shadow_write_checkpoint(
             session_id=self.scan_id,
             phase_name=phase_name,
             completed_units=completed_units,
             total_units=total_units,
             status=status,
-            metadata_json=metadata_json or {},
+            metadata_json=meta,
         )
         self.persistence.shadow_update_session(
             session_id=self.scan_id,
@@ -270,10 +398,67 @@ class ScanPipeline:
             current_phase=phase_name.value,
             failure_reason=(metadata_json or {}).get("error"),
         )
-    
+
+    def _finalized_checkpoint_metadata(self) -> Dict[str, Any]:
+        """Compatibility metadata for authoritative resume."""
+        schema_version = getattr(self.persistence, "schema_version", 4)
+        if callable(schema_version):
+            schema_version = schema_version()
+        return {
+            "schema_version": schema_version,
+            "phase_version": PHASE_VERSION,
+            "config_hash": self._config_hash(),
+            "is_finalized": True,
+            "resume_policy": "safe",
+        }
+
+    def _load_phase_output_from_db(self, phase: ScanPhase) -> None:
+        """Load this phase's output into pipeline state from durable artifacts."""
+        if not self.persistence:
+            return
+        if phase == ScanPhase.DISCOVERY:
+            self._discovered_files = list(
+                self.persistence.inventory_repo.iter_by_session(self.scan_id)
+            )
+            self._files_found = len(self._discovered_files)
+            self._bytes_found = sum(f.size for f in self._discovered_files)
+
+    def _load_all_durable_state_before(self, first_runnable: ScanPhase) -> None:
+        """Load pipeline state for all phases before first_runnable from DB."""
+        if not self.persistence:
+            return
+        order_idx = {p: i for i, p in enumerate(PHASE_ORDER)}
+        first_idx = order_idx.get(first_runnable, 0)
+        if first_idx <= 0:
+            return
+        self._load_phase_output_from_db(ScanPhase.DISCOVERY)
+        if first_idx <= 1:
+            return
+        inv = self.persistence.inventory_repo
+        size_repo = self.persistence.size_candidate_repo
+        size_groups = size_repo.iter_groups(self.scan_id)
+        self._size_groups = {
+            size: inv.load_metadata_for_file_ids(self.scan_id, ids)
+            for size, ids in size_groups.items()
+        }
+        if first_idx <= 2:
+            return
+        partial_repo = self.persistence.partial_candidate_repo
+        partial_groups = partial_repo.iter_groups(self.scan_id)
+        self._partial_hash_groups = {
+            ph: inv.load_metadata_for_file_ids(self.scan_id, ids)
+            for ph, ids in partial_groups.items()
+        }
+        if first_idx <= 3:
+            return
+        self._duplicate_groups = self.persistence.duplicate_group_repo.load_groups(
+            self.scan_id, inv
+        )
+
     def run(
         self,
-        progress_cb: Optional[Callable[[ScanProgress], None]] = None
+        progress_cb: Optional[Callable[[ScanProgress], None]] = None,
+        event_bus: Optional[Any] = None,
     ) -> ScanResult:
         """
         Run the complete scan pipeline.
@@ -286,26 +471,89 @@ class ScanPipeline:
         """
         self._start_time = time.time()
         self.grouping.progress_cb = progress_cb
-        self._initialize_durable_session()
-        
+
+        first_runnable_phase = ScanPhase.DISCOVERY
+        if self.persistence:
+            session_exists = self.persistence.session_repo.get(self.scan_id) is not None
+            resolver = ResumeResolver(self.persistence)
+            decision = resolver.resolve(
+                self.scan_id, self.config, is_new_scan=not session_exists
+            )
+            first_runnable_phase = decision.first_runnable_phase
+            if event_bus is not None:
+                try:
+                    from ..orchestration.events import ScanEvent, ScanEventType
+                    event_bus.publish(ScanEvent(
+                        ScanEventType.RESUME_REQUESTED,
+                        self.scan_id,
+                        {"decision": decision.log_message()},
+                    ))
+                    if decision.outcome.value == "safe_resume":
+                        event_bus.publish(ScanEvent(
+                            ScanEventType.RESUME_VALIDATED,
+                            self.scan_id,
+                            {"reason": decision.reason, "first_phase": first_runnable_phase.value},
+                        ))
+                    else:
+                        event_bus.publish(ScanEvent(
+                            ScanEventType.RESUME_REJECTED,
+                            self.scan_id,
+                            {"reason": decision.reason, "outcome": decision.outcome.value},
+                        ))
+                except Exception:
+                    pass
+            only_if_missing = decision.outcome.value in ("safe_resume", "rebuild_current_phase")
+            if decision.outcome.value == "restart_required":
+                self._initialize_durable_session()
+            else:
+                self._initialize_durable_session(only_if_missing=only_if_missing and session_exists)
+            if decision.outcome.value == "safe_resume":
+                self._load_all_durable_state_before(first_runnable_phase)
+            if decision.outcome.value == "rebuild_current_phase":
+                cp_repo = self.persistence.checkpoint_repo
+                cp_repo.upsert(CheckpointInfo(
+                    session_id=self.scan_id,
+                    phase_name=first_runnable_phase,
+                    status=PhaseStatus.PENDING,
+                    metadata_json={"is_finalized": False},
+                ))
+        else:
+            self._initialize_durable_session()
+
         result = ScanResult(
             scan_id=self.scan_id,
             config=self.config,
             started_at=datetime.now(),
         )
-        
+        duplicate_groups: List[DuplicateGroup] = []
+
         try:
-            duplicate_groups = []
+            order_idx = {p: i for i, p in enumerate(PHASE_ORDER)}
+            first_idx = order_idx.get(first_runnable_phase, 0)
             for runner in self.phase_runners:
+                runner_idx = order_idx.get(runner.phase_name, -1)
+                if runner_idx < first_idx:
+                    continue
+
                 checkpoint = None
                 if self.persistence:
                     checkpoint = self.persistence.checkpoint_repo.get(self.scan_id, runner.phase_name)
                 if checkpoint and runner.can_resume(self, checkpoint):
-                    if runner.phase_name == ScanPhase.DISCOVERY and self.persistence:
-                        self._discovered_files = list(self.persistence.inventory_repo.iter_by_session(self.scan_id))
-                        self._files_found = len(self._discovered_files)
-                        self._bytes_found = sum(file.size for file in self._discovered_files)
+                    self._load_phase_output_from_db(runner.phase_name)
+                    if runner.phase_name == ScanPhase.RESULT_ASSEMBLY and self._duplicate_groups:
+                        duplicate_groups = self._duplicate_groups
                     continue
+
+                if event_bus is not None and self.persistence:
+                    try:
+                        from ..orchestration.events import ScanEvent, ScanEventType
+                        event_bus.publish(ScanEvent(
+                            ScanEventType.PHASE_REBUILD_STARTED,
+                            self.scan_id,
+                            {"phase": runner.phase_name.value},
+                        ))
+                    except Exception:
+                        pass
 
                 phase_status = PhaseStatus.RUNNING
                 self._update_phase_checkpoint(runner.phase_name, 0, None, phase_status)
@@ -317,6 +565,7 @@ class ScanPipeline:
                     phase_result.total_units,
                     PhaseStatus.COMPLETED,
                     metadata_json=summary.metadata,
+                    is_finalized=True,
                 )
 
                 if runner.phase_name == ScanPhase.DISCOVERY:
@@ -326,7 +575,13 @@ class ScanPipeline:
                             "No files were found. Check that the folder path is correct, "
                             "readable, and contains files (check filters: min size, extensions)."
                         )
-                else:
+                elif runner.phase_name == ScanPhase.SIZE_REDUCTION:
+                    self._size_groups = phase_result.payload or {}
+                elif runner.phase_name == ScanPhase.PARTIAL_HASH:
+                    self._partial_hash_groups = phase_result.payload or {}
+                elif runner.phase_name == ScanPhase.FULL_HASH:
+                    self._duplicate_groups = phase_result.payload or []
+                elif runner.phase_name == ScanPhase.RESULT_ASSEMBLY:
                     duplicate_groups = phase_result.payload or []
 
                 if self._cancelled:

@@ -209,7 +209,10 @@ class ScanWorker:
                     ))
             
             # Run the scan
-            self._result = self._pipeline.run(progress_cb=on_progress)
+            self._result = self._pipeline.run(
+                progress_cb=on_progress,
+                event_bus=self.event_bus,
+            )
             
             # Check if cancelled
             if self._cancelled:

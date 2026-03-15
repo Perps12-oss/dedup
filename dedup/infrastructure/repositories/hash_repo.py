@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import datetime
-from typing import Dict, Iterable, List, Optional
+from typing import TYPE_CHECKING, Dict, Iterable, List, Optional
+
+if TYPE_CHECKING:
+    from .inventory_repo import InventoryRepository
 
 
 class SizeCandidateRepository:
@@ -132,6 +135,55 @@ class FullHashRepository:
 class DuplicateGroupRepository:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
+
+    def count_groups(self, session_id: str) -> int:
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS c FROM duplicate_groups WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
+    def sum_member_count(self, session_id: str) -> int:
+        row = self.conn.execute(
+            "SELECT COALESCE(SUM(total_files), 0) AS s FROM duplicate_groups WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        return int(row["s"]) if row else 0
+
+    def load_groups(
+        self,
+        session_id: str,
+        inventory_repo: InventoryRepository,
+    ) -> list:
+        """Load duplicate groups as domain objects. Returns list of (group_id, full_hash, files, reclaimable_bytes)."""
+        from ...engine.models import DuplicateGroup
+
+        rows = self.conn.execute(
+            """
+            SELECT group_id, full_hash, keeper_file_id, total_files, reclaimable_bytes
+            FROM duplicate_groups WHERE session_id = ?
+            ORDER BY group_id
+            """,
+            (session_id,),
+        ).fetchall()
+        result = []
+        for row in rows:
+            member_rows = self.conn.execute(
+                "SELECT file_id, role FROM duplicate_group_members WHERE group_id = ?",
+                (row["group_id"],),
+            ).fetchall()
+            file_ids = [r["file_id"] for r in member_rows]
+            files = inventory_repo.load_metadata_for_file_ids(session_id, file_ids)
+            if len(files) < 2:
+                continue
+            result.append(
+                DuplicateGroup(
+                    group_id=str(row["group_id"]),
+                    group_hash=row["full_hash"],
+                    files=files,
+                )
+            )
+        return result
 
     def clear_session(self, session_id: str) -> None:
         group_rows = self.conn.execute(

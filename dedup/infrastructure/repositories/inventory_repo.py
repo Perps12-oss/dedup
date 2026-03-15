@@ -120,3 +120,46 @@ class InventoryRepository:
             (session_id, path),
         ).fetchone()
         return int(row["file_id"]) if row else None
+
+    def get_metadata_by_id(self, session_id: str, file_id: int) -> Optional[FileMetadata]:
+        row = self.conn.execute(
+            """
+            SELECT path, size_bytes, mtime_ns, inode
+            FROM inventory_files
+            WHERE session_id = ? AND file_id = ?
+            """,
+            (session_id, file_id),
+        ).fetchone()
+        if not row:
+            return None
+        return FileMetadata(
+            path=row["path"],
+            size=row["size_bytes"],
+            mtime_ns=row["mtime_ns"],
+            inode=int(row["inode"]) if row["inode"] is not None else None,
+        )
+
+    def load_metadata_for_file_ids(
+        self, session_id: str, file_ids: List[int]
+    ) -> List[FileMetadata]:
+        """Load FileMetadata for given file_ids in one query. Order not preserved."""
+        if not file_ids:
+            return []
+        placeholders = ",".join("?" * len(file_ids))
+        rows = self.conn.execute(
+            f"""
+            SELECT path, size_bytes, mtime_ns, inode
+            FROM inventory_files
+            WHERE session_id = ? AND file_id IN ({placeholders})
+            """,
+            [session_id] + file_ids,
+        ).fetchall()
+        return [
+            FileMetadata(
+                path=row["path"],
+                size=row["size_bytes"],
+                mtime_ns=row["mtime_ns"],
+                inode=int(row["inode"]) if row["inode"] is not None else None,
+            )
+            for row in rows
+        ]

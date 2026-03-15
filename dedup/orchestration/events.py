@@ -14,7 +14,25 @@ import threading
 
 
 class ScanEventType(Enum):
-    """Types of scan events."""
+    """
+    Types of scan events.
+
+    Engine events (published by worker / pipeline):
+      SESSION_*, PHASE_*, SCAN_*, DELETION_*, RESUME_*
+
+    UI projection events (synthesised by ProjectionHub, never by the engine):
+      UI_SESSION_SNAPSHOT     — SessionProjection ready for TopBar / StatusStrip
+      UI_PHASE_SNAPSHOT       — Dict[phase_name, PhaseProjection] ready for timeline
+      UI_METRICS_SNAPSHOT     — MetricsProjection ready for MetricCard row
+      UI_RESUME_DECISION      — CompatibilityProjection + resume outcome
+      UI_REVIEW_STATE_CHANGED — ReviewGroupProjection list changed
+      UI_DELETION_PLAN_CHANGED— DeletionReadinessProjection changed
+      UI_INTEGRITY_WARNING    — integrity issue detected
+      UI_SESSION_TERMINAL     — session reached a terminal state
+
+    Rule: no widget should subscribe to raw engine events directly.
+    Use ProjectionHub.subscribe() instead.
+    """
     SESSION_STARTED = auto()
     SESSION_COMPLETED = auto()
     SESSION_CANCELLED = auto()
@@ -29,10 +47,25 @@ class ScanEventType(Enum):
     SCAN_COMPLETED = auto()
     SCAN_CANCELLED = auto()
     SCAN_ERROR = auto()
-    
+
     DELETION_STARTED = auto()
     DELETION_PROGRESS = auto()
     DELETION_COMPLETED = auto()
+
+    RESUME_REQUESTED = auto()
+    RESUME_VALIDATED = auto()
+    RESUME_REJECTED = auto()
+    PHASE_REBUILD_STARTED = auto()
+
+    # ---- UI projection event labels (synthesised, never by engine) ----
+    UI_SESSION_SNAPSHOT      = auto()
+    UI_PHASE_SNAPSHOT        = auto()
+    UI_METRICS_SNAPSHOT      = auto()
+    UI_RESUME_DECISION       = auto()
+    UI_REVIEW_STATE_CHANGED  = auto()
+    UI_DELETION_PLAN_CHANGED = auto()
+    UI_INTEGRITY_WARNING     = auto()
+    UI_SESSION_TERMINAL      = auto()
 
 
 @dataclass
