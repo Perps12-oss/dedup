@@ -52,6 +52,7 @@ class ThemeManager:
         self._current_key = theme_key
         self._tokens = get_theme(theme_key)
         self._configure_styles(root)
+        self._apply_tk_defaults(root)
         for cb in self._observers:
             try:
                 cb(self._tokens)
@@ -156,10 +157,10 @@ class ThemeManager:
                   background=[("active", t["gradient_end"]), ("pressed", t["gradient_start"])],
                   foreground=[("active", bg)])
 
-        style.configure("Danger.TButton", background=danger, foreground="#ffffff",
+        style.configure("Danger.TButton", background=danger, foreground=bg,
                         bordercolor=danger, relief="flat", padding=[12, 5])
         style.map("Danger.TButton",
-                  background=[("active", "#ff0000")])
+                  background=[("active", t.get("danger_hover", danger))])
 
         style.configure("Ghost.TButton", background=bg, foreground=fg2,
                         bordercolor=bsoft, relief="flat", padding=[8, 3])
@@ -195,4 +196,4 @@ class ThemeManager:
 
     def t(self, key: str) -> str:
         """Shorthand token lookup."""
-        return self._tokens.get(key, "#ff00ff")
+        return self._tokens.get(key, self._tokens.get("danger", "#ff00ff"))

@@ -9,7 +9,7 @@ Layout:
 from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
-from typing import Optional, Callable
+from typing import Callable, List, Optional
 
 from ..components import DataTable, SectionCard, EmptyState
 from ..viewmodels.diagnostics_vm import DiagnosticsVM
@@ -25,7 +25,37 @@ class DiagnosticsPage(ttk.Frame):
         super().__init__(parent, **kwargs)
         self.coordinator = coordinator
         self.vm = DiagnosticsVM()
+        self._hub = None
+        self._unsubs: List[Callable] = []
         self._build()
+
+    def attach_hub(self, hub) -> None:
+        """Subscribe to live projection updates for session/phase/compat/events."""
+        self._hub = hub
+        self._unsubs.append(hub.subscribe("session", self._on_hub_session))
+        self._unsubs.append(hub.subscribe("phase", self._on_hub_phases))
+        self._unsubs.append(hub.subscribe("compatibility", self._on_hub_compat))
+        self._unsubs.append(hub.subscribe("events_log", self._on_hub_events))
+
+    def detach_hub(self) -> None:
+        for unsub in self._unsubs:
+            try:
+                unsub()
+            except Exception:
+                pass
+        self._unsubs.clear()
+
+    def _on_hub_session(self, proj) -> None:
+        self.vm.session = proj
+
+    def _on_hub_phases(self, phases) -> None:
+        self.vm.phases = phases
+
+    def _on_hub_compat(self, proj) -> None:
+        self.vm.compat = proj
+
+    def _on_hub_events(self, entries) -> None:
+        self.vm.events_log = entries
 
     def _build(self):
         self.columnconfigure(0, weight=1)
@@ -239,27 +269,29 @@ class DiagnosticsPage(ttk.Frame):
 
     def _populate_phases(self):
         self._phases_table.clear()
-        for r in self.vm.phases:
+        for r in self.vm.phases_table:
             fin = IC.OK if r.finalized else IC.PENDING
-            resume_style = ("safe" if r.resume_action == "safe_resume" else
-                            "warn" if r.resume_action == "rebuild_phase" else "danger")
             tag = ("safe" if r.resume_action == "safe_resume" else
                    "warn" if r.resume_action == "rebuild_phase" else "danger")
+            cts = (r.checkpoint_ts[:19]) if r.checkpoint_ts else ""
             self._phases_table.insert_row(
                 r.phase,
                 (r.phase, r.integrity, fin, fmt_int(r.rows),
-                 fmt_duration(r.duration_s), r.checkpoint_ts[:19], r.resume_action),
+                 fmt_duration(r.duration_s), cts, r.resume_action),
                 tags=(tag,),
             )
 
     def _populate_artifacts(self):
         self._arts_table.clear()
         for r in self.vm.artifacts:
-            count_str = fmt_int(r.count) if r.count >= 0 else "N/A"
-            tag = "warn" if r.count == 0 else ""
+            count_val = getattr(r, "row_count", getattr(r, "count", 0))
+            count_str = fmt_int(count_val) if count_val >= 0 else "N/A"
+            tag = "warn" if count_val == 0 else ""
+            table_name = getattr(r, "table_name", getattr(r, "table", ""))
+            desc = getattr(r, "description", getattr(r, "status", ""))
             self._arts_table.insert_row(
-                r.table,
-                (r.table, count_str, r.description),
+                table_name,
+                (table_name, count_str, desc),
                 tags=(tag,) if tag else (),
             )
 
@@ -285,13 +317,15 @@ class DiagnosticsPage(ttk.Frame):
         self._events_table.clear()
         filt = self._event_filter_var.get()
         for ev in self.vm.events[:200]:
-            if filt != "All" and ev.severity != filt:
+            if filt != "All" and getattr(ev, "severity", "info") != filt:
                 continue
-            tag = ("warn" if ev.severity == "warning" else
-                   "danger" if ev.severity == "error" else "")
+            sev = getattr(ev, "severity", "info")
+            tag = ("warn" if sev == "warning" else "danger" if sev == "error" else "")
+            detail = getattr(ev, "detail", "")[:80]
             self._events_table.insert_row(
                 str(id(ev)),
-                (ev.ts, ev.event_type, ev.phase, ev.severity, ev.detail[:80]),
+                (getattr(ev, "ts", ""), getattr(ev, "event_type", ""),
+                 getattr(ev, "phase", ""), sev, detail),
                 tags=(tag,) if tag else (),
             )
 
@@ -306,19 +340,21 @@ class DiagnosticsPage(ttk.Frame):
         try:
             p = self.coordinator.persistence
             if p:
-                for table in ("scan_sessions", "inventory_files",
-                              "phase_checkpoints", "full_hashes"):
-                    try:
-                        p.conn.execute(f"SELECT 1 FROM {table} LIMIT 1")
-                        status = "OK"
-                        detail = f"{table} accessible"
-                    except Exception as e:
-                        status = "ERROR"
-                        detail = str(e)[:60]
-                    tag = "" if status == "OK" else "danger"
-                    self._integ_table.insert_row(
-                        table, (table, status, detail), tags=(tag,) if tag else ())
-                return
+                conn = getattr(p, "conn", None) or (getattr(p, "_get_connection", lambda: None)() if callable(getattr(p, "_get_connection", None)) else None)
+                if conn:
+                    for table in ("scan_sessions", "inventory_files",
+                                  "phase_checkpoints", "full_hashes", "scan_history"):
+                        try:
+                            conn.execute(f"SELECT 1 FROM {table} LIMIT 1")
+                            status = "OK"
+                            detail = f"{table} accessible"
+                        except Exception as e:
+                            status = "ERROR"
+                            detail = str(e)[:60]
+                        tag = "" if status == "OK" else "danger"
+                        self._integ_table.insert_row(
+                            table, (table, status, detail), tags=(tag,) if tag else ())
+                    return
         except Exception:
             pass
         for check, status, detail in checks:

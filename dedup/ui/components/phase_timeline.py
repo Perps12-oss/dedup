@@ -26,6 +26,16 @@ PHASE_LABELS = [
     ("results",     "Results"),
 ]
 
+_KEY_ALIASES = {
+    "size_reduction":  "size",
+    "partial_hash":    "partial",
+    "full_hash":       "full",
+    "result_assembly": "results",
+    "hashing_partial": "partial",
+    "hashing_full":    "full",
+    "complete":        "results",
+}
+
 STATE_ICONS = {
     "pending":   IC.PENDING,
     "active":    IC.ACTIVE,
@@ -92,6 +102,7 @@ class PhaseTimeline(ttk.Frame):
                           font=("Segoe UI", 9)).grid(row=0, column=col * 2 + 1, padx=2)
 
     def set_phase_state(self, phase_key: str, state: str, label_override: str = ""):
+        phase_key = _KEY_ALIASES.get(phase_key, phase_key)
         if phase_key not in self._cells:
             return
         self._states[phase_key] = state

@@ -181,6 +181,12 @@ class ScanPage(ttk.Frame):
         self._events_list.delete(0, "end")
         for entry in self.vm.events_log[:100]:
             self._events_list.insert("end", entry)
+        # Scroll to bottom so newest events (e.g. "Scan completed") are visible
+        if self.vm.events_log:
+            self._events_list.see("end")
+        # Scroll to bottom so newest events (e.g. "Scan completed") are visible
+        if self.vm.events_log:
+            self._events_list.see("end")
 
     # ------------------------------------------------------------------
     # Layout

@@ -17,7 +17,6 @@ from ..viewmodels.history_vm import HistoryVM, SessionEntry
 from ..utils.formatting import fmt_bytes, fmt_int, fmt_duration, fmt_dt
 from ..utils.icons import IC
 from ...orchestration.coordinator import ScanCoordinator
-from ...infrastructure.utils import format_bytes
 from ...infrastructure.trash import list_dedup_trash, empty_dedup_trash
 
 
@@ -165,7 +164,7 @@ class HistoryPage(ttk.Frame):
         self._refresh()
 
     def _refresh(self):
-        self.vm.load_from_coordinator(self.coordinator)
+        self.vm.refresh(self.coordinator)
         self._update_summary()
         self._populate_table()
 
@@ -173,12 +172,11 @@ class HistoryPage(ttk.Frame):
         self._summary_cards["total"].update(fmt_int(self.vm.total_scans))
         self._summary_cards["avg_dur"].update(fmt_duration(self.vm.avg_duration_s))
         self._summary_cards["avg_rec"].update(fmt_bytes(self.vm.avg_reclaim_bytes))
-        self._summary_cards["resume"].update(
-            fmt_int(sum(1 for e in self.vm.entries if e.is_resumable)))
+        self._summary_cards["resume"].update(fmt_int(self.vm.resumable_count))
 
     def _populate_table(self):
         self._table.clear()
-        for e in self.vm.filtered_entries():
+        for e in self.vm.filtered_sessions:
             resume_icon = IC.OK if e.is_resumable else "—"
             status_icon = (IC.OK if e.status == "completed" else
                            IC.WARN if e.status in ("interrupted", "resumable") else
@@ -201,13 +199,13 @@ class HistoryPage(ttk.Frame):
         self._del_btn.configure(state="disabled")
 
     def _apply_filter(self):
-        self.vm.filter_resumable = self._resumable_var.get()
-        self.vm.filter_failed    = self._failed_var.get()
+        self.vm.show_resumable_only = self._resumable_var.get()
+        self.vm.show_failed_only    = self._failed_var.get()
         self._populate_table()
 
     def _on_session_select(self, scan_id: str):
         self.vm.selected_id = scan_id
-        entry = self.vm.selected_entry()
+        entry = self.vm.selected_session
         if not entry:
             return
         self._update_detail(entry)
@@ -239,7 +237,7 @@ class HistoryPage(ttk.Frame):
     def _on_resume(self):
         if not self.vm.selected_id:
             return
-        entry = self.vm.selected_entry()
+        entry = self.vm.selected_session
         if not entry or not entry.is_resumable:
             messagebox.showinfo("Resume", "This scan is not resumable.")
             return

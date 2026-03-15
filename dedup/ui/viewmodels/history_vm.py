@@ -69,6 +69,14 @@ class HistoryVM:
     def resumable_count(self) -> int:
         return self.history.resumable_count
 
+    @property
+    def avg_duration_s(self) -> float:
+        return self.history.avg_duration_s
+
+    @property
+    def avg_reclaim_bytes(self) -> int:
+        return self.history.avg_reclaim_bytes
+
     # Legacy compat: history pages that iterate vm.entries
     @property
     def entries(self):

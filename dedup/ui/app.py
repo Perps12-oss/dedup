@@ -26,6 +26,7 @@ from ..infrastructure.config import load_config, save_config
 from ..engine.models import ScanResult, DeletionResult
 
 from .theme.theme_manager import get_theme_manager
+from .utils.formatting import fmt_bytes, fmt_int, fmt_duration
 from .utils.ui_state import UIState, load_settings, save_settings
 
 from .shell.app_shell import AppShell
@@ -112,6 +113,9 @@ class CerebroApp:
         # ── Register app-level state listeners ───────────────────────
         self.state.on("advanced_mode_changed", self._on_advanced_mode)
 
+        # ── Apply persisted UI preferences (drawer, density, etc) ────
+        self.shell.apply_preferences()
+
         # ── Navigate home ─────────────────────────────────────────────
         self._navigate("mission")
 
@@ -124,24 +128,23 @@ class CerebroApp:
 
     def _wire_hub(self) -> None:
         """Connect ProjectionHub to all shell widgets and pages that need live updates."""
+        import logging
+        _log = logging.getLogger(__name__)
         # Shell widgets — always visible
         try:
             self.shell.status_strip.subscribe_to_hub(self.hub)
-        except Exception:
-            pass
+        except AttributeError:
+            _log.debug("StatusStrip.subscribe_to_hub not available")
         try:
             self.shell.top_bar.subscribe_to_hub(self.hub)
-        except Exception:
-            pass
+        except AttributeError:
+            _log.debug("TopBar.subscribe_to_hub not available")
 
         # Scan page — primary live-update consumer
         self._scan.attach_hub(self.hub)
 
         # Diagnostics page — shares phase/compat projections
-        try:
-            self._diagnostics.attach_hub(self.hub)
-        except AttributeError:
-            pass  # DiagnosticsPage may not have attach_hub yet
+        self._diagnostics.attach_hub(self.hub)
 
         # App-level terminal handler — navigate to review on completion
         def _on_terminal(proj) -> None:
@@ -201,8 +204,12 @@ class CerebroApp:
             content,
             state=self.state,
             on_theme_change=self._on_theme_change,
+            on_preference_changed=self._apply_preferences,
         )
         self.shell.register_page("settings", self._settings)
+
+        # Apply persisted preferences to shell
+        self._apply_preferences()
 
     # ------------------------------------------------------------------
     # Navigation
@@ -265,7 +272,7 @@ class CerebroApp:
                     ("Groups",    str(self._review.vm.total_groups)),
                     ("Delete",    str(self._review.vm.delete_count)),
                     ("Keep",      str(self._review.vm.keep_count)),
-                    ("Reclaim",   _fmt_bytes_short(self._review.vm.reclaimable_bytes)),
+                    ("Reclaim",   fmt_bytes(self._review.vm.reclaimable_bytes)),
                 ]),
                 ("Safety", [
                     ("Mode",      "Trash"),
@@ -357,7 +364,11 @@ class CerebroApp:
         self.shell.top_bar.set_current_theme(key)
 
     def _on_advanced_mode(self, active: bool):
-        pass
+        self.shell.apply_preferences()
+
+    def _apply_preferences(self) -> None:
+        """Apply UI preferences from state.settings to shell and pages."""
+        self.shell.apply_preferences()
 
     def _copy_diagnostics(self):
         try:
@@ -397,20 +408,6 @@ class CerebroApp:
 
     def run(self):
         self.root.mainloop()
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _fmt_bytes_short(n: int) -> str:
-    if n <= 0:
-        return "0 B"
-    for unit in ("B", "KB", "MB", "GB"):
-        if n < 1024:
-            return f"{n:.0f} {unit}"
-        n /= 1024
-    return f"{n:.1f} TB"
 
 
 # ---------------------------------------------------------------------------

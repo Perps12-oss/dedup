@@ -3,6 +3,10 @@ DEDUP Bench Instrumentation - Internal metrics for performance and scale testing
 
 Enable via DEDUP_BENCH=1 or pass collect_bench=True to pipeline.
 Metrics are logged (debug) or written to a small report; not shown in user UI.
+
+NOTE: This module is not yet wired into the durable pipeline.  It will be
+integrated as part of the performance-instrumentation phase.  Until then,
+BenchCollector / log_bench_summary are available but not automatically invoked.
 """
 
 from __future__ import annotations

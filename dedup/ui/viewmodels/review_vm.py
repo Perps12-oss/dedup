@@ -35,6 +35,8 @@ class ReviewVM:
     filter_text:        str             = ""
     show_reviewed:      bool            = True
     deletion_mode:      str             = "trash"   # "trash" | "permanent"
+    selected_group_id:  Optional[str]   = None
+    show_thumbnails:    bool            = True
 
     # Counters computed lazily from groups + keep_selections
     @property
@@ -100,10 +102,3 @@ class ReviewVM:
             return 0.0
         reviewed = sum(1 for g in self.groups if g.group_id in self.keep_selections)
         return 100.0 * reviewed / len(self.groups)
-
-
-# ---------------------------------------------------------------------------
-# Backward-compatibility shim for modules that import GroupEntry from here.
-# GroupEntry is now ReviewGroupProjection.
-# ---------------------------------------------------------------------------
-GroupEntry = ReviewGroupProjection

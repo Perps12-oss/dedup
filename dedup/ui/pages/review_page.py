@@ -18,14 +18,13 @@ from ..components import (
     DataTable, SectionCard, SafetyPanel, ProvenanceRibbon,
     EmptyState, FilterBar, StatusRibbon,
 )
-from ..viewmodels.review_vm import ReviewVM, GroupEntry
-from ..utils.formatting import fmt_bytes, fmt_int, truncate_path
+from ..viewmodels.review_vm import ReviewVM
+from ..utils.formatting import fmt_bytes, truncate_path
 from ..utils.icons import IC
 from ...orchestration.coordinator import ScanCoordinator
 from ...engine.models import ScanResult, DuplicateGroup, DeletionPlan, DeletionResult
 from ...engine.thumbnails import generate_thumbnails_async, get_cache_dir
 from ...engine.media_types import is_image_extension
-from ...infrastructure.utils import format_bytes
 
 _THUMB_SIZE = (64, 64)
 
@@ -169,10 +168,10 @@ class ReviewPage(ttk.Frame):
     # ----------------------------------------------------------------
     def load_result(self, result: ScanResult):
         self._current_result = result
-        self.vm.load_from_result(result)
+        self.vm.load_result(result)
         self._prov.update(
-            session_id=self.vm.session_id,
-            verification=self.vm.verification_level,
+            session_id=getattr(self.vm.session, "session_id", result.scan_id if result else ""),
+            verification=getattr(self.vm.current_group, "verification_level", "full") if self.vm.groups else "full",
             groups=self.vm.total_groups,
             reclaimable_bytes=self.vm.reclaimable_bytes,
         )
@@ -191,16 +190,17 @@ class ReviewPage(ttk.Frame):
     # ----------------------------------------------------------------
     def _refresh_group_list(self):
         self._group_table.clear()
-        for i, ge in enumerate(self.vm.filtered_groups()):
+        for i, ge in enumerate(self.vm.filtered_groups):
             tag = "warn" if ge.has_risk else ""
             self._group_table.insert_row(
                 ge.group_id,
-                (str(i + 1), str(ge.file_count), fmt_bytes(ge.reclaimable_bytes), ge.confidence),
+                (str(i + 1), str(ge.file_count), fmt_bytes(ge.reclaimable_bytes),
+                 ge.confidence_label),
                 tags=(tag,) if tag else (),
             )
 
     def _on_search(self, text: str):
-        self.vm.search_text = text
+        self.vm.filter_text = text
         self._refresh_group_list()
 
     def _on_group_select(self, group_id: str):

@@ -163,3 +163,16 @@ class AppShell(ttk.Frame):
         self._grad_bar.update_colors(tokens["gradient_start"], tokens["gradient_end"])
         # Re-set theme combo
         self.top_bar.set_current_theme(self._state.settings.theme_key)
+
+    def apply_preferences(self) -> None:
+        """Apply persisted UI preferences to shell widgets (density, drawer, advanced)."""
+        s = self._state.settings
+        self.top_bar.set_density_label(s.density)
+        self.top_bar.set_advanced(s.advanced_mode)
+        if s.show_insight_drawer:
+            if not self.insight_drawer.is_visible:
+                self.insight_drawer.show()
+                self.insight_drawer.grid(row=0, column=3, sticky="ns", in_=self.insight_drawer.master)
+        else:
+            if self.insight_drawer.is_visible:
+                self.insight_drawer.hide()

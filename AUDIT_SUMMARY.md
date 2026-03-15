@@ -52,7 +52,7 @@
 4. **orchestration/coordinator.py**
    - `create_deletion_plan`: accepts `group_keep_paths`, passes to deletion engine; fixed `DeletionPolicy` import.
 
-5. **ui/results_frame.py**
+5. **ui/pages/review_page.py** (replaced legacy results_frame.py)
    - “Keep this file” button and `_on_keep_this_file`: sets `selected_groups[group_id]` to selected file and refreshes list.
    - `_create_deletion_plan`: passes `group_keep_paths=self.selected_groups` so the plan matches user choices.
 

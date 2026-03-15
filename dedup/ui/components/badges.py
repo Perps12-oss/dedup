@@ -4,6 +4,8 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Optional
 
+from ..theme.theme_manager import get_theme_manager
+
 BADGE_STYLES = {
     "success": "Panel.Success.TLabel",
     "warning": "Panel.Warning.TLabel",
@@ -11,6 +13,14 @@ BADGE_STYLES = {
     "info":    "Panel.Accent.TLabel",
     "muted":   "Panel.Muted.TLabel",
     "default": "Panel.Secondary.TLabel",
+}
+
+_VARIANT_TOKEN_MAP = {
+    "success": "success",
+    "warning": "warning",
+    "danger":  "danger",
+    "info":    "accent_primary",
+    "muted":   "text_muted",
 }
 
 
@@ -29,14 +39,6 @@ class Badge(ttk.Label):
 class StatusBadge(ttk.Frame):
     """Dot + text badge for status display."""
 
-    DOT_COLORS = {
-        "success": "#3fb950",
-        "warning": "#d29922",
-        "danger":  "#f85149",
-        "info":    "#58a6ff",
-        "muted":   "#484f58",
-    }
-
     def __init__(self, parent, text: str = "", variant: str = "muted",
                  style: str = "Panel.TFrame", **kwargs):
         super().__init__(parent, style=style, **kwargs)
@@ -53,15 +55,24 @@ class StatusBadge(ttk.Frame):
 
     def _get_bg(self) -> str:
         try:
-            style = ttk.Style()
-            return style.lookup("Panel.TFrame", "background") or "#161b22"
+            s = ttk.Style()
+            return s.lookup("Panel.TFrame", "background") or self._token("bg_panel")
         except Exception:
-            return "#161b22"
+            return self._token("bg_panel")
+
+    @staticmethod
+    def _token(name: str) -> str:
+        tm = get_theme_manager()
+        return tm.tokens.get(name, "#161b22")
+
+    def _dot_color(self, variant: str) -> str:
+        token_name = _VARIANT_TOKEN_MAP.get(variant, "text_muted")
+        return self._token(token_name)
 
     def set(self, text: str, variant: str = "muted"):
         bg = self._get_bg()
         self._dot_canvas.configure(bg=bg)
-        color = self.DOT_COLORS.get(variant, self.DOT_COLORS["muted"])
+        color = self._dot_color(variant)
         self._dot_canvas.delete("all")
         self._dot_canvas.create_oval(1, 1, 7, 7, fill=color, outline="")
         self._text_var.set(text)

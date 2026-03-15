@@ -30,10 +30,12 @@ dedup/
 ├── ui/                       # Minimal tkinter UI
 │   ├── __init__.py
 │   ├── app.py                # Main application
-│   ├── home_frame.py         # Scan setup screen
-│   ├── scan_frame.py         # Live scan monitoring
-│   ├── results_frame.py      # Review/delete duplicates
-│   └── history_frame.py      # Scan history
+│   ├── shell/                # AppShell, NavRail, TopBar, StatusStrip
+│   ├── pages/                # Mission, Scan, Review, History, Diagnostics, Settings
+│   ├── components/           # Reusable widgets (MetricCard, DataTable, etc.)
+│   ├── viewmodels/           # MVVM state holders per page
+│   ├── projections/          # Canonical UI state contract (ProjectionHub)
+│   └── theme/                # 15-theme token system
 ├── __init__.py               # Package initialization
 ├── main.py                   # Entry point
 ├── setup.py                  # Package setup

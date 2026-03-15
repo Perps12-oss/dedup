@@ -843,7 +843,8 @@ class ResumableScanPipeline(ScanPipeline):
 
     def run(
         self,
-        progress_cb: Optional[Callable[[ScanProgress], None]] = None
+        progress_cb: Optional[Callable[[ScanProgress], None]] = None,
+        event_bus: Optional[Any] = None,
     ) -> ScanResult:
         """
         Run the scan pipeline with checkpoint support.

@@ -261,11 +261,12 @@ class MissionPage(ttk.Frame):
             self._last_metrics["dur"].update(fmt_duration(ls.duration_s))
 
     def _update_capabilities(self):
+        caps = self.vm.capabilities_by_name()
         for key, var in self._cap_vars.items():
             if key in ("durable", "revalidation", "audit"):
                 var.set(IC.OK)
-            elif key in self.vm.capabilities:
-                var.set(IC.OK if self.vm.capabilities[key] else IC.WARN)
+            elif key in caps:
+                var.set(IC.OK if caps[key] else IC.WARN)
             else:
                 var.set("—")
 

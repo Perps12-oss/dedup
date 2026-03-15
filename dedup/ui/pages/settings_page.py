@@ -15,10 +15,13 @@ class SettingsPage(ttk.Frame):
     """Settings and theme page."""
 
     def __init__(self, parent, state: UIState,
-                 on_theme_change: Callable[[str], None], **kwargs):
+                 on_theme_change: Callable[[str], None],
+                 on_preference_changed: Callable[[], None] | None = None,
+                 **kwargs):
         super().__init__(parent, **kwargs)
         self._state = state
         self._on_theme_change = on_theme_change
+        self._on_preference_changed = on_preference_changed
         self._build()
 
     def _build(self):
@@ -115,6 +118,19 @@ class SettingsPage(ttk.Frame):
         elif hasattr(s, attr):
             setattr(s, attr, value)
         self._state.save()
+        if self._on_preference_changed:
+            self._on_preference_changed()
 
     def on_show(self):
-        pass
+        """Sync checkbox state from persisted settings when page is shown."""
+        s = self._state.settings
+        if not getattr(self, "_pref_vars", None):
+            return
+        self._pref_vars.get("density") and self._pref_vars["density"].set(s.density == "compact")
+        self._pref_vars.get("advanced_mode") and self._pref_vars["advanced_mode"].set(s.advanced_mode)
+        self._pref_vars.get("reduced_motion") and self._pref_vars["reduced_motion"].set(s.reduced_motion)
+        self._pref_vars.get("reduced_gradients") and self._pref_vars["reduced_gradients"].set(s.reduced_gradients)
+        self._pref_vars.get("high_contrast") and self._pref_vars["high_contrast"].set(s.high_contrast)
+        self._pref_vars.get("show_insight_drawer") and self._pref_vars["show_insight_drawer"].set(s.show_insight_drawer)
+        self._pref_vars.get("review_show_thumbnails") and self._pref_vars["review_show_thumbnails"].set(s.review_show_thumbnails)
+        self._pref_vars.get("scan_show_events") and self._pref_vars["scan_show_events"].set(s.scan_show_events)

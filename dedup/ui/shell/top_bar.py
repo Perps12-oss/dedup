@@ -95,7 +95,7 @@ class TopBar(tk.Frame):
             right, text="⊞ Cozy", font=("Segoe UI", 7),
             padx=6, pady=2, cursor="hand2")
         self._density_btn.pack(side="left", padx=(0, 4))
-        self._density_btn.bind("<Button-1>", lambda e: on_density_toggle())
+        self._density_btn.bind("<Button-1>", lambda e: self._on_density_toggle())
 
         # Advanced toggle
         self._adv_var = tk.BooleanVar(value=False)
@@ -103,14 +103,14 @@ class TopBar(tk.Frame):
             right, text="Advanced", font=("Segoe UI", 7),
             padx=6, pady=2, cursor="hand2")
         self._adv_btn.pack(side="left", padx=(0, 4))
-        self._adv_btn.bind("<Button-1>", lambda e: on_advanced_toggle())
+        self._adv_btn.bind("<Button-1>", lambda e: self._on_advanced_toggle())
 
         # Settings
         settings_btn = tk.Label(
             right, text=IC.SETTINGS, font=("Segoe UI", 10),
             padx=6, cursor="hand2")
         settings_btn.pack(side="left")
-        settings_btn.bind("<Button-1>", lambda e: on_settings())
+        settings_btn.bind("<Button-1>", lambda e: self._on_settings())
         self._settings_lbl = settings_btn
 
     def set_page_actions(self, actions: List[ActionSpec]):
