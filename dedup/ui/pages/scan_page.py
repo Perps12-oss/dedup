@@ -115,7 +115,7 @@ class ScanPage(ttk.Frame):
                 self._pending_defer.discard(key)
 
     def _on_session(self, proj: SessionProjection) -> None:
-        self.vm.session = proj
+        self.vm.apply_session_projection(proj)
         detail = proj.current_phase.replace("_", " ").title() if proj.current_phase else ""
         if proj.status == "running":
             self._ribbon.set_state("scanning", detail=detail)
@@ -126,13 +126,13 @@ class ScanPage(ttk.Frame):
         self._defer(self._render_phase_detail, "phase_detail")
 
     def _on_phases(self, phases: Dict[str, PhaseProjection]) -> None:
-        self.vm.phases = phases
+        self.vm.apply_phase_projection(phases)
         for pname, proj in phases.items():
             self._timeline.set_phase_state(pname, proj.timeline_state)
         self._defer(self._render_phase_detail, "phase_detail")
 
     def _on_metrics(self, proj: MetricsProjection) -> None:
-        self.vm.metrics = proj
+        self.vm.apply_metrics_projection(proj)
         self._defer(self._render_metrics, "metrics")
 
     def _on_compat(self, proj: CompatibilityProjection) -> None:
@@ -176,34 +176,61 @@ class ScanPage(ttk.Frame):
     # ------------------------------------------------------------------
 
     def _render_metrics(self) -> None:
-        m = self.vm.metrics
-        self._metric_cards["files"].update(fmt_int(m.files_scanned))
-        self._metric_cards["skipped"].update(fmt_int(m.files_skipped))
-        self._metric_cards["cands"].update(fmt_int(m.candidates))
-        self._metric_cards["groups"].update(fmt_int(m.duplicate_groups))
-        self._metric_cards["reclaim"].update(
-            fmt_bytes(m.reclaimable_bytes) if m.reclaimable_bytes else "—")
-        self._metric_cards["elapsed"].update(fmt_duration(m.elapsed_s))
-        self._metric_cards["eta"].update(m.eta_label)
-        self._phase_vars["Time"].set(fmt_duration(m.elapsed_s))
-        # Progress: only show % when we have a meaningful total (files_skipped > 0).
-        # During discovery, files_skipped=0 so pct would wrongly show 100% — show file count instead.
-        if m.files_skipped > 0:
-            pct = (m.files_scanned / max(1, m.files_scanned + m.files_skipped) * 100)
-            self._phase_vars["Progress"].set(f"{pct:.0f}%")
-        elif m.files_scanned > 0:
-            self._phase_vars["Progress"].set(f"{fmt_int(m.files_scanned)} files")
+        sm = self.vm.session_metrics
+        pm = self.vm.phase_metrics
+        rm = self.vm.result_metrics
+        # Session Metrics (scan-scope only)
+        self._metric_cards["files_total"].update(fmt_int(sm.files_discovered_total))
+        self._metric_cards["dirs_scanned"].update(fmt_int(sm.directories_scanned_total))
+        speed = sm.discovery_speed
+        self._metric_cards["discovery_speed"].update(
+            f"{speed:,.0f} files/sec" if speed > 0 else "—"
+        )
+        self._metric_cards["files_reused"].update(fmt_int(sm.files_reused_total))
+        self._metric_cards["dirs_reused"].update(fmt_int(sm.dirs_reused_total))
+        self._metric_cards["groups_live"].update(fmt_int(sm.duplicate_groups_total))
+        self._metric_cards["elapsed"].update(fmt_duration(sm.elapsed_total_s))
+
+        # Update ribbon detail with live stats when scanning
+        if self.vm.is_scanning and pm.phase_name:
+            mode_label = sm.run_mode.replace("_", " ").title()
+            ribbon_detail = f"Mode: {mode_label}"
+            if speed > 0:
+                ribbon_detail += f"  |  {speed:,.0f} files/sec"
+            ribbon_detail += f"  |  {fmt_int(sm.files_discovered_total)} files"
+            self._ribbon.set_state("scanning", detail=ribbon_detail)
+
+        # Current Phase (phase-scope only)
+        self._phase_vars["Current phase"].set(
+            pm.phase_name.replace("_", " ").title() if pm.phase_name else "—"
+        )
+        if pm.total_units:
+            self._phase_vars["Phase progress"].set(f"{fmt_int(pm.completed_units)} / {fmt_int(pm.total_units)}")
         else:
-            self._phase_vars["Progress"].set("—")
+            self._phase_vars["Phase progress"].set(f"{fmt_int(pm.completed_units)} / —")
+        self._phase_vars["Phase units processed"].set(fmt_int(pm.completed_units))
+        self._phase_vars["Phase elapsed"].set(fmt_duration(pm.elapsed_phase_s))
+        if pm.current_item_label:
+            self._phase_vars["Current file"].set(_fixed_width_path(pm.current_item_label, 40))
+
+        # Result Summary (result-scope only)
+        self._result_vars["Duplicate files"].set(fmt_int(rm.duplicate_files_in_results))
+        self._result_vars["Groups assembled"].set(fmt_int(rm.groups_assembled))
+        self._result_vars["Result rows"].set(fmt_int(rm.rows_processed))
+        self._result_vars["Reclaimable"].set(
+            fmt_bytes(sm.reclaimable_bytes_total) if sm.reclaimable_bytes_total else "—"
+        )
 
     def _render_phase_detail(self) -> None:
         s = self.vm.session
         active_phase = next(
             (p for p in self.vm.phases.values() if p.status == "running"), None)
-        self._phase_vars["Phase"].set(
-            active_phase.display_label if active_phase else (s.current_phase or "—"))
+        if not self.vm.phase_metrics.phase_name:
+            self._phase_vars["Current phase"].set(
+                active_phase.display_label if active_phase else (s.current_phase or "—")
+            )
         if active_phase:
-            self._phase_vars["Rows processed"].set(fmt_int(active_phase.rows_written))
+            self._phase_vars["Phase units processed"].set(fmt_int(active_phase.rows_written))
 
     def _render_work_saved(self) -> None:
         ws = self.vm.work_saved_info
@@ -229,7 +256,7 @@ class ScanPage(ttk.Frame):
 
     def _build(self):
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(4, weight=1)
+        self.rowconfigure(5, weight=1)  # events row stretches
         pad = {"padx": 16, "pady": (0, 8)}
 
         # ── Page header ──────────────────────────────────────────────
@@ -244,7 +271,7 @@ class ScanPage(ttk.Frame):
             style="Ghost.TButton", command=self._on_cancel)
         self._cancel_btn.grid(row=0, column=2, sticky="e")
 
-        # ── Status ribbon ────────────────────────────────────────────
+        # ── Tier 1: Scan Status Ribbon ───────────────────────────────
         self._ribbon = StatusRibbon(self)
         self._ribbon.grid(row=1, column=0, sticky="ew", **pad)
 
@@ -254,33 +281,33 @@ class ScanPage(ttk.Frame):
         self._timeline = PhaseTimeline(tl_card.body)
         self._timeline.pack(fill="x")
 
-        # ── Metrics + Work Saved row ─────────────────────────────────
-        metrics_row = ttk.Frame(self)
-        metrics_row.grid(row=3, column=0, sticky="ew", **pad)
-        metrics_row.columnconfigure(0, weight=3)
-        metrics_row.columnconfigure(1, weight=2)
+        # ── Tier 2: Session Metrics Dashboard ────────────────────────
+        metrics_card = SectionCard(self, title=f"{IC.SPEED}  Session Metrics")
+        metrics_card.grid(row=3, column=0, sticky="ew", **pad)
+        self._build_live_metrics(metrics_card.body)
 
-        live_card = SectionCard(metrics_row, title=f"{IC.SPEED}  Live Metrics")
-        live_card.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
-        self._build_live_metrics(live_card.body)
+        # ── Tier 3: Operational Panels ───────────────────────────────
+        ops_row = ttk.Frame(self)
+        ops_row.grid(row=4, column=0, sticky="ew", **pad)
+        ops_row.columnconfigure(0, weight=1)
+        ops_row.columnconfigure(1, weight=1)
+        ops_row.columnconfigure(2, weight=1)
 
-        self._work_card = SectionCard(metrics_row, title=f"{IC.SAVED}  Work Saved")
-        self._work_card.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
-        self._build_work_saved(self._work_card.body)
-
-        # ── Phase detail + Events row ─────────────────────────────────
-        detail_row = ttk.Frame(self)
-        detail_row.grid(row=4, column=0, sticky="nsew", **pad)
-        detail_row.columnconfigure(0, weight=1)
-        detail_row.columnconfigure(1, weight=1)
-        detail_row.rowconfigure(0, weight=1)
-
-        phase_card = SectionCard(detail_row, title=f"{IC.ACTIVE}  Current Phase")
-        phase_card.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+        phase_card = SectionCard(ops_row, title=f"{IC.ACTIVE}  Current Phase")
+        phase_card.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
         self._build_phase_detail(phase_card.body)
 
-        events_card = SectionCard(detail_row, title=f"{IC.INFO}  Events")
-        events_card.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+        self._work_card = SectionCard(ops_row, title=f"{IC.SAVED}  Incremental Reuse")
+        self._work_card.grid(row=0, column=1, sticky="nsew", padx=4)
+        self._build_work_saved(self._work_card.body)
+
+        result_card = SectionCard(ops_row, title=f"{IC.GROUPS}  Result Summary")
+        result_card.grid(row=0, column=2, sticky="nsew", padx=(4, 0))
+        self._build_result_summary(result_card.body)
+
+        # ── Bottom: Event Stream ─────────────────────────────────────
+        events_card = SectionCard(self, title=f"{IC.INFO}  Events")
+        events_card.grid(row=5, column=0, sticky="nsew", **pad)
         self._build_events(events_card.body)
 
     def _build_live_metrics(self, body: ttk.Frame):
@@ -289,15 +316,14 @@ class ScanPage(ttk.Frame):
         body.columnconfigure(2, weight=1)
         self._metric_cards: Dict[str, MetricCard] = {}
         specs = [
-            ("files",   f"{IC.FILE}  Files",       "0",  "neutral"),
-            ("skipped", f"{IC.SKIPPED} Skipped",   "0",  "neutral"),
-            ("cands",   f"{IC.CANDIDATES} Cands",  "0",  "neutral"),
-            ("groups",  f"{IC.GROUPS} Groups",     "0",  "accent"),
-            ("reclaim", f"{IC.RECLAIM} Reclaim",   "—",  "positive"),
-            ("elapsed", f"{IC.SPEED}  Elapsed",    "0s", "neutral"),
-            ("eta",     "ETA",                     "—",  "neutral"),
+            ("files_total",  f"{IC.FILE}  Files Scanned",        "0",            "neutral"),
+            ("dirs_scanned", f"{IC.FOLDER} Dirs Scanned",        "0",            "neutral"),
+            ("discovery_speed", f"{IC.SPEED}  Discovery Speed",  "—",            "neutral"),
+            ("files_reused", f"{IC.SAVED} Files Reused",         "0",            "positive"),
+            ("dirs_reused",  f"{IC.SKIPPED} Dirs Reused",        "0",            "positive"),
+            ("groups_live",  f"{IC.GROUPS} Duplicate Groups",    "0",            "accent"),
+            ("elapsed",      f"{IC.SPEED}  Elapsed Total",       "0s",           "neutral"),
         ]
-        # Fixed width so cards don't resize when values change (avoids flicker)
         card_width = 110
         for i, (key, label, val, variant) in enumerate(specs):
             c = MetricCard(body, label=label, value=val, variant=variant, width=card_width)
@@ -309,12 +335,14 @@ class ScanPage(ttk.Frame):
         body.columnconfigure(1, weight=1, minsize=140)
         self._work_vars: Dict[str, tk.StringVar] = {}
         rows = [
-            ("Discovery reused",  "—"),
-            ("Size reduction",    "—"),
-            ("Files skipped",     "0"),
+            ("Reuse mode",        "none"),
+            ("Dirs skipped",      "0"),
+            ("Files reused",      "0"),
+            ("Skip ratio",        "—"),
+            ("Hash cache hit rate", "—"),
+            ("Compatible prior",  "No"),
+            ("Compatibility reason", "none"),
             ("Time saved",        "—"),
-            ("Resume reason",     "—"),
-            ("Outcome",           "—"),
         ]
         for i, (label, default) in enumerate(rows):
             ttk.Label(body, text=label + ":", style="Panel.Muted.TLabel",
@@ -331,10 +359,10 @@ class ScanPage(ttk.Frame):
         body.columnconfigure(1, weight=1, minsize=240)
         self._phase_vars: Dict[str, tk.StringVar] = {}
         rows = [
-            ("Phase",          "—"),
-            ("Progress",       "—"),
-            ("Rows processed", "0"),
-            ("Time",           "0s"),
+            ("Current phase",   "—"),
+            ("Phase progress",  "—"),
+            ("Phase units processed", "0"),
+            ("Phase elapsed",  "0s"),
             ("Current file",   ""),
         ]
         for i, (label, default) in enumerate(rows):
@@ -349,6 +377,25 @@ class ScanPage(ttk.Frame):
             body, mode="indeterminate", length=240)
         self._progress_bar.grid(
             row=len(rows), column=0, columnspan=2, sticky="ew", pady=(8, 0))
+
+    def _build_result_summary(self, body: ttk.Frame):
+        body.columnconfigure(0, minsize=90)
+        body.columnconfigure(1, weight=1, minsize=140)
+        self._result_vars: Dict[str, tk.StringVar] = {}
+        rows = [
+            ("Duplicate files", "0"),
+            ("Groups assembled", "0"),
+            ("Result rows", "0"),
+            ("Reclaimable", "—"),
+        ]
+        for i, (label, default) in enumerate(rows):
+            ttk.Label(body, text=label + ":", style="Panel.Muted.TLabel",
+                      font=("Segoe UI", 8)).grid(row=i, column=0, sticky="w", pady=1)
+            var = tk.StringVar(value=default)
+            ttk.Label(body, textvariable=var, style="Panel.TLabel",
+                      font=("Segoe UI", 8, "bold")).grid(
+                row=i, column=1, sticky="w", padx=(4, 0))
+            self._result_vars[label] = var
 
     def _build_events(self, body: ttk.Frame):
         body.columnconfigure(0, weight=1)
@@ -438,10 +485,8 @@ class ScanPage(ttk.Frame):
             for pname in PHASE_ORDER:
                 self._timeline.set_phase_state(pname, "completed")
             from ..utils.formatting import fmt_int, fmt_bytes
-            self._metric_cards["groups"].update(
-                fmt_int(len(result.duplicate_groups)))
-            self._metric_cards["reclaim"].update(
-                fmt_bytes(result.total_reclaimable_bytes))
+            self._result_vars["Groups assembled"].set(fmt_int(len(result.duplicate_groups)))
+            self._result_vars["Reclaimable"].set(fmt_bytes(result.total_reclaimable_bytes))
         self.after(0, lambda: self.on_complete(result))
 
     def _on_error_fallback(self, error: str) -> None:
@@ -486,6 +531,8 @@ class ScanPage(ttk.Frame):
             v.set("—")
         for v in self._phase_vars.values():
             v.set("—")
+        for v in self._result_vars.values():
+            v.set("—")
 
     def _schedule_elapsed(self) -> None:
         self._after_id = self.after(1000, self._tick_elapsed)
@@ -495,7 +542,6 @@ class ScanPage(ttk.Frame):
             return
         elapsed = time.time() - self.vm._start_wall
         self._metric_cards["elapsed"].update(fmt_duration(elapsed))
-        self._phase_vars["Time"].set(fmt_duration(elapsed))
         self._schedule_elapsed()
 
     def _cancel_elapsed(self) -> None:
