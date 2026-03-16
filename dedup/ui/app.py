@@ -232,8 +232,8 @@ class CerebroApp:
                 ("Copy Diag",    "Ghost.TButton",  self._copy_diagnostics),
             ],
             "review":      [
-                ("Dry Run",      "Ghost.TButton",  lambda: self._review._on_dry_run()),
-                ("Execute Plan", "Danger.TButton", lambda: self._review._on_execute()),
+                ("Preview Effects", "Ghost.TButton",  lambda: self._review._on_dry_run()),
+                ("DELETE",          "Danger.TButton", lambda: self._review._on_execute()),
             ],
             "history":     [
                 ("Refresh",      "Ghost.TButton",  lambda: self._history._refresh()),
