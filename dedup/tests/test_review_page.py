@@ -73,6 +73,33 @@ def test_review_vm_clear_keep_removes_selection():
     assert "g1" not in vm.keep_selections
 
 
+def test_workspace_stack_clear_selection_button_shown_when_keep(tk_root):
+    """Clear selection toolbar is visible when group has a keep choice."""
+    from dedup.ui.components.review_workspace import ReviewWorkspaceStack
+    from dedup.engine.models import DuplicateGroup, FileMetadata
+
+    called = []
+    stack = ReviewWorkspaceStack(tk_root, on_keep=lambda _: None, on_clear_keep=lambda: called.append(1))
+    group = DuplicateGroup(
+        group_id="g1", group_hash="xx",
+        files=[
+            FileMetadata(path="/a.jpg", size=100, mtime_ns=0, inode=1),
+            FileMetadata(path="/b.jpg", size=100, mtime_ns=0, inode=2),
+        ],
+    )
+    stack.load_group(group, keep_path="/a.jpg", mode="table")
+    tk_root.update_idletasks()
+    # Clear toolbar should be visible (grid'd) — use winfo_ismapped (winfo_viewable fails when root withdrawn)
+    assert stack._clear_toolbar_visible
+    stack._clear_btn.invoke()
+    assert len(called) == 1
+
+    stack.load_group(group, keep_path="", mode="table")
+    tk_root.update_idletasks()
+    # Clear toolbar should be hidden when no keep
+    assert not stack._clear_toolbar_visible
+
+
 # ---------------------------------------------------------------------------
 # Workspace mode selection
 # ---------------------------------------------------------------------------
@@ -129,6 +156,93 @@ def test_workspace_stack_load_group_passes_mode(tk_root):
     assert stack._current == 1
     stack.load_group(group, keep_path="/a.jpg", mode="compare")
     assert stack._current == 2
+
+
+def test_clear_selection_button_shown_when_keep_set(tk_root):
+    """Clear selection toolbar is shown when group has a keep choice."""
+    from dedup.ui.components.review_workspace import ReviewWorkspaceStack
+    from dedup.engine.models import DuplicateGroup, FileMetadata
+
+    def noop(_: str): pass
+    cleared = []
+
+    def on_clear():
+        cleared.append(1)
+
+    stack = ReviewWorkspaceStack(tk_root, on_keep=noop, on_clear_keep=on_clear)
+    group = DuplicateGroup(
+        group_id="g1", group_hash="xx",
+        files=[
+            FileMetadata(path="/a.jpg", size=100, mtime_ns=0, inode=1),
+            FileMetadata(path="/b.jpg", size=100, mtime_ns=0, inode=2),
+        ],
+    )
+    stack.load_group(group, keep_path="", mode="table")
+    assert stack._clear_toolbar_visible is False  # hidden when no keep
+
+    stack.load_group(group, keep_path="/a.jpg", mode="table")
+    assert stack._clear_toolbar_visible is True  # visible when keep set
+
+    stack._clear_btn.invoke()
+    assert len(cleared) == 1
+
+
+def test_workspace_stack_clear_selection_button(tk_root):
+    """Clear selection toolbar appears when group has keep_path; button invokes callback."""
+    from dedup.ui.components.review_workspace import ReviewWorkspaceStack
+    from dedup.engine.models import DuplicateGroup, FileMetadata
+
+    def noop(_: str): pass
+    cleared = []
+
+    def on_clear():
+        cleared.append(1)
+
+    stack = ReviewWorkspaceStack(tk_root, on_keep=noop, on_clear_keep=on_clear)
+    group = DuplicateGroup(
+        group_id="g1", group_hash="xx",
+        files=[
+            FileMetadata(path="/a.jpg", size=100, mtime_ns=0, inode=1),
+            FileMetadata(path="/b.jpg", size=100, mtime_ns=0, inode=2),
+        ],
+    )
+    # No keep_path: toolbar hidden
+    stack.load_group(group, keep_path="", mode="table")
+    assert stack._clear_toolbar_visible is False
+
+    # With keep_path: toolbar shown
+    stack.load_group(group, keep_path="/a.jpg", mode="table")
+    assert stack._clear_toolbar_visible is True
+
+    # Click Clear selection
+    stack._clear_btn.invoke()
+    assert len(cleared) == 1
+
+
+def test_clear_selection_button_shown_when_keep_set(tk_root):
+    """Clear selection toolbar appears when group has a keep choice."""
+    from dedup.ui.components.review_workspace import ReviewWorkspaceStack
+    from dedup.engine.models import DuplicateGroup, FileMetadata
+
+    def noop(_: str): pass
+    cleared = []
+    stack = ReviewWorkspaceStack(tk_root, on_keep=noop, on_clear_keep=lambda: cleared.append(1))
+    group = DuplicateGroup(
+        group_id="g1", group_hash="xx",
+        files=[
+            FileMetadata(path="/a.jpg", size=100, mtime_ns=0, inode=1),
+            FileMetadata(path="/b.jpg", size=100, mtime_ns=0, inode=2),
+        ],
+    )
+    # No keep → toolbar hidden
+    stack.load_group(group, keep_path="", mode="table")
+    assert stack._clear_toolbar_visible is False  # hidden when no keep
+    # With keep → toolbar shown
+    stack.load_group(group, keep_path="/a.jpg", mode="table")
+    assert stack._clear_toolbar_visible is True
+    # Click Clear selection → callback invoked
+    stack._clear_btn.invoke()
+    assert len(cleared) == 1
 
 
 # ---------------------------------------------------------------------------

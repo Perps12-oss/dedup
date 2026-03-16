@@ -138,6 +138,7 @@ class ReviewPage(ttk.Frame):
         self._workspace = ReviewWorkspaceStack(
             body,
             on_keep=self._on_set_keep,
+            on_clear_keep=self._on_clear_keep,
         )
         self._workspace.grid(row=0, column=0, sticky="nsew")
 
@@ -158,6 +159,7 @@ class ReviewPage(ttk.Frame):
             del_count=self.vm.delete_count,
             keep_count=self.vm.keep_count,
             reclaim_bytes=self.vm.reclaimable_bytes,
+            risk_flags=self.vm.risk_flags,
         )
 
     def on_show(self):
@@ -205,6 +207,21 @@ class ReviewPage(ttk.Frame):
             del_count=self.vm.delete_count,
             keep_count=self.vm.keep_count,
             reclaim_bytes=self.vm.reclaimable_bytes,
+            risk_flags=self.vm.risk_flags,
+        )
+
+    def _on_clear_keep(self) -> None:
+        """Clear the keep selection for the current group."""
+        gid = self.vm.selected_group_id
+        if not gid or gid not in self.vm.keep_selections:
+            return
+        self.vm.clear_keep(gid)
+        self._load_workspace(gid)
+        self._safety_panel.update_plan(
+            del_count=self.vm.delete_count,
+            keep_count=self.vm.keep_count,
+            reclaim_bytes=self.vm.reclaimable_bytes,
+            risk_flags=self.vm.risk_flags,
         )
 
     def _on_mode_change(self) -> None:

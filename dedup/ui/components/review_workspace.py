@@ -9,6 +9,7 @@ Provides:
 """
 from __future__ import annotations
 
+import threading
 import tkinter as tk
 from tkinter import ttk
 from pathlib import Path
@@ -127,6 +128,8 @@ class ReviewGalleryView(ttk.Frame):
         self._on_keep = on_keep
         self._thumb_refs: List[Any] = []
         self._cards: List[ttk.Frame] = []
+        self._thumb_cancel = threading.Event()
+        self.bind("<Destroy>", self._on_destroy, add="+")
 
         self._canvas = tk.Canvas(
             self, highlightthickness=0,
@@ -155,11 +158,16 @@ class ReviewGalleryView(ttk.Frame):
     def _on_inner_configure(self, _event):
         self._canvas.configure(scrollregion=self._canvas.bbox("all"))
 
+    def _on_destroy(self, _event=None):
+        self._thumb_cancel.set()
+
     def load_group(
         self,
         group: Optional[DuplicateGroup],
         keep_path: str = "",
     ) -> None:
+        self._thumb_cancel.set()
+        self._thumb_cancel = threading.Event()
         self._thumb_refs.clear()
         for w in self._inner.winfo_children():
             w.destroy()
@@ -223,7 +231,8 @@ class ReviewGalleryView(ttk.Frame):
                     self._inner.update_idletasks()
                     self._canvas.configure(scrollregion=self._canvas.bbox("all"))
 
-                self.after(0, update)
+                if not self._thumb_cancel.is_set():
+                    self.after(0, update)
             return on_thumb
 
         for idx, f in enumerate(files):
@@ -231,6 +240,7 @@ class ReviewGalleryView(ttk.Frame):
                 generate_thumbnails_async(
                     [f.path], make_on_thumb(idx),
                     size=size, cache_dir=get_cache_dir(), max_count=len(files),
+                    cancel_event=self._thumb_cancel,
                 )
             else:
                 row, col = idx // ncols, idx % ncols
@@ -268,7 +278,9 @@ class ReviewCompareView(ttk.Frame):
         self._on_keep_left = on_keep_left
         self._on_keep_right = on_keep_right
         self._thumb_refs: List[Any] = []
+        self._thumb_cancel = threading.Event()
         self._pair_index = 0
+        self.bind("<Destroy>", self._on_destroy, add="+")
 
         self._left_frame = ttk.Frame(self, style="Panel.TFrame", padding=8)
         self._right_frame = ttk.Frame(self, style="Panel.TFrame", padding=8)
@@ -304,11 +316,16 @@ class ReviewCompareView(ttk.Frame):
         self._empty.grid(row=1, column=0, columnspan=2, sticky="nsew")
         self._empty.hide()
 
+    def _on_destroy(self, _event=None):
+        self._thumb_cancel.set()
+
     def load_group(
         self,
         group: Optional[DuplicateGroup],
         keep_path: str = "",
     ) -> None:
+        self._thumb_cancel.set()
+        self._thumb_cancel = threading.Event()
         self._thumb_refs.clear()
         for w in self._left_frame.winfo_children():
             w.destroy()
@@ -394,8 +411,10 @@ class ReviewCompareView(ttk.Frame):
                                 ttk.Label(frame, text="[preview]", style="Panel.Muted.TLabel").grid(row=1, column=0)
                         else:
                             ttk.Label(frame, text="[no preview]", style="Panel.Muted.TLabel").grid(row=1, column=0)
-                    self.after(0, upd)
-                generate_thumbnails_async([f.path], on_thumb, size=size, cache_dir=get_cache_dir(), max_count=1)
+                    if not self._thumb_cancel.is_set():
+                        self.after(0, upd)
+                generate_thumbnails_async([f.path], on_thumb, size=size, cache_dir=get_cache_dir(), max_count=1,
+                                         cancel_event=self._thumb_cancel)
             else:
                 ttk.Label(frame, text="📄 " + ext.upper(), style="Panel.Muted.TLabel",
                           font=("Segoe UI", 14)).grid(row=1, column=0)
@@ -415,12 +434,27 @@ class ReviewWorkspaceStack(ttk.Frame):
         self,
         parent,
         on_keep: Callable[[str], None],
+        on_clear_keep: Optional[Callable[[], None]] = None,
         **kwargs,
     ):
         super().__init__(parent, **kwargs)
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(0, weight=1)
+        self.rowconfigure(1, weight=1)
         self._on_keep = on_keep
+        self._on_clear_keep = on_clear_keep or (lambda: None)
+
+        # Toolbar: Clear selection (shown when a group has a keep choice)
+        self._clear_toolbar = ttk.Frame(self, style="Panel.TFrame")
+        self._clear_btn = ttk.Button(
+            self._clear_toolbar,
+            text=f"{IC.REMOVE}  Clear selection",
+            style="Ghost.TButton",
+            command=self._on_clear_keep,
+        )
+        self._clear_btn.pack(side="left", padx=(0, 6))
+        self._clear_toolbar.grid(row=0, column=0, sticky="w", pady=(0, 4))
+        self._clear_toolbar.grid_remove()
+        self._clear_toolbar_visible = False
 
         def _table_keep():
             sel = self._table.selection()
@@ -437,7 +471,7 @@ class ReviewWorkspaceStack(ttk.Frame):
 
         self._views = [self._table, self._gallery, self._compare]
         for v in self._views:
-            v.grid(row=0, column=0, sticky="nsew")
+            v.grid(row=1, column=0, sticky="nsew")
         self._current = 0
         self._show_index(0)
 
@@ -462,7 +496,7 @@ class ReviewWorkspaceStack(ttk.Frame):
     def _show_index(self, idx: int) -> None:
         self._views[self._current].grid_remove()
         self._current = idx
-        self._views[self._current].grid(row=0, column=0, sticky="nsew")
+        self._views[self._current].grid(row=1, column=0, sticky="nsew")
 
     def load_group(
         self,
@@ -474,6 +508,12 @@ class ReviewWorkspaceStack(ttk.Frame):
             v.load_group(group, keep_path)
         idx = {"table": 0, "gallery": 1, "compare": 2}.get(mode, 0)
         self._show_index(idx)
+        # Show Clear selection when group has a keep choice
+        self._clear_toolbar_visible = bool(group and keep_path)
+        if self._clear_toolbar_visible:
+            self._clear_toolbar.grid(row=0, column=0, sticky="w", pady=(0, 4))
+        else:
+            self._clear_toolbar.grid_remove()
 
     @property
     def table_view(self) -> ReviewTableView:

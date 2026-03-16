@@ -85,11 +85,13 @@ def generate_thumbnails_async(
     size: Tuple[int, int] = DEFAULT_SIZE,
     cache_dir: Optional[Path] = None,
     max_count: int = MAX_THUMBNAILS_PER_GROUP,
+    cancel_event: Optional[threading.Event] = None,
 ) -> None:
     """
     Generate thumbnails in a background thread and invoke callback(path, thumbnail_path) for each.
     Only processes image paths; limits to max_count. Callback may be invoked from worker thread
     (caller should schedule UI updates with after() if needed).
+    If cancel_event is set, worker stops and skips any pending callbacks.
     """
     image_paths = [
         p for p in file_paths
@@ -98,7 +100,11 @@ def generate_thumbnails_async(
 
     def work():
         for p in image_paths:
+            if cancel_event and cancel_event.is_set():
+                return
             thumb = get_thumbnail_path(p, size=size, cache_dir=cache_dir)
+            if cancel_event and cancel_event.is_set():
+                return
             callback(p, thumb)
 
     t = threading.Thread(target=work, daemon=True)
