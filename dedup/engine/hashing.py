@@ -363,18 +363,17 @@ class HashEngine:
             
             return result
         
-        # Use thread pool for parallel hashing
+        # Use thread pool with bounded batches to avoid large future fan-out
         with ThreadPoolExecutor(max_workers=self.workers) as executor:
-            futures = {executor.submit(hash_one, f): f for f in files}
-            
-            for future in as_completed(futures):
-                try:
-                    result = future.result()
-                    yield result
-                except Exception:
-                    # Return original file with error on exception
-                    file = futures[future]
-                    yield file.with_error("Hash computation failed")
+            for batch in self._iter_batches(files, max(self.workers * 64, 256)):
+                futures = {executor.submit(hash_one, f): f for f in batch}
+                for future in as_completed(futures):
+                    try:
+                        result = future.result()
+                        yield result
+                    except Exception:
+                        file = futures[future]
+                        yield file.with_error("Hash computation failed")
     
     def hash_batch_full(
         self,
@@ -403,17 +402,23 @@ class HashEngine:
             
             return result
         
-        # Use thread pool for parallel hashing
+        # Use thread pool with bounded batches to avoid large future fan-out
         with ThreadPoolExecutor(max_workers=self.workers) as executor:
-            futures = {executor.submit(hash_one, f): f for f in files}
-            
-            for future in as_completed(futures):
-                try:
-                    result = future.result()
-                    yield result
-                except Exception:
-                    file = futures[future]
-                    yield file.with_error("Full hash computation failed")
+            for batch in self._iter_batches(files, max(self.workers * 64, 256)):
+                futures = {executor.submit(hash_one, f): f for f in batch}
+                for future in as_completed(futures):
+                    try:
+                        result = future.result()
+                        yield result
+                    except Exception:
+                        file = futures[future]
+                        yield file.with_error("Full hash computation failed")
+
+    @staticmethod
+    def _iter_batches(files: List[FileMetadata], batch_size: int) -> Iterator[List[FileMetadata]]:
+        """Yield bounded-size batches for async submission control."""
+        for i in range(0, len(files), batch_size):
+            yield files[i:i + batch_size]
 
 
 def group_by_partial_hash(

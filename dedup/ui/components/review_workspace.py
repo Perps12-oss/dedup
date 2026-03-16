@@ -232,7 +232,10 @@ class ReviewGalleryView(ttk.Frame):
                     self._canvas.configure(scrollregion=self._canvas.bbox("all"))
 
                 if not self._thumb_cancel.is_set():
-                    self.after(0, update)
+                    try:
+                        self.after(0, update)
+                    except RuntimeError:
+                        pass
             return on_thumb
 
         for idx, f in enumerate(files):
@@ -412,7 +415,10 @@ class ReviewCompareView(ttk.Frame):
                         else:
                             ttk.Label(frame, text="[no preview]", style="Panel.Muted.TLabel").grid(row=1, column=0)
                     if not self._thumb_cancel.is_set():
-                        self.after(0, upd)
+                        try:
+                            self.after(0, upd)
+                        except RuntimeError:
+                            pass
                 generate_thumbnails_async([f.path], on_thumb, size=size, cache_dir=get_cache_dir(), max_count=1,
                                          cancel_event=self._thumb_cancel)
             else:

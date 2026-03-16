@@ -278,13 +278,17 @@ class ScanCoordinator:
         
         from ..engine.deletion import DeletionEngine
         engine = DeletionEngine(persistence=self.persistence)
-        return engine.create_plan_from_groups(
+        plan = engine.create_plan_from_groups(
             scan_id=result.scan_id,
             groups=result.duplicate_groups,
             policy=DeletionPolicy(self.config.default_deletion_policy),
             keep_strategy=keep_strategy,
             group_keep_paths=group_keep_paths,
         )
+        allowed_roots = [str(Path(root).resolve()) for root in result.config.roots]
+        for group in plan.groups:
+            group["allowed_roots"] = allowed_roots
+        return plan
     
     def execute_deletion(
         self,

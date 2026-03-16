@@ -243,6 +243,24 @@ class ScanWorker:
                     event_type=ScanEventType.SCAN_CANCELLED,
                     scan_id=self._pipeline.scan_id,
                 ))
+            elif self._result and self._result.errors:
+                self._error = "; ".join(self._result.errors)
+                if self.callbacks.on_error:
+                    try:
+                        self.callbacks.on_error(self._error)
+                    except Exception as e:
+                        import logging
+                        logging.getLogger(__name__).warning("Error callback failed: %s", e)
+                self.event_bus.publish(ScanEvent(
+                    event_type=ScanEventType.SESSION_FAILED,
+                    scan_id=self._pipeline.scan_id,
+                    payload={"error": self._error, "result": self._result.to_dict()},
+                ))
+                self.event_bus.publish(ScanEvent(
+                    event_type=ScanEventType.SCAN_ERROR,
+                    scan_id=self._pipeline.scan_id,
+                    payload={"error": self._error, "result": self._result.to_dict()},
+                ))
             else:
                 # Success
                 if self.callbacks.on_complete:

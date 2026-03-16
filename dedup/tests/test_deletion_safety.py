@@ -124,6 +124,37 @@ def test_verifier_rejects_changed_file(temp_dir):
     assert error in {"File size changed", "File mtime changed"}
 
 
+def test_verifier_rejects_non_file_target(temp_dir):
+    verifier = DeletionVerifier()
+    error = verifier.verify_target({"path": str(temp_dir)})
+    assert error == "Delete target must be a file"
+
+
+def test_execute_plan_rejects_paths_outside_allowed_roots(temp_dir):
+    inside = temp_dir / "inside.txt"
+    outside = temp_dir.parent / "outside.txt"
+    inside.write_text("inside")
+    outside.write_text("outside")
+    try:
+        plan = DeletionPlan(
+            scan_id="safe-1",
+            policy=DeletionPolicy.TRASH,
+            groups=[{
+                "group_id": "g1",
+                "keep": str(inside.resolve()),
+                "delete": [str(outside.resolve())],
+                "allowed_roots": [str(temp_dir.resolve())],
+            }],
+        )
+        result = DeletionEngine(dry_run=True).execute_plan(plan)
+        assert result.success_count == 0
+        assert result.failure_count == 1
+        assert "outside allowed scan roots" in result.failed_files[0]["error"]
+    finally:
+        if outside.exists():
+            outside.unlink()
+
+
 def test_post_delete_verification_marks_deleted_targets(temp_dir):
     deleted_path = temp_dir / "deleted.txt"
     deleted_path.write_text("x")

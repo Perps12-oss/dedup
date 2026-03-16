@@ -16,6 +16,7 @@ Clear Selection:
   Workspace state and plan state are both driven by vm.keep_selections.
 """
 from __future__ import annotations
+import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
 from pathlib import Path
@@ -155,12 +156,7 @@ class ReviewPage(ttk.Frame):
             reclaimable_bytes=self.vm.reclaimable_bytes,
         )
         self._refresh_group_list()
-        self._safety_panel.update_plan(
-            del_count=self.vm.delete_count,
-            keep_count=self.vm.keep_count,
-            reclaim_bytes=self.vm.reclaimable_bytes,
-            risk_flags=self.vm.risk_flags,
-        )
+        self._refresh_safety_panel()
 
     def on_show(self):
         pass
@@ -203,12 +199,7 @@ class ReviewPage(ttk.Frame):
             return
         self.vm.set_keep(gid, path)
         self._load_workspace(gid)
-        self._safety_panel.update_plan(
-            del_count=self.vm.delete_count,
-            keep_count=self.vm.keep_count,
-            reclaim_bytes=self.vm.reclaimable_bytes,
-            risk_flags=self.vm.risk_flags,
-        )
+        self._refresh_safety_panel()
 
     def _on_clear_keep(self) -> None:
         """Clear the keep selection for the current group."""
@@ -217,6 +208,10 @@ class ReviewPage(ttk.Frame):
             return
         self.vm.clear_keep(gid)
         self._load_workspace(gid)
+        self._refresh_safety_panel()
+
+    def _refresh_safety_panel(self) -> None:
+        """Update safety panel from current view-model state."""
         self._safety_panel.update_plan(
             del_count=self.vm.delete_count,
             keep_count=self.vm.keep_count,
@@ -338,8 +333,24 @@ class ReviewPage(ttk.Frame):
             return
 
         self._safety_panel._delete_btn.configure(state="disabled", text="Executing…")
-        self.update()
+        self.update_idletasks()
+        worker = threading.Thread(
+            target=self._execute_deletion_worker,
+            args=(plan,),
+            daemon=True,
+        )
+        worker.start()
+
+    def _execute_deletion_worker(self, plan: DeletionPlan) -> None:
+        """Run deletion off the UI thread and marshal result back to Tk."""
         result = self.coordinator.execute_deletion(plan)
+        try:
+            if self.winfo_exists():
+                self.after(0, lambda: self._on_deletion_complete(result))
+        except Exception:
+            pass
+
+    def _on_deletion_complete(self, result: DeletionResult) -> None:
         self._safety_panel._delete_btn.configure(state="normal", text="DELETE")
 
         if result.failed_files:

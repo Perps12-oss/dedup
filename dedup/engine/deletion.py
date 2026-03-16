@@ -61,6 +61,8 @@ class DeletionVerifier:
         path = Path(target["path"])
         if not path.exists():
             return "File does not exist"
+        if not path.is_file():
+            return "Delete target must be a file"
 
         try:
             st = path.stat()
@@ -431,20 +433,36 @@ class DeletionEngine:
             return False, str(e)
     
     def _delete_permanently(self, path: Path) -> tuple[bool, Optional[str]]:
-        """Permanently delete a file or directory. Verifies file is gone after."""
+        """Permanently delete a file. Verifies file is gone after."""
         path = path.resolve()
         if not path.exists():
             return False, "File does not exist"
         try:
-            if path.is_file():
-                os.remove(path)
-            elif path.is_dir():
-                shutil.rmtree(path)
+            if not path.is_file():
+                return False, "Delete target must be a file"
+            os.remove(path)
             if path.exists():
                 return False, "File still exists after delete"
             return True, None
         except Exception as e:
             return False, str(e)
+
+    @staticmethod
+    def _is_path_within_roots(path: Path, allowed_roots: List[str]) -> bool:
+        """Return True when path is inside at least one allowed root."""
+        if not allowed_roots:
+            return True
+        try:
+            resolved = path.resolve()
+        except (OSError, ValueError):
+            return False
+        for root in allowed_roots:
+            try:
+                resolved.relative_to(Path(root).resolve())
+                return True
+            except (ValueError, OSError):
+                continue
+        return False
     
     def delete_file(
         self,
@@ -510,26 +528,20 @@ class DeletionEngine:
         for group in plan.groups:
             keep_path = group.get("keep", "")
             delete_paths = group.get("delete", [])
+            allowed_roots = group.get("allowed_roots", [])
             
             for file_path in delete_paths:
                 current += 1
                 
                 # Report progress
-                if progress_cb:
-                    try:
-                        should_continue = progress_cb(current, total_files, Path(file_path).name)
-                        if not should_continue:
-                            result.completed_at = datetime.now()
-                            return result
-                    except Exception:
-                        pass
+                if not self._report_delete_progress(progress_cb, current, total_files, file_path):
+                    result.completed_at = datetime.now()
+                    return result
                 
                 # Safety check: never delete the keep file
-                if Path(file_path).resolve() == Path(keep_path).resolve():
-                    result.failed_files.append({
-                        "path": file_path,
-                        "error": "Cannot delete the designated keep file"
-                    })
+                safety_error = self._validate_delete_target(file_path, keep_path, allowed_roots)
+                if safety_error:
+                    result.failed_files.append({"path": file_path, "error": safety_error})
                     continue
 
                 target_meta = next(
@@ -543,18 +555,8 @@ class DeletionEngine:
                 if verifier:
                     verification_error = verifier.verify_target(target_meta)
                     if verification_error:
-                        result.failed_files.append({
-                            "path": file_path,
-                            "error": verification_error,
-                        })
-                        if self.persistence:
-                            self.persistence.deletion_audit_repo.log(
-                                plan_id=plan.scan_id,
-                                file_id=self.persistence.inventory_repo.get_file_id(plan.scan_id, file_path),
-                                action=plan.policy.value,
-                                outcome="skipped",
-                                detail={"path": file_path, "error": verification_error},
-                            )
+                        result.failed_files.append({"path": file_path, "error": verification_error})
+                        self._log_deletion_audit(plan, file_path, "skipped", {"path": file_path, "error": verification_error})
                         continue
                 
                 # Get file size before deletion for bytes_reclaimed (truthful metric)
@@ -569,30 +571,55 @@ class DeletionEngine:
                 if success:
                     result.deleted_files.append(file_path)
                     result.bytes_reclaimed += file_size
-                    if self.persistence:
-                        self.persistence.deletion_audit_repo.log(
-                            plan_id=plan.scan_id,
-                            file_id=self.persistence.inventory_repo.get_file_id(plan.scan_id, file_path),
-                            action=plan.policy.value,
-                            outcome="success",
-                            detail={"path": file_path},
-                        )
+                    self._log_deletion_audit(plan, file_path, "success", {"path": file_path})
                 else:
-                    result.failed_files.append({
-                        "path": file_path,
-                        "error": error or "Unknown error"
-                    })
-                    if self.persistence:
-                        self.persistence.deletion_audit_repo.log(
-                            plan_id=plan.scan_id,
-                            file_id=self.persistence.inventory_repo.get_file_id(plan.scan_id, file_path),
-                            action=plan.policy.value,
-                            outcome="failed",
-                            detail={"path": file_path, "error": error or "Unknown error"},
-                        )
+                    failure_error = error or "Unknown error"
+                    result.failed_files.append({"path": file_path, "error": failure_error})
+                    self._log_deletion_audit(plan, file_path, "failed", {"path": file_path, "error": failure_error})
         
         result.completed_at = datetime.now()
         return result
+
+    @staticmethod
+    def _report_delete_progress(
+        progress_cb: Optional[Callable[[int, int, str], bool]],
+        current: int,
+        total_files: int,
+        file_path: str,
+    ) -> bool:
+        if not progress_cb:
+            return True
+        try:
+            return bool(progress_cb(current, total_files, Path(file_path).name))
+        except Exception:
+            return True
+
+    def _validate_delete_target(self, file_path: str, keep_path: str, allowed_roots: List[str]) -> Optional[str]:
+        try:
+            if Path(file_path).resolve() == Path(keep_path).resolve():
+                return "Cannot delete the designated keep file"
+        except (OSError, ValueError):
+            return "Invalid target path"
+        if not self._is_path_within_roots(Path(file_path), allowed_roots):
+            return "Target path is outside allowed scan roots"
+        return None
+
+    def _log_deletion_audit(
+        self,
+        plan: DeletionPlan,
+        file_path: str,
+        outcome: str,
+        detail: Dict[str, Any],
+    ) -> None:
+        if not self.persistence:
+            return
+        self.persistence.deletion_audit_repo.log(
+            plan_id=plan.scan_id,
+            file_id=self.persistence.inventory_repo.get_file_id(plan.scan_id, file_path),
+            action=plan.policy.value,
+            outcome=outcome,
+            detail=detail,
+        )
     
     def create_plan_from_groups(
         self,

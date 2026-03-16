@@ -388,7 +388,7 @@ def test_on_execute_preview_calls_dry_run_not_execute(tk_root):
 
 
 def test_on_execute_delete_calls_executor(tk_root):
-    """When confirmation returns 'delete', execute_deletion is called."""
+    """When confirmation returns 'delete', delete worker is started with plan."""
     from unittest.mock import MagicMock, patch
     from dedup.ui.pages.review_page import ReviewPage
     from dedup.engine.models import DeletionResult, DeletionPlan
@@ -412,12 +412,13 @@ def test_on_execute_delete_calls_executor(tk_root):
     page.vm.groups[0].file_count = 2
     page.vm.keep_selections = {"g1": "/a/file.jpg"}
 
-    with patch.object(page, "_show_delete_confirmation") as mock_conf:
+    with patch.object(page, "_show_delete_confirmation") as mock_conf, \
+            patch.object(page, "_execute_deletion_worker") as worker_mock:
         mock_conf.return_value = "delete"
         page._on_execute()
 
-    coordinator.execute_deletion.assert_called_once()
-    assert coordinator.execute_deletion.call_args[0][0] == plan
+    worker_mock.assert_called_once_with(plan)
+    coordinator.execute_deletion.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

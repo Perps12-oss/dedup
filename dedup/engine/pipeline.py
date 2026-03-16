@@ -621,84 +621,7 @@ class ScanPipeline:
         self._start_time = time.time()
         self.grouping.progress_cb = progress_cb
         self._init_benchmark()
-        self._init_benchmark()
-
-        first_runnable_phase = ScanPhase.DISCOVERY
-        session_exists = False
-        if self.persistence:
-            session_exists = self.persistence.session_repo.get(self.scan_id) is not None
-            resolver = ResumeResolver(self.persistence)
-            decision = resolver.resolve(
-                self.scan_id, self.config, is_new_scan=not session_exists
-            )
-            first_runnable_phase = decision.first_runnable_phase
-            if event_bus is not None:
-                try:
-                    from ..orchestration.events import ScanEvent, ScanEventType
-                    event_bus.publish(ScanEvent(
-                        ScanEventType.RESUME_REQUESTED,
-                        self.scan_id,
-                        {"decision": decision.log_message()},
-                    ))
-                    if decision.outcome.value == "safe_resume":
-                        # Compute reused phases and time saved for Work Saved panel
-                        reused_phases: List[str] = []
-                        time_saved_s: float = 0.0
-                        order_idx = {p: i for i, p in enumerate(PHASE_ORDER)}
-                        first_idx = order_idx.get(first_runnable_phase, 0)
-                        for phase in PHASE_ORDER:
-                            if order_idx.get(phase, 0) >= first_idx:
-                                break
-                            cp = self.persistence.checkpoint_repo.get(self.scan_id, phase)
-                            if cp and cp.status == PhaseStatus.COMPLETED and cp.is_finalized:
-                                reused_phases.append(phase.value)
-                                dur_ms = (cp.metadata_json or {}).get("duration_ms", 0)
-                                time_saved_s += dur_ms / 1000.0
-                        event_bus.publish(ScanEvent(
-                            ScanEventType.RESUME_VALIDATED,
-                            self.scan_id,
-                            {
-                                "reason": decision.reason,
-                                "first_phase": first_runnable_phase.value,
-                                "reused_phases": reused_phases,
-                                "time_saved_estimate": time_saved_s,
-                            },
-                        ))
-                    else:
-                        event_bus.publish(ScanEvent(
-                            ScanEventType.RESUME_REJECTED,
-                            self.scan_id,
-                            {"reason": decision.reason, "outcome": decision.outcome.value},
-                        ))
-                except Exception as e:
-                    _log.warning("Failed to publish resume decision event: %s", e)
-                    try:
-                        from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
-                        get_diagnostics_recorder().record(
-                            CATEGORY_CALLBACK, "Resume decision event publish failed", str(e)
-                        )
-                    except Exception:
-                        pass
-            only_if_missing = decision.outcome.value in ("safe_resume", "rebuild_current_phase")
-            if decision.outcome.value == "restart_required":
-                self._prepare_incremental_discovery(is_new_scan=not session_exists)
-                self._initialize_durable_session()
-            else:
-                self._prepare_incremental_discovery(is_new_scan=False)
-                self._initialize_durable_session(only_if_missing=only_if_missing and session_exists)
-            if decision.outcome.value == "safe_resume":
-                self._load_all_durable_state_before(first_runnable_phase)
-            if decision.outcome.value == "rebuild_current_phase":
-                cp_repo = self.persistence.checkpoint_repo
-                cp_repo.upsert(CheckpointInfo(
-                    session_id=self.scan_id,
-                    phase_name=first_runnable_phase,
-                    status=PhaseStatus.PENDING,
-                    metadata_json={"is_finalized": False},
-                ))
-        else:
-            self._prepare_incremental_discovery(is_new_scan=True)
-            self._initialize_durable_session()
+        first_runnable_phase = self._prepare_run_resume(event_bus)
 
         result = ScanResult(
             scan_id=self.scan_id,
@@ -708,108 +631,13 @@ class ScanPipeline:
         duplicate_groups: List[DuplicateGroup] = []
 
         try:
-            order_idx = {p: i for i, p in enumerate(PHASE_ORDER)}
-            first_idx = order_idx.get(first_runnable_phase, 0)
-            for runner in self.phase_runners:
-                runner_idx = order_idx.get(runner.phase_name, -1)
-                if runner_idx < first_idx:
-                    continue
-
-                checkpoint = None
-                if self.persistence:
-                    checkpoint = self.persistence.checkpoint_repo.get(self.scan_id, runner.phase_name)
-                if checkpoint and runner.can_resume(self, checkpoint):
-                    self._load_phase_output_from_db(runner.phase_name)
-                    if runner.phase_name == ScanPhase.RESULT_ASSEMBLY and self._duplicate_groups:
-                        duplicate_groups = self._duplicate_groups
-                    self._set_phase_metrics(
-                        runner.phase_name,
-                        elapsed_ms=0,
-                        completed_units=checkpoint.completed_units if checkpoint else 0,
-                        artifacts_written=[],
-                        reused=True,
-                    )
-                    continue
-
-                if event_bus is not None and self.persistence:
-                    try:
-                        from ..orchestration.events import ScanEvent, ScanEventType
-                        event_bus.publish(ScanEvent(
-                            ScanEventType.PHASE_REBUILD_STARTED,
-                            self.scan_id,
-                            {"phase": runner.phase_name.value},
-                        ))
-                    except Exception as e:
-                        _log.warning("Failed to publish phase rebuild event: %s", e)
-                        try:
-                            from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
-                            get_diagnostics_recorder().record(
-                                CATEGORY_CALLBACK, "Phase rebuild event publish failed", str(e)
-                            )
-                        except Exception:
-                            pass
-
-                phase_status = PhaseStatus.RUNNING
-                self._update_phase_checkpoint(runner.phase_name, 0, None, phase_status)
-                phase_start = time.time()
-                phase_result = runner.run_chunk(self, checkpoint, progress_cb)
-                summary = runner.finalize(self, phase_result)
-                duration_ms = int((time.time() - phase_start) * 1000)
-                self._set_phase_metrics(
-                    runner.phase_name,
-                    elapsed_ms=duration_ms,
-                    completed_units=phase_result.completed_units,
-                    artifacts_written=phase_result.artifacts_written,
-                    reused=False,
-                )
-                meta = dict(summary.metadata)
-                meta["duration_ms"] = duration_ms
-                self._update_phase_checkpoint(
-                    runner.phase_name,
-                    phase_result.completed_units,
-                    phase_result.total_units,
-                    PhaseStatus.COMPLETED,
-                    metadata_json=meta,
-                    is_finalized=True,
-                )
-
-                if runner.phase_name == ScanPhase.DISCOVERY:
-                    self._discovered_files = phase_result.payload or []
-                    if not self._discovered_files and self.config.roots:
-                        result.errors.append(
-                            "No files were found. Check that the folder path is correct, "
-                            "readable, and contains files (check filters: min size, extensions)."
-                        )
-                elif runner.phase_name == ScanPhase.SIZE_REDUCTION:
-                    self._size_groups = phase_result.payload or {}
-                elif runner.phase_name == ScanPhase.PARTIAL_HASH:
-                    self._partial_hash_groups = phase_result.payload or {}
-                elif runner.phase_name == ScanPhase.FULL_HASH:
-                    self._duplicate_groups = phase_result.payload or []
-                elif runner.phase_name == ScanPhase.RESULT_ASSEMBLY:
-                    duplicate_groups = phase_result.payload or []
-
-                if self._cancelled:
-                    result.errors.append("Scan cancelled by user")
-                    result.completed_at = datetime.now()
-                    if self.persistence:
-                        self.persistence.shadow_update_session(
-                            session_id=self.scan_id,
-                            status="cancelled",
-                            current_phase=runner.phase_name.value,
-                            completed=True,
-                        )
-                    return result
+            cancelled = self._run_phases(first_runnable_phase, progress_cb, event_bus, result)
+            if cancelled:
+                return result
+            duplicate_groups = list(self._duplicate_groups or [])
             
             # Build result
-            result.files_scanned = self._files_found
-            result.bytes_scanned = self._bytes_found
-            result.duplicate_groups = duplicate_groups
-            result.total_duplicates = sum(len(g.files) - 1 for g in duplicate_groups)
-            result.total_reclaimable_bytes = sum(g.reclaimable_size for g in duplicate_groups)
-            result.errors = self._errors
-            result.incremental_discovery_report = self._incremental_merge_report or self._incremental_prior_report
-            
+            self._finalize_result_fields(result, duplicate_groups)
             if self._cancelled:
                 result.errors.append("Scan cancelled by user")
             
@@ -868,6 +696,218 @@ class ScanPipeline:
                 ))
         
         return result
+
+    def _prepare_run_resume(self, event_bus: Optional[Any]) -> ScanPhase:
+        first_runnable_phase = ScanPhase.DISCOVERY
+        session_exists = False
+        if self.persistence:
+            session_exists = self.persistence.session_repo.get(self.scan_id) is not None
+            resolver = ResumeResolver(self.persistence)
+            decision = resolver.resolve(
+                self.scan_id, self.config, is_new_scan=not session_exists
+            )
+            first_runnable_phase = decision.first_runnable_phase
+            self._publish_resume_decision(event_bus, decision, first_runnable_phase)
+            only_if_missing = decision.outcome.value in ("safe_resume", "rebuild_current_phase")
+            if decision.outcome.value == "restart_required":
+                self._prepare_incremental_discovery(is_new_scan=not session_exists)
+                self._initialize_durable_session()
+            else:
+                self._prepare_incremental_discovery(is_new_scan=False)
+                self._initialize_durable_session(only_if_missing=only_if_missing and session_exists)
+            if decision.outcome.value == "safe_resume":
+                self._load_all_durable_state_before(first_runnable_phase)
+            if decision.outcome.value == "rebuild_current_phase":
+                cp_repo = self.persistence.checkpoint_repo
+                cp_repo.upsert(CheckpointInfo(
+                    session_id=self.scan_id,
+                    phase_name=first_runnable_phase,
+                    status=PhaseStatus.PENDING,
+                    metadata_json={"is_finalized": False},
+                ))
+        else:
+            self._prepare_incremental_discovery(is_new_scan=True)
+            self._initialize_durable_session()
+        return first_runnable_phase
+
+    def _run_phases(
+        self,
+        first_runnable_phase: ScanPhase,
+        progress_cb: Optional[Callable[[ScanProgress], None]],
+        event_bus: Optional[Any],
+        result: ScanResult,
+    ) -> bool:
+        """Execute phase runners from first_runnable_phase. Returns True if cancelled."""
+        order_idx = {p: i for i, p in enumerate(PHASE_ORDER)}
+        first_idx = order_idx.get(first_runnable_phase, 0)
+        for runner in self.phase_runners:
+            runner_idx = order_idx.get(runner.phase_name, -1)
+            if runner_idx < first_idx:
+                continue
+
+            checkpoint = None
+            if self.persistence:
+                checkpoint = self.persistence.checkpoint_repo.get(self.scan_id, runner.phase_name)
+            if checkpoint and runner.can_resume(self, checkpoint):
+                self._load_phase_output_from_db(runner.phase_name)
+                self._set_phase_metrics(
+                    runner.phase_name,
+                    elapsed_ms=0,
+                    completed_units=checkpoint.completed_units if checkpoint else 0,
+                    artifacts_written=[],
+                    reused=True,
+                )
+                continue
+
+            self._publish_phase_rebuild_started(event_bus, runner.phase_name)
+            self._run_single_phase(runner, checkpoint, progress_cb)
+            self._apply_phase_payload(runner.phase_name, runner.phase_name, result)
+
+            if self._cancelled:
+                result.errors.append("Scan cancelled by user")
+                result.completed_at = datetime.now()
+                if self.persistence:
+                    self.persistence.shadow_update_session(
+                        session_id=self.scan_id,
+                        status="cancelled",
+                        current_phase=runner.phase_name.value,
+                        completed=True,
+                    )
+                return True
+        return False
+
+    def _run_single_phase(self, runner, checkpoint, progress_cb) -> None:
+        self._update_phase_checkpoint(runner.phase_name, 0, None, PhaseStatus.RUNNING)
+        phase_start = time.time()
+        phase_result = runner.run_chunk(self, checkpoint, progress_cb)
+        summary = runner.finalize(self, phase_result)
+        duration_ms = int((time.time() - phase_start) * 1000)
+        self._set_phase_metrics(
+            runner.phase_name,
+            elapsed_ms=duration_ms,
+            completed_units=phase_result.completed_units,
+            artifacts_written=phase_result.artifacts_written,
+            reused=False,
+        )
+        meta = dict(summary.metadata)
+        meta["duration_ms"] = duration_ms
+        self._update_phase_checkpoint(
+            runner.phase_name,
+            phase_result.completed_units,
+            phase_result.total_units,
+            PhaseStatus.COMPLETED,
+            metadata_json=meta,
+            is_finalized=True,
+        )
+        self._last_phase_result_payload = phase_result.payload or []
+
+    def _apply_phase_payload(self, phase_name: ScanPhase, _runner_phase: ScanPhase, result: ScanResult) -> None:
+        payload = getattr(self, "_last_phase_result_payload", [])
+        if phase_name == ScanPhase.DISCOVERY:
+            self._discovered_files = payload or []
+            if not self._discovered_files and self.config.roots:
+                result.errors.append(
+                    "No files were found. Check that the folder path is correct, "
+                    "readable, and contains files (check filters: min size, extensions)."
+                )
+        elif phase_name == ScanPhase.SIZE_REDUCTION:
+            self._size_groups = payload or {}
+        elif phase_name == ScanPhase.PARTIAL_HASH:
+            self._partial_hash_groups = payload or {}
+        elif phase_name == ScanPhase.FULL_HASH:
+            self._duplicate_groups = payload or []
+        elif phase_name == ScanPhase.RESULT_ASSEMBLY:
+            self._duplicate_groups = payload or []
+
+    def _finalize_result_fields(self, result: ScanResult, duplicate_groups: List[DuplicateGroup]) -> None:
+        result.files_scanned = self._files_found
+        result.bytes_scanned = self._bytes_found
+        result.duplicate_groups = duplicate_groups
+        result.total_duplicates = sum(len(g.files) - 1 for g in duplicate_groups)
+        result.total_reclaimable_bytes = sum(g.reclaimable_size for g in duplicate_groups)
+        result.errors = self._errors
+        result.incremental_discovery_report = self._incremental_merge_report or self._incremental_prior_report
+
+    def _publish_resume_decision(
+        self,
+        event_bus: Optional[Any],
+        decision: ResumeDecision,
+        first_runnable_phase: ScanPhase,
+    ) -> None:
+        """Publish resume decision events; no-op on failures."""
+        if event_bus is None or not self.persistence:
+            return
+        try:
+            from ..orchestration.events import ScanEvent, ScanEventType
+
+            event_bus.publish(ScanEvent(
+                ScanEventType.RESUME_REQUESTED,
+                self.scan_id,
+                {"decision": decision.log_message()},
+            ))
+            if decision.outcome.value == "safe_resume":
+                reused_phases: List[str] = []
+                time_saved_s: float = 0.0
+                order_idx = {p: i for i, p in enumerate(PHASE_ORDER)}
+                first_idx = order_idx.get(first_runnable_phase, 0)
+                for phase in PHASE_ORDER:
+                    if order_idx.get(phase, 0) >= first_idx:
+                        break
+                    cp = self.persistence.checkpoint_repo.get(self.scan_id, phase)
+                    if cp and cp.status == PhaseStatus.COMPLETED and cp.is_finalized:
+                        reused_phases.append(phase.value)
+                        dur_ms = (cp.metadata_json or {}).get("duration_ms", 0)
+                        time_saved_s += dur_ms / 1000.0
+                event_bus.publish(ScanEvent(
+                    ScanEventType.RESUME_VALIDATED,
+                    self.scan_id,
+                    {
+                        "reason": decision.reason,
+                        "first_phase": first_runnable_phase.value,
+                        "reused_phases": reused_phases,
+                        "time_saved_estimate": time_saved_s,
+                    },
+                ))
+            else:
+                event_bus.publish(ScanEvent(
+                    ScanEventType.RESUME_REJECTED,
+                    self.scan_id,
+                    {"reason": decision.reason, "outcome": decision.outcome.value},
+                ))
+        except Exception as e:
+            _log.warning("Failed to publish resume decision event: %s", e)
+            try:
+                from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
+                get_diagnostics_recorder().record(
+                    CATEGORY_CALLBACK, "Resume decision event publish failed", str(e)
+                )
+            except Exception:
+                pass
+
+    def _publish_phase_rebuild_started(
+        self,
+        event_bus: Optional[Any],
+        phase_name: ScanPhase,
+    ) -> None:
+        """Publish phase rebuild start event; no-op on failures."""
+        if event_bus is None or not self.persistence:
+            return
+        try:
+            from ..orchestration.events import ScanEvent, ScanEventType
+            event_bus.publish(ScanEvent(
+                ScanEventType.PHASE_REBUILD_STARTED,
+                self.scan_id,
+                {"phase": phase_name.value},
+            ))
+        except Exception as e:
+            _log.warning("Failed to publish phase rebuild event: %s", e)
+            try:
+                from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
+                get_diagnostics_recorder().record(
+                    CATEGORY_CALLBACK, "Phase rebuild event publish failed", str(e)
+                )
+            except Exception:
+                pass
     
     def _discover_files(
         self,
@@ -1023,12 +1063,16 @@ class ScanPipeline:
             DeletionPlan
         """
         engine = DeletionEngine(persistence=self.persistence)
-        return engine.create_plan_from_groups(
+        plan = engine.create_plan_from_groups(
             scan_id=result.scan_id,
             groups=result.duplicate_groups,
             policy=policy,
             keep_strategy=keep_strategy,
         )
+        allowed_roots = [str(Path(root).resolve()) for root in result.config.roots]
+        for group in plan.groups:
+            group["allowed_roots"] = allowed_roots
+        return plan
     
     def execute_deletion(
         self,
