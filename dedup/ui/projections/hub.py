@@ -417,7 +417,7 @@ class ProjectionHub:
                     result_files_scanned=int(result.get("files_scanned", 0) or 0),
                     result_verification_level=str(result.get("verification_level", "") or ""),
                     results_ready=True,
-                    elapsed_s=_elapsed_from_session_completed(result, benchmark, self._metrics.elapsed_s),
+                    elapsed_s=self._elapsed_from_session_completed(result, benchmark, self._metrics.elapsed_s),
                     discovery_reuse_mode=str(benchmark.get("discovery_reuse_mode", "none")),
                     dirs_skipped_via_manifest=int(benchmark.get("dirs_skipped_via_manifest", 0) or 0),
                     prior_session_compatible=bool(benchmark.get("prior_session_compatible", False)),
@@ -614,6 +614,27 @@ class ProjectionHub:
         return ""
 
     @staticmethod
+    def _elapsed_from_session_completed(
+        result: dict,
+        benchmark: dict,
+        prior_elapsed: float,
+    ) -> float:
+        """
+        Derive a truthful total elapsed seconds value for terminal metrics.
+
+        Preference order:
+        1. benchmark['total_elapsed_ms'] if present
+        2. prior_elapsed (last live elapsed_s from progress stream)
+        """
+        try:
+            total_ms = benchmark.get("total_elapsed_ms")
+            if isinstance(total_ms, (int, float)) and total_ms > 0:
+                return float(total_ms) / 1000.0
+        except Exception:
+            pass
+        return float(prior_elapsed or 0.0)
+
+    @staticmethod
     def _map_outcome_to_policy(outcome: str) -> str:
         return {
             "safe_resume":              "safe",
@@ -640,6 +661,7 @@ class ProjectionHub:
         )
         if eta is not None and elapsed > 120:
             eta_conf = "high"
+
         return MetricsProjection(
             files_discovered_total=d.get("files_found", 0),
             files_discovered_fresh=d.get("files_found", 0),
