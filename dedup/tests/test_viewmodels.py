@@ -174,6 +174,16 @@ class TestScanVM:
         ))
         assert vm.session_metrics.discovery_speed == pytest.approx(500.0)
 
+    def test_discovery_speed_zero_when_elapsed_zero(self):
+        """When elapsed_total_s is 0, discovery_speed must return 0 (not inf or absurd value)."""
+        vm = ScanVM()
+        vm.apply_metrics_projection(merge_metrics(
+            vm.metrics,
+            files_discovered_total=2120,
+            elapsed_s=0.0,
+        ))
+        assert vm.session_metrics.discovery_speed == 0.0
+
     def test_skip_ratio_property(self):
         vm = ScanVM()
         vm.apply_metrics_projection(merge_metrics(

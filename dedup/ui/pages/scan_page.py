@@ -182,7 +182,8 @@ class ScanPage(ttk.Frame):
         # Session Metrics (scan-scope only)
         self._metric_cards["files_total"].update(fmt_int(sm.files_discovered_total))
         self._metric_cards["dirs_scanned"].update(fmt_int(sm.directories_scanned_total))
-        speed = sm.discovery_speed
+        # Defensive: never show absurd speed when elapsed is 0 or missing
+        speed = sm.discovery_speed if sm.elapsed_total_s > 0 else 0.0
         self._metric_cards["discovery_speed"].update(
             f"{speed:,.0f} files/sec" if speed > 0 else "—"
         )

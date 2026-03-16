@@ -78,6 +78,18 @@ def test_run_scenario_incompatible_config_reports_fallback(temp_dir):
     assert outcome["second"]["discovery_reuse_mode"] == "none"
 
 
+def test_benchmark_report_uses_total_elapsed_ms_key():
+    """Regression: hub expects total_elapsed_ms, not scan_elapsed_ms."""
+    report = ScanBenchmarkReport(scan_id="x")
+    report.total_elapsed_ms = 26000
+    report.dirs_scanned = 100
+    d = report.to_dict()
+    assert "total_elapsed_ms" in d
+    assert d["total_elapsed_ms"] == 26000
+    assert "scan_elapsed_ms" not in d
+    assert d["dirs_scanned"] == 100
+
+
 def test_run_scenario_same_session_resume_is_not_cross_session_reuse(temp_dir):
     root = temp_dir / "resume-root"
     root.mkdir()

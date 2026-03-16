@@ -417,7 +417,7 @@ class ProjectionHub:
                     result_files_scanned=int(result.get("files_scanned", 0) or 0),
                     result_verification_level=str(result.get("verification_level", "") or ""),
                     results_ready=True,
-                    elapsed_s=float(benchmark.get("scan_elapsed_ms", 0) or 0) / 1000.0 or self._metrics.elapsed_s,
+                    elapsed_s=_elapsed_from_session_completed(result, benchmark, self._metrics.elapsed_s),
                     discovery_reuse_mode=str(benchmark.get("discovery_reuse_mode", "none")),
                     dirs_skipped_via_manifest=int(benchmark.get("dirs_skipped_via_manifest", 0) or 0),
                     prior_session_compatible=bool(benchmark.get("prior_session_compatible", False)),

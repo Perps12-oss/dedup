@@ -372,7 +372,9 @@ class ScanPipeline:
         if phase_name:
             if phase_name != self._phase_clock_phase:
                 self._phase_clock_phase = phase_name
-                self._phase_clock_started_at = now
+                is_terminal = phase_name in ("complete", "cancelled", "error")
+                if not is_terminal:
+                    self._phase_clock_started_at = now
             self._phase_clock_last_updated_at = now
 
         phase_completed_units = int(
@@ -1168,6 +1170,8 @@ class ResumableScanPipeline(ScanPipeline):
             discovered_files = self._load_checkpoint()
             if discovered_files:
                 self._prepare_incremental_discovery(is_new_scan=False)
+                if self._benchmark:
+                    self._benchmark.files_discovered_total = len(discovered_files)
                 if progress_cb:
                     progress_cb(self._create_progress(
                         phase="resuming",
