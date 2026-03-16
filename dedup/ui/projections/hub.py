@@ -395,18 +395,28 @@ class ProjectionHub:
                 compat = result.get("incremental_discovery_report", {}) or {}
                 self._metrics = merge_metrics(
                     self._metrics,
-                    files_discovered_total=int(benchmark.get("files_discovered_total", self._metrics.files_discovered_total) or 0),
+                    files_discovered_total=int(
+                        benchmark.get("files_discovered_total") or
+                        result.get("files_scanned") or
+                        self._metrics.files_discovered_total or 0
+                    ),
                     files_discovered_fresh=int(benchmark.get("files_discovered_fresh", self._metrics.files_discovered_fresh) or 0),
                     files_reused_from_prior_inventory=int(
                         benchmark.get("files_reused_from_prior_inventory", self._metrics.files_reused_from_prior_inventory) or 0
                     ),
                     dirs_scanned=int(benchmark.get("dirs_scanned", self._metrics.dirs_scanned) or 0),
                     dirs_reused=int(benchmark.get("dirs_reused", self._metrics.dirs_reused) or 0),
-                    duplicate_groups_live=int(result.get("duplicates_found", self._metrics.duplicate_groups_live) or 0),
-                    result_duplicate_files=int(result.get("duplicates_found", 0) or 0),
-                    result_duplicate_groups=int(result.get("groups_found", 0) or 0),
-                    result_rows_assembled=int(result.get("duplicates_found", 0) or 0),
+                    duplicate_groups_live=int(
+                        len(result.get("duplicate_groups", [])) or
+                        self._metrics.duplicate_groups_live or 0
+                    ),
+                    result_duplicate_files=int(result.get("total_duplicates", 0) or 0),
+                    result_duplicate_groups=int(len(result.get("duplicate_groups", [])) or 0),
+                    result_rows_assembled=int(result.get("total_duplicates", 0) or 0),
                     result_reclaimable_bytes=int(result.get("total_reclaimable_bytes", 0) or 0),
+                    result_files_scanned=int(result.get("files_scanned", 0) or 0),
+                    result_verification_level=str(result.get("verification_level", "") or ""),
+                    results_ready=True,
                     elapsed_s=float(benchmark.get("scan_elapsed_ms", 0) or 0) / 1000.0 or self._metrics.elapsed_s,
                     discovery_reuse_mode=str(benchmark.get("discovery_reuse_mode", "none")),
                     dirs_skipped_via_manifest=int(benchmark.get("dirs_skipped_via_manifest", 0) or 0),
@@ -656,6 +666,9 @@ class ProjectionHub:
             result_duplicate_groups=0,
             result_rows_assembled=0,
             result_reclaimable_bytes=0,
+            result_files_scanned=0,
+            result_verification_level="",
+            results_ready=False,
             discovery_reuse_mode="none",
             dirs_skipped_via_manifest=0,
             prior_session_compatible=False,

@@ -33,11 +33,14 @@ class MetricsProjection:
     current_phase_last_updated_at: Optional[float]
     current_file: str
 
-    # Result scope (terminal/result summary)
+    # Result scope (terminal/result summary — authoritative final values)
     result_duplicate_files: int
     result_duplicate_groups: int
     result_rows_assembled: int
     result_reclaimable_bytes: int
+    result_files_scanned: int
+    result_verification_level: str
+    results_ready: bool
 
     # Work Saved / reuse scope
     discovery_reuse_mode: str
@@ -89,6 +92,9 @@ EMPTY_METRICS = MetricsProjection(
     result_duplicate_groups=0,
     result_rows_assembled=0,
     result_reclaimable_bytes=0,
+    result_files_scanned=0,
+    result_verification_level="",
+    results_ready=False,
     discovery_reuse_mode="none",
     dirs_skipped_via_manifest=0,
     prior_session_compatible=False,
@@ -143,6 +149,9 @@ def build_metrics_from_progress(progress) -> MetricsProjection:
         result_duplicate_groups=0,
         result_rows_assembled=0,
         result_reclaimable_bytes=0,
+        result_files_scanned=0,
+        result_verification_level="",
+        results_ready=False,
         discovery_reuse_mode="none",
         dirs_skipped_via_manifest=0,
         prior_session_compatible=False,
@@ -178,6 +187,9 @@ def merge_metrics(
     result_duplicate_groups: Optional[int] = None,
     result_rows_assembled: Optional[int] = None,
     result_reclaimable_bytes: Optional[int] = None,
+    result_files_scanned: Optional[int] = None,
+    result_verification_level: Optional[str] = None,
+    results_ready: Optional[bool] = None,
     discovery_reuse_mode: Optional[str] = None,
     dirs_skipped_via_manifest: Optional[int] = None,
     prior_session_compatible: Optional[bool] = None,
@@ -253,6 +265,15 @@ def merge_metrics(
             if result_reclaimable_bytes is not None
             else base.result_reclaimable_bytes
         ),
+        result_files_scanned=(
+            result_files_scanned if result_files_scanned is not None else base.result_files_scanned
+        ),
+        result_verification_level=(
+            result_verification_level
+            if result_verification_level is not None
+            else base.result_verification_level
+        ),
+        results_ready=results_ready if results_ready is not None else base.results_ready,
         discovery_reuse_mode=(
             discovery_reuse_mode if discovery_reuse_mode is not None else base.discovery_reuse_mode
         ),

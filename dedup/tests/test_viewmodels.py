@@ -214,6 +214,99 @@ class TestScanVM:
         assert vm.result_metrics.groups_assembled == 6
         assert vm.result_metrics.duplicate_files_in_results == 18
 
+    def test_final_results_not_set_without_results_ready(self):
+        """FinalScanResultsSummary is never populated from non-terminal projections."""
+        vm = ScanVM()
+        vm.apply_metrics_projection(merge_metrics(
+            vm.metrics,
+            result_duplicate_groups=1030,
+            result_duplicate_files=2060,
+            result_reclaimable_bytes=2_000_000_000,
+            # results_ready=False (default)
+        ))
+        assert not vm.final_results.results_ready
+        assert vm.final_results.duplicate_groups_total == 0
+        assert vm.final_results.reclaimable_bytes_total == 0
+
+    def test_final_results_populated_on_terminal_event(self):
+        """FinalScanResultsSummary is set only when results_ready=True."""
+        vm = ScanVM()
+        vm.apply_metrics_projection(merge_metrics(
+            vm.metrics,
+            result_duplicate_groups=1030,
+            result_duplicate_files=2060,
+            result_reclaimable_bytes=2_000_000_000,
+            result_files_scanned=144267,
+            result_verification_level="full_hash",
+            results_ready=True,
+        ))
+        fr = vm.final_results
+        assert fr.results_ready is True
+        assert fr.duplicate_groups_total == 1030
+        assert fr.duplicate_files_total == 2060
+        assert fr.reclaimable_bytes_total == 2_000_000_000
+        assert fr.files_scanned_total == 144267
+        assert fr.verification_level == "full_hash"
+
+    def test_final_results_are_monotonic(self):
+        """A later stale/smaller update cannot overwrite a true terminal value."""
+        vm = ScanVM()
+        vm.apply_metrics_projection(merge_metrics(
+            vm.metrics,
+            result_duplicate_groups=1030,
+            result_reclaimable_bytes=2_000_000_000,
+            results_ready=True,
+        ))
+        # Simulate stale / partial update arriving after the real terminal event
+        vm.apply_metrics_projection(merge_metrics(
+            vm.metrics,
+            result_duplicate_groups=5,
+            result_reclaimable_bytes=1000,
+            results_ready=True,
+        ))
+        assert vm.final_results.duplicate_groups_total == 1030
+        assert vm.final_results.reclaimable_bytes_total == 2_000_000_000
+
+    def test_scan_result_dict_keys_match_hub_expectations(self):
+        """
+        Regression test: ScanResult.to_dict() uses 'total_duplicates' and
+        'duplicate_groups' (a list).  The hub must read these keys — not the
+        legacy 'duplicates_found' / 'groups_found' names that caused Groups=0.
+        """
+        from dedup.engine.models import ScanResult, ScanConfig, DuplicateGroup, FileMetadata
+        from datetime import datetime
+        config = ScanConfig(roots=[], min_size_bytes=1)
+        grp = DuplicateGroup(
+            group_id="g1",
+            group_hash="aabbcc",
+            files=[
+                FileMetadata(path="/a.jpg", size=1024, mtime_ns=0, inode=1),
+                FileMetadata(path="/b.jpg", size=1024, mtime_ns=0, inode=2),
+            ],
+        )
+        result = ScanResult(
+            scan_id="s1",
+            config=config,
+            started_at=datetime.now(),
+            files_scanned=100,
+            duplicate_groups=[grp, grp],
+            total_duplicates=4,
+            total_reclaimable_bytes=8192,
+        )
+        d = result.to_dict()
+        # Keys the hub now correctly reads:
+        assert "total_duplicates" in d
+        assert "duplicate_groups" in d
+        assert "total_reclaimable_bytes" in d
+        assert "files_scanned" in d
+        # Keys the hub must NOT look for (old bug):
+        assert "duplicates_found" not in d
+        assert "groups_found" not in d
+        # Values match what the hub extracts:
+        assert d["total_duplicates"] == 4
+        assert len(d["duplicate_groups"]) == 2
+        assert d["total_reclaimable_bytes"] == 8192
+
 
 # ---------------------------------------------------------------------------
 # MissionVM

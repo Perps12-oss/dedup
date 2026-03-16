@@ -213,13 +213,21 @@ class ScanPage(ttk.Frame):
         if pm.current_item_label:
             self._phase_vars["Current file"].set(_fixed_width_path(pm.current_item_label, 40))
 
-        # Result Summary (result-scope only)
-        self._result_vars["Duplicate files"].set(fmt_int(rm.duplicate_files_in_results))
-        self._result_vars["Groups assembled"].set(fmt_int(rm.groups_assembled))
-        self._result_vars["Result rows"].set(fmt_int(rm.rows_processed))
-        self._result_vars["Reclaimable"].set(
-            fmt_bytes(sm.reclaimable_bytes_total) if sm.reclaimable_bytes_total else "—"
-        )
+        # Result Summary — bind to FinalScanResultsSummary (authoritative terminal truth)
+        fr = self.vm.final_results
+        if fr.results_ready:
+            self._result_vars["Duplicate groups"].set(fmt_int(fr.duplicate_groups_total))
+            self._result_vars["Duplicate files"].set(fmt_int(fr.duplicate_files_total))
+            self._result_vars["Reclaimable"].set(
+                fmt_bytes(fr.reclaimable_bytes_total) if fr.reclaimable_bytes_total else "—"
+            )
+            if fr.verification_level:
+                self._result_vars["Verification"].set(fr.verification_level)
+        else:
+            # Pre-completion: show live duplicate groups if available
+            live = sm.duplicate_groups_total
+            if live:
+                self._result_vars["Duplicate groups"].set(fmt_int(live))
 
     def _render_phase_detail(self) -> None:
         s = self.vm.session
@@ -383,10 +391,10 @@ class ScanPage(ttk.Frame):
         body.columnconfigure(1, weight=1, minsize=140)
         self._result_vars: Dict[str, tk.StringVar] = {}
         rows = [
-            ("Duplicate files", "0"),
-            ("Groups assembled", "0"),
-            ("Result rows", "0"),
-            ("Reclaimable", "—"),
+            ("Duplicate groups", "—"),
+            ("Duplicate files",  "—"),
+            ("Reclaimable",      "—"),
+            ("Verification",     "—"),
         ]
         for i, (label, default) in enumerate(rows):
             ttk.Label(body, text=label + ":", style="Panel.Muted.TLabel",
@@ -485,8 +493,16 @@ class ScanPage(ttk.Frame):
             for pname in PHASE_ORDER:
                 self._timeline.set_phase_state(pname, "completed")
             from ..utils.formatting import fmt_int, fmt_bytes
-            self._result_vars["Groups assembled"].set(fmt_int(len(result.duplicate_groups)))
-            self._result_vars["Reclaimable"].set(fmt_bytes(result.total_reclaimable_bytes))
+            # Hub-less fallback: hydrate FinalScanResultsSummary directly from result
+            fr = self.vm.final_results
+            fr.duplicate_groups_total = len(result.duplicate_groups)
+            fr.duplicate_files_total = result.total_duplicates
+            fr.reclaimable_bytes_total = result.total_reclaimable_bytes
+            fr.files_scanned_total = result.files_scanned
+            fr.results_ready = True
+            self._result_vars["Duplicate groups"].set(fmt_int(fr.duplicate_groups_total))
+            self._result_vars["Duplicate files"].set(fmt_int(fr.duplicate_files_total))
+            self._result_vars["Reclaimable"].set(fmt_bytes(fr.reclaimable_bytes_total))
         self.after(0, lambda: self.on_complete(result))
 
     def _on_error_fallback(self, error: str) -> None:

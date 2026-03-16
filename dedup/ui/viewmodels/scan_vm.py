@@ -64,10 +64,26 @@ class ScanPhaseMetrics:
 
 @dataclass
 class ResultAssemblyMetrics:
+    """Phase-local assembly progress (live counters, not final truth)."""
     rows_processed: int = 0
     rows_total: int = 0
     groups_assembled: int = 0
     duplicate_files_in_results: int = 0
+
+
+@dataclass
+class FinalScanResultsSummary:
+    """
+    Authoritative final results — populated once from SESSION_COMPLETED payload.
+    These match exactly what Review page shows and persist monotonically.
+    Never overwritten by phase-local counters.
+    """
+    duplicate_groups_total: int = 0
+    duplicate_files_total: int = 0
+    reclaimable_bytes_total: int = 0
+    files_scanned_total: int = 0
+    verification_level: str = ""
+    results_ready: bool = False
 
 
 @dataclass
@@ -85,6 +101,7 @@ class ScanVM:
     session_metrics: ScanSessionMetrics                = field(default_factory=ScanSessionMetrics)
     phase_metrics: ScanPhaseMetrics                    = field(default_factory=ScanPhaseMetrics)
     result_metrics: ResultAssemblyMetrics              = field(default_factory=ResultAssemblyMetrics)
+    final_results:  FinalScanResultsSummary            = field(default_factory=FinalScanResultsSummary)
 
     # --- UI interaction state ---
     is_scanning:   bool  = False
@@ -107,6 +124,7 @@ class ScanVM:
         self.session_metrics = ScanSessionMetrics()
         self.phase_metrics = ScanPhaseMetrics()
         self.result_metrics = ResultAssemblyMetrics()
+        self.final_results = FinalScanResultsSummary()
         self.is_scanning  = True
         self.current_file = ""
         self.error_message= ""
@@ -166,6 +184,25 @@ class ScanVM:
         rm.rows_total = int(proj.result_rows_assembled or 0)
         rm.groups_assembled = int(proj.result_duplicate_groups or 0)
         rm.duplicate_files_in_results = int(proj.result_duplicate_files or 0)
+
+        # FinalScanResultsSummary: only populate from authoritative terminal event
+        if proj.results_ready:
+            fr = self.final_results
+            fr.results_ready = True
+            fr.duplicate_groups_total = max(
+                fr.duplicate_groups_total, int(proj.result_duplicate_groups or 0)
+            )
+            fr.duplicate_files_total = max(
+                fr.duplicate_files_total, int(proj.result_duplicate_files or 0)
+            )
+            fr.reclaimable_bytes_total = max(
+                fr.reclaimable_bytes_total, int(proj.result_reclaimable_bytes or 0)
+            )
+            fr.files_scanned_total = max(
+                fr.files_scanned_total, int(proj.result_files_scanned or 0)
+            )
+            if proj.result_verification_level:
+                fr.verification_level = proj.result_verification_level
 
     # --- Convenience accessors used by the page ---
 
