@@ -302,13 +302,14 @@ class ProjectionHub:
                     canon = canonical_phase(phase_raw)
                     if canon in self._phases:
                         old = self._phases[canon]
+                        phase_completed = payload.get("phase_completed_units", payload.get("files_found", old.rows_written))
                         self._phases[canon] = PhaseProjection(
                             phase_name=old.phase_name,
                             display_label=old.display_label,
                             status="running",
                             finalized=old.finalized,
                             integrity_ok=old.integrity_ok,
-                            rows_written=payload.get("files_found", old.rows_written),
+                            rows_written=phase_completed,
                             duration_ms=old.duration_ms,
                             checkpoint_cursor=old.checkpoint_cursor,
                             is_reused=old.is_reused,
@@ -389,6 +390,47 @@ class ProjectionHub:
                 self._dirty["events_log"] = True
 
             elif et in (ScanEventType.SESSION_COMPLETED, ScanEventType.SCAN_COMPLETED):
+                result = payload.get("result", {}) or {}
+                benchmark = result.get("benchmark_report", {}) or {}
+                compat = result.get("incremental_discovery_report", {}) or {}
+                self._metrics = merge_metrics(
+                    self._metrics,
+                    files_discovered_total=int(
+                        benchmark.get("files_discovered_total") or
+                        result.get("files_scanned") or
+                        self._metrics.files_discovered_total or 0
+                    ),
+                    files_discovered_fresh=int(benchmark.get("files_discovered_fresh", self._metrics.files_discovered_fresh) or 0),
+                    files_reused_from_prior_inventory=int(
+                        benchmark.get("files_reused_from_prior_inventory", self._metrics.files_reused_from_prior_inventory) or 0
+                    ),
+                    dirs_scanned=int(benchmark.get("dirs_scanned", self._metrics.dirs_scanned) or 0),
+                    dirs_reused=int(benchmark.get("dirs_reused", self._metrics.dirs_reused) or 0),
+                    duplicate_groups_live=int(
+                        len(result.get("duplicate_groups", [])) or
+                        self._metrics.duplicate_groups_live or 0
+                    ),
+                    result_duplicate_files=int(result.get("total_duplicates", 0) or 0),
+                    result_duplicate_groups=int(len(result.get("duplicate_groups", [])) or 0),
+                    result_rows_assembled=int(result.get("total_duplicates", 0) or 0),
+                    result_reclaimable_bytes=int(result.get("total_reclaimable_bytes", 0) or 0),
+                    result_files_scanned=int(result.get("files_scanned", 0) or 0),
+                    result_verification_level=str(result.get("verification_level", "") or ""),
+                    results_ready=True,
+                    elapsed_s=self._elapsed_from_session_completed(result, benchmark, self._metrics.elapsed_s),
+                    discovery_reuse_mode=str(benchmark.get("discovery_reuse_mode", "none")),
+                    dirs_skipped_via_manifest=int(benchmark.get("dirs_skipped_via_manifest", 0) or 0),
+                    prior_session_compatible=bool(benchmark.get("prior_session_compatible", False)),
+                    prior_session_rejected_reason=str(
+                        benchmark.get(
+                            "prior_session_rejected_reason",
+                            compat.get("reason", "none"),
+                        )
+                    ),
+                    time_saved_estimate=float(benchmark.get("time_saved_estimate_s", 0.0) or 0.0),
+                    hash_cache_hits=int(benchmark.get("hash_cache_hits", 0) or 0),
+                    hash_cache_misses=int(benchmark.get("hash_cache_misses", 0) or 0),
+                )
                 self._session = build_session_from_event(
                     session_id=sid,
                     status="completed",
@@ -420,6 +462,7 @@ class ProjectionHub:
                         )
                 self._dirty["session"]  = True
                 self._dirty["phase"]    = True
+                self._dirty["metrics"]  = True
                 self._dirty["terminal"] = True
                 ts = time.strftime("%H:%M:%S")
                 self._events_log.insert(0, f"[{ts}] Scan completed")
@@ -571,6 +614,27 @@ class ProjectionHub:
         return ""
 
     @staticmethod
+    def _elapsed_from_session_completed(
+        result: dict,
+        benchmark: dict,
+        prior_elapsed: float,
+    ) -> float:
+        """
+        Derive a truthful total elapsed seconds value for terminal metrics.
+
+        Preference order:
+        1. benchmark['total_elapsed_ms'] if present
+        2. prior_elapsed (last live elapsed_s from progress stream)
+        """
+        try:
+            total_ms = benchmark.get("total_elapsed_ms")
+            if isinstance(total_ms, (int, float)) and total_ms > 0:
+                return float(total_ms) / 1000.0
+        except Exception:
+            pass
+        return float(prior_elapsed or 0.0)
+
+    @staticmethod
     def _map_outcome_to_policy(outcome: str) -> str:
         return {
             "safe_resume":              "safe",
@@ -597,18 +661,46 @@ class ProjectionHub:
         )
         if eta is not None and elapsed > 120:
             eta_conf = "high"
+
         return MetricsProjection(
-            files_scanned=d.get("files_found", 0),
-            files_skipped=0,
-            candidates=0,
-            potential_duplicates=d.get("duplicates_found", 0),
-            duplicate_groups=d.get("groups_found", 0),
-            reclaimable_bytes=0,
+            files_discovered_total=d.get("files_found", 0),
+            files_discovered_fresh=d.get("files_found", 0),
+            files_reused_from_prior_inventory=0,
+            dirs_scanned=int(d.get("dirs_scanned", 0) or 0),
+            dirs_reused=int(d.get("dirs_reused", 0) or 0),
+            elapsed_s=elapsed,
+            duplicate_groups_live=d.get("groups_found", 0),
+            current_phase_name=d.get("phase", "") or "",
+            current_phase_progress=(
+                f"{int(d.get('phase_completed_units', d.get('files_found', 0)) or 0):,} / "
+                f"{int(d['phase_total_units']):,}" if d.get("phase_total_units") is not None
+                else f"{int(d.get('phase_completed_units', d.get('files_found', 0)) or 0):,} / —"
+            ),
+            current_phase_rows_processed=int(d.get("phase_completed_units", d.get("files_found", 0)) or 0),
+            current_phase_total_units=(
+                int(d["phase_total_units"]) if d.get("phase_total_units") is not None else None
+            ),
+            current_phase_elapsed_s=float(d.get("phase_elapsed_s", elapsed) or 0.0),
+            current_phase_started_at=d.get("phase_started_at"),
+            current_phase_last_updated_at=d.get("phase_last_updated_at"),
+            current_file=d.get("current_file", "") or "",
+            result_duplicate_files=0,
+            result_duplicate_groups=0,
+            result_rows_assembled=0,
+            result_reclaimable_bytes=0,
+            result_files_scanned=0,
+            result_verification_level="",
+            results_ready=False,
+            discovery_reuse_mode="none",
+            dirs_skipped_via_manifest=0,
+            prior_session_compatible=False,
+            prior_session_rejected_reason="none",
+            time_saved_estimate=0.0,
             disk_read_bps=bps,
             rows_per_sec=fps,
             cache_hit_rate=0.0,
+            hash_cache_hits=0,
+            hash_cache_misses=0,
             eta_seconds=eta,
             eta_confidence=eta_conf,
-            time_saved_estimate=0.0,
-            elapsed_s=elapsed,
         )

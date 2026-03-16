@@ -30,6 +30,9 @@ def fmt_pct(numerator: int, denominator: int) -> str:
 def fmt_duration(seconds: float) -> str:
     if seconds < 0:
         return "—"
+    # Show fractional seconds for very short durations to avoid displaying "0s"
+    if seconds < 10:
+        return f"{seconds:.1f}s"
     s = int(seconds)
     if s < 60:
         return f"{s}s"

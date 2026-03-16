@@ -7,6 +7,13 @@ Layout:
     Left (3):  Group Navigator (list + filters)
     Center(6): Review Workspace (Table | Gallery | Compare)
     Right (3): Plan Drawer (Safety Panel)
+
+Clear Selection:
+  There is no dedicated "Clear Selection" button in the Review UI. To clear a
+  group's keep choice, the user may (a) select a different file as KEEP in that
+  group, or (b) load a new scan result (load_result resets vm.keep_selections).
+  ReviewVM.clear_keep(group_id) exists but is not wired to any UI control.
+  Workspace state and plan state are both driven by vm.keep_selections.
 """
 from __future__ import annotations
 import tkinter as tk
@@ -18,6 +25,7 @@ from ..components import (
     DataTable, SectionCard, SafetyPanel, ProvenanceRibbon,
     EmptyState, FilterBar, StatusRibbon,
 )
+from ..components.review_workspace import ReviewWorkspaceStack
 from ..viewmodels.review_vm import ReviewVM
 from ..utils.formatting import fmt_bytes, truncate_path
 from ..utils.icons import IC
@@ -125,43 +133,14 @@ class ReviewPage(ttk.Frame):
 
     def _build_workspace(self, body: ttk.Frame):
         body.columnconfigure(0, weight=1)
-        body.rowconfigure(1, weight=1)
+        body.rowconfigure(0, weight=1)
 
-        # Thumbnail strip
-        self._thumb_frame = ttk.Frame(body, style="Panel.TFrame")
-        self._thumb_frame.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-
-        # Table mode (default)
-        self._file_table = DataTable(
+        self._workspace = ReviewWorkspaceStack(
             body,
-            columns=[
-                ("action",  "Action",   60, "center"),
-                ("name",    "Name",    160, "w"),
-                ("path",    "Path",    200, "w"),
-                ("size",    "Size",     70, "e"),
-                ("mtime",   "Modified",100, "w"),
-                ("type",    "Type",     60, "w"),
-                ("status",  "Status",   60, "w"),
-            ],
-            height=12,
-            on_select=self._on_file_select,
-            on_double_click=self._on_file_double_click,
+            on_keep=self._on_set_keep,
+            on_clear_keep=self._on_clear_keep,
         )
-        self._file_table.grid(row=1, column=0, sticky="nsew")
-
-        # Action row under table
-        act = ttk.Frame(body, style="Panel.TFrame")
-        act.grid(row=2, column=0, sticky="ew", pady=(6, 0))
-        self._keep_btn = ttk.Button(act, text=f"{IC.KEEP}  Keep this",
-                                    style="Ghost.TButton",
-                                    command=self._on_keep_this)
-        self._keep_btn.pack(side="left", padx=(0, 6))
-
-        self._empty_ws = EmptyState(body, icon=IC.REVIEW,
-                                    heading="No group selected",
-                                    message="Choose a duplicate group from the left panel.")
-        self._empty_ws.grid(row=1, column=0, sticky="nsew")
-        self._empty_ws.hide()
+        self._workspace.grid(row=0, column=0, sticky="nsew")
 
     # ----------------------------------------------------------------
     # Public
@@ -180,6 +159,7 @@ class ReviewPage(ttk.Frame):
             del_count=self.vm.delete_count,
             keep_count=self.vm.keep_count,
             reclaim_bytes=self.vm.reclaimable_bytes,
+            risk_flags=self.vm.risk_flags,
         )
 
     def on_show(self):
@@ -212,78 +192,45 @@ class ReviewPage(ttk.Frame):
             return
         group = next((g for g in self._current_result.duplicate_groups
                       if g.group_id == group_id), None)
-        if not group:
-            return
-
-        # Thumbnails
-        self._thumbnail_refs.clear()
-        for w in self._thumb_frame.winfo_children():
-            w.destroy()
-        image_paths = [f.path for f in group.files
-                       if is_image_extension(Path(f.path).suffix.lower().lstrip("."))]
-        if image_paths and self.vm.show_thumbnails:
-            def on_thumb(fpath: str, thumb_path):
-                def update():
-                    if thumb_path and thumb_path.exists():
-                        try:
-                            from tkinter import PhotoImage
-                            img = PhotoImage(file=str(thumb_path))
-                            self._thumbnail_refs.append(img)
-                            container = ttk.Frame(self._thumb_frame, style="Panel.TFrame",
-                                                  padding=2)
-                            container.pack(side="left", padx=2)
-                            lbl = ttk.Label(container, image=img, style="Panel.TLabel")
-                            lbl.image = img
-                            lbl.pack()
-                        except Exception:
-                            pass
-                self.after(0, update)
-            generate_thumbnails_async(image_paths, on_thumb,
-                                      size=_THUMB_SIZE, cache_dir=get_cache_dir(),
-                                      max_count=6)
-
-        # File table
-        self._file_table.clear()
         keep_path = self.vm.keep_selections.get(group_id, "")
-        for f in group.files:
-            is_keep = (f.path == keep_path)
-            action = f"{IC.KEEP} KEEP" if is_keep else f"{IC.DELETE_TGT} DEL"
-            tag = "safe" if is_keep else "warn"
-            self._file_table.insert_row(
-                f.path,
-                (action, f.filename, truncate_path(f.path, 40),
-                 fmt_bytes(f.size), "—", Path(f.path).suffix or "—", "OK"),
-                tags=(tag,),
-            )
-        self._empty_ws.hide()
-        self._file_table.grid()
+        mode = self.vm.view_mode
+        self._workspace.load_group(group, keep_path=keep_path, mode=mode)
 
-    # ----------------------------------------------------------------
-    # File actions
-    # ----------------------------------------------------------------
-    def _on_file_select(self, file_path: str):
-        pass
-
-    def _on_file_double_click(self, file_path: str):
-        pass
-
-    def _on_keep_this(self):
+    def _on_set_keep(self, path: str) -> None:
+        """Called when user marks a file as KEEP in any workspace mode."""
         gid = self.vm.selected_group_id
-        if not gid:
+        if not gid or not path:
             return
-        sel = self._file_table.selection()
-        if not sel:
-            return
-        self.vm.set_keep(gid, sel)
+        self.vm.set_keep(gid, path)
         self._load_workspace(gid)
         self._safety_panel.update_plan(
             del_count=self.vm.delete_count,
             keep_count=self.vm.keep_count,
             reclaim_bytes=self.vm.reclaimable_bytes,
+            risk_flags=self.vm.risk_flags,
         )
 
-    def _on_mode_change(self):
-        self.vm.view_mode = self._mode_var.get()
+    def _on_clear_keep(self) -> None:
+        """Clear the keep selection for the current group."""
+        gid = self.vm.selected_group_id
+        if not gid or gid not in self.vm.keep_selections:
+            return
+        self.vm.clear_keep(gid)
+        self._load_workspace(gid)
+        self._safety_panel.update_plan(
+            del_count=self.vm.delete_count,
+            keep_count=self.vm.keep_count,
+            reclaim_bytes=self.vm.reclaimable_bytes,
+            risk_flags=self.vm.risk_flags,
+        )
+
+    def _on_mode_change(self) -> None:
+        mode = self._mode_var.get()
+        self.vm.view_mode = mode
+        self._workspace.set_mode(mode)
+        gid = self.vm.selected_group_id
+        if gid:
+            self._load_workspace(gid)
 
     # ----------------------------------------------------------------
     # Deletion
@@ -306,14 +253,76 @@ class ReviewPage(ttk.Frame):
             from ...engine.deletion import preview_deletion
             prev = preview_deletion(plan)
             self._safety_panel.set_dry_run_result(
-                f"Dry run: {prev['total_files']} files → {prev['human_readable_size']}")
+                f"Preview Effects: {prev['total_files']} files → {prev['human_readable_size']}")
         except Exception as e:
             self._safety_panel.set_dry_run_result(f"Error: {e}")
+
+    def _show_delete_confirmation(
+        self,
+        plan: DeletionPlan,
+        prev: dict,
+    ) -> str:
+        """Show confirmation dialog. Returns 'cancel', 'preview', or 'delete'."""
+        result = {"choice": "cancel"}
+        root = self.winfo_toplevel()
+        dlg = tk.Toplevel(root)
+        dlg.title("Confirm Deletion")
+        dlg.transient(root)
+        dlg.grab_set()
+
+        body = ttk.Frame(dlg, padding=16)
+        body.pack(fill="both", expand=True)
+        body.columnconfigure(1, weight=1)
+        row = 0
+
+        def _label(text: str, val: str):
+            nonlocal row
+            ttk.Label(body, text=text + ":", font=("Segoe UI", 9)).grid(
+                row=row, column=0, sticky="w", pady=2
+            )
+            ttk.Label(body, text=val, font=("Segoe UI", 9, "bold")).grid(
+                row=row, column=1, sticky="w", padx=(8, 0), pady=2
+            )
+            row += 1
+
+        total_files = prev.get("total_files", "?")
+        human_size = prev.get("human_readable_size", "?")
+        _label("Files to delete", str(total_files))
+        _label("Files kept", str(self.vm.keep_count))
+        _label("Duplicate groups", str(len(plan.groups)))
+        _label("Reclaimable space", str(human_size))
+        _label("Delete mode", "Trash")
+        _label("Revalidation", "ON")
+        _label("Audit logging", "ACTIVE")
+
+        ttk.Separator(dlg, orient="horizontal").pack(fill="x", padx=16, pady=8)
+
+        def _done(choice: str):
+            result["choice"] = choice
+            dlg.grab_release()
+            dlg.destroy()
+
+        btn_f = ttk.Frame(dlg, padding=(16, 0, 16, 12))
+        btn_f.pack(fill="x")
+        ttk.Button(btn_f, text="Cancel", command=lambda: _done("cancel")).pack(
+            side="left", padx=4
+        )
+        ttk.Button(
+            btn_f, text="Preview Effects", style="Ghost.TButton",
+            command=lambda: _done("preview"),
+        ).pack(side="left", padx=4)
+        ttk.Button(
+            btn_f, text="DELETE", style="Danger.TButton",
+            command=lambda: _done("delete"),
+        ).pack(side="right", padx=4)
+
+        dlg.wait_window(dlg)
+        return result["choice"]
 
     def _on_execute(self):
         plan = self._create_plan()
         if not plan or not plan.groups:
-            messagebox.showinfo("Execute Plan", "No files selected for deletion.")
+            messagebox.showinfo("Delete", "No files selected for deletion.")
             return
         try:
             from ...engine.deletion import preview_deletion
@@ -321,18 +330,17 @@ class ReviewPage(ttk.Frame):
         except Exception:
             prev = {"total_files": "?", "human_readable_size": "?"}
 
-        if not messagebox.askyesno(
-            "Confirm Deletion",
-            f"Delete {prev.get('total_files', '?')} duplicate files?\n"
-            f"Space reclaimed: {prev.get('human_readable_size', '?')}\n\n"
-            f"Files will be moved to Trash.\n\nProceed?",
-        ):
+        choice = self._show_delete_confirmation(plan, prev)
+        if choice == "cancel":
+            return
+        if choice == "preview":
+            self._on_dry_run()
             return
 
-        self._safety_panel._execute_btn.configure(state="disabled", text="Executing…")
+        self._safety_panel._delete_btn.configure(state="disabled", text="Executing…")
         self.update()
         result = self.coordinator.execute_deletion(plan)
-        self._safety_panel._execute_btn.configure(state="normal", text="Execute Plan")
+        self._safety_panel._delete_btn.configure(state="normal", text="DELETE")
 
         if result.failed_files:
             messagebox.showwarning(

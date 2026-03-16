@@ -96,18 +96,18 @@ class TestPhaseProjection:
 class TestMetricsProjection:
     def test_empty_metrics(self):
         m = EMPTY_METRICS
-        assert m.files_scanned == 0
+        assert m.files_discovered_total == 0
         assert m.eta_seconds is None
 
     def test_merge_overrides(self):
         merged = merge_metrics(
             EMPTY_METRICS,
-            files_scanned=100,
+            files_discovered_total=100,
             eta_seconds=60.0,
         )
-        assert merged.files_scanned == 100
+        assert merged.files_discovered_total == 100
         assert merged.eta_seconds == 60.0
-        assert merged.files_skipped == 0  # unchanged from base
+        assert merged.dirs_scanned == 0  # unchanged from base
 
 
 # ---------------------------------------------------------------------------

@@ -519,8 +519,18 @@ class ScanProgress:
     
     # Timing (all in seconds)
     elapsed_seconds: float = 0.0
+    phase_elapsed_s: float = 0.0
     estimated_remaining_seconds: Optional[float] = None  # Only if we have enough data
+    phase_started_at: Optional[float] = None
+    phase_last_updated_at: Optional[float] = None
+    phase_total_units: Optional[int] = None
+    phase_completed_units: int = 0
     
+    # Discovery counters (from FileDiscovery._stats, emitted live)
+    dirs_scanned: int = 0
+    dirs_reused: int = 0
+    dirs_skipped_via_manifest: int = 0
+
     # Throughput (measured, not estimated)
     files_per_second: Optional[float] = None
     bytes_per_second: Optional[float] = None
@@ -565,7 +575,15 @@ class ScanProgress:
             "groups_found": self.groups_found,
             "duplicates_found": self.duplicates_found,
             "elapsed_seconds": self.elapsed_seconds,
+            "phase_elapsed_s": self.phase_elapsed_s,
             "estimated_remaining_seconds": self.estimated_remaining_seconds,
+            "phase_started_at": self.phase_started_at,
+            "phase_last_updated_at": self.phase_last_updated_at,
+            "phase_total_units": self.phase_total_units,
+            "phase_completed_units": self.phase_completed_units,
+            "dirs_scanned": self.dirs_scanned,
+            "dirs_reused": self.dirs_reused,
+            "dirs_skipped_via_manifest": self.dirs_skipped_via_manifest,
             "files_per_second": self.files_per_second,
             "bytes_per_second": self.bytes_per_second,
             "current_file": self.current_file,

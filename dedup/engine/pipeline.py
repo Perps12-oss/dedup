@@ -329,6 +329,9 @@ class ScanPipeline:
     _current_dir_mtimes: Dict[str, int] = field(default_factory=dict, repr=False)
     _prior_dir_mtimes: Optional[Dict[str, int]] = field(default=None, repr=False)
     _benchmark: Optional[ScanBenchmarkReport] = field(default=None, repr=False)
+    _phase_clock_phase: str = field(default="", repr=False)
+    _phase_clock_started_at: float = field(default=0.0, repr=False)
+    _phase_clock_last_updated_at: float = field(default=0.0, repr=False)
     phase_runners: List[PhaseRunner] = field(default_factory=list, init=False, repr=False)
 
     def __post_init__(self):
@@ -364,10 +367,46 @@ class ScanPipeline:
     
     def _create_progress(self, **kwargs) -> ScanProgress:
         """Create a progress snapshot with common fields."""
+        now = time.time()
+        phase_name = str(kwargs.get("phase") or "")
+        if phase_name:
+            if phase_name != self._phase_clock_phase:
+                self._phase_clock_phase = phase_name
+                is_terminal = phase_name in ("complete", "cancelled", "error")
+                if not is_terminal:
+                    self._phase_clock_started_at = now
+            self._phase_clock_last_updated_at = now
+
+        phase_completed_units = int(
+            kwargs.pop("phase_completed_units", kwargs.get("files_found", 0)) or 0
+        )
+        raw_phase_total = kwargs.pop("phase_total_units", kwargs.get("files_total"))
+        phase_total_units = int(raw_phase_total) if raw_phase_total is not None else None
+        is_terminal = phase_name in ("complete", "cancelled", "error")
+        if is_terminal and self._phase_clock_started_at > 0:
+            phase_elapsed_s = max(0.0, self._phase_clock_last_updated_at - self._phase_clock_started_at)
+        elif phase_name and self._phase_clock_started_at > 0:
+            phase_elapsed_s = max(0.0, now - self._phase_clock_started_at)
+        else:
+            phase_elapsed_s = 0.0
+
+        ds = self.discovery.get_stats() if hasattr(self, "discovery") else {}
+        dirs_scanned = int(ds.get("dirs_scanned", 0))
+        dirs_reused = int(ds.get("dirs_reused", 0))
+        dirs_skipped = int(ds.get("dirs_skipped_via_manifest", 0))
+
         return ScanProgress(
             scan_id=self.scan_id,
             elapsed_seconds=self._elapsed(),
-            timestamp=time.time(),
+            phase_elapsed_s=phase_elapsed_s,
+            phase_started_at=self._phase_clock_started_at or None,
+            phase_last_updated_at=self._phase_clock_last_updated_at or now,
+            phase_total_units=phase_total_units,
+            phase_completed_units=phase_completed_units,
+            dirs_scanned=dirs_scanned,
+            dirs_reused=dirs_reused,
+            dirs_skipped_via_manifest=dirs_skipped,
+            timestamp=now,
             **kwargs
         )
 
@@ -1131,6 +1170,8 @@ class ResumableScanPipeline(ScanPipeline):
             discovered_files = self._load_checkpoint()
             if discovered_files:
                 self._prepare_incremental_discovery(is_new_scan=False)
+                if self._benchmark:
+                    self._benchmark.files_discovered_total = len(discovered_files)
                 if progress_cb:
                     progress_cb(self._create_progress(
                         phase="resuming",

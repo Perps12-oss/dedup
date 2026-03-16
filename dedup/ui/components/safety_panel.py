@@ -80,7 +80,7 @@ class SafetyPanel(ttk.Frame):
 
         br = _row(f"{IC.WARN} Risk flags", self._risk_var, "Panel.Warning.TLabel")
 
-        # Dry run
+        # Preview effects result
         self._dryrun_result = tk.StringVar(value="")
         self._dryrun_lbl = ttk.Label(t, textvariable=self._dryrun_result,
                                      style="Panel.Muted.TLabel",
@@ -88,23 +88,23 @@ class SafetyPanel(ttk.Frame):
         self._dryrun_lbl.grid(row=row, column=0, sticky="w", padx=12)
         row += 1
 
-        # Buttons
+        # Buttons — Primary: DELETE; Secondary: Preview Effects
         btn_frame = ttk.Frame(t, style="Panel.TFrame", padding=(12, 4, 12, 12))
         btn_frame.grid(row=row, column=0, sticky="ew")
         btn_frame.columnconfigure(0, weight=1)
         btn_frame.columnconfigure(1, weight=1)
         row += 1
 
-        self._dryrun_btn = ttk.Button(btn_frame, text="Dry Run",
-                                       style="Ghost.TButton",
-                                       command=self._do_dry_run)
-        self._dryrun_btn.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        self._delete_btn = ttk.Button(btn_frame, text="DELETE",
+                                       style="Danger.TButton",
+                                       command=self._do_execute,
+                                       state="disabled")
+        self._delete_btn.grid(row=0, column=1, sticky="ew", padx=(4, 0))
 
-        self._execute_btn = ttk.Button(btn_frame, text="Execute Plan",
-                                        style="Danger.TButton",
-                                        command=self._do_execute,
-                                        state="disabled")
-        self._execute_btn.grid(row=0, column=1, sticky="ew", padx=(4, 0))
+        self._preview_btn = ttk.Button(btn_frame, text="Preview Effects",
+                                        style="Ghost.TButton",
+                                        command=self._do_dry_run)
+        self._preview_btn.grid(row=0, column=0, sticky="ew", padx=(0, 4))
 
     def update_plan(self, del_count: int, keep_count: int, reclaim_bytes: int,
                     risk_flags: int = 0, mode: str = "Trash"):
@@ -113,7 +113,7 @@ class SafetyPanel(ttk.Frame):
         self._keep_count.set(fmt_int(keep_count))
         self._reclaim_var.set(fmt_bytes(reclaim_bytes))
         self._risk_var.set(str(risk_flags) if risk_flags else "None")
-        self._execute_btn.configure(state="normal" if del_count > 0 else "disabled")
+        self._delete_btn.configure(state="normal" if del_count > 0 else "disabled")
         self._dryrun_result.set("")
 
     def set_dry_run_result(self, text: str):
