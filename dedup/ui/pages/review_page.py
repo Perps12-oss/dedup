@@ -21,6 +21,7 @@ from tkinter import ttk, messagebox
 from pathlib import Path
 from typing import Callable, Optional, List
 
+from ..controller.review_controller import ReviewController
 from ..components import (
     DataTable, SectionCard, SafetyPanel, ProvenanceRibbon,
     EmptyState, FilterBar, StatusRibbon,
@@ -43,10 +44,12 @@ class ReviewPage(ttk.Frame):
     def __init__(self, parent,
                  coordinator: ScanCoordinator,
                  on_delete_complete: Callable[[DeletionResult], None],
+                 review_controller: Optional[ReviewController] = None,
                  **kwargs):
         super().__init__(parent, **kwargs)
         self.coordinator = coordinator
         self.on_delete_complete = on_delete_complete
+        self._review_controller = review_controller
         self.vm = ReviewVM()
         self._current_result: Optional[ScanResult] = None
         self._thumbnail_refs: list = []
@@ -100,8 +103,8 @@ class ReviewPage(ttk.Frame):
         right_frame.columnconfigure(0, weight=1)
         self._safety_panel = SafetyPanel(
             right_frame,
-            on_dry_run=self._on_dry_run,
-            on_execute=self._on_execute,
+            on_dry_run=self._on_preview_intent,
+            on_execute=self._on_execute_intent,
         )
         self._safety_panel.grid(row=0, column=0, sticky="nsew")
 
@@ -196,33 +199,53 @@ class ReviewPage(ttk.Frame):
         mode = self.vm.view_mode
         self._workspace.load_group(group, keep_path=keep_path, mode=mode)
 
+    def _on_preview_intent(self) -> None:
+        """Emit PreviewDeletion intent; controller handles dry-run if present."""
+        if self._review_controller:
+            self._review_controller.handle_preview_deletion()
+        else:
+            self._on_dry_run()
+
+    def _on_execute_intent(self) -> None:
+        """Emit ExecuteDeletion intent; controller handles execution if present."""
+        if self._review_controller:
+            self._review_controller.handle_execute_deletion()
+        else:
+            self._on_execute()
+
     def _on_set_keep(self, path: str) -> None:
-        """Called when user marks a file as KEEP in any workspace mode."""
+        """Emit SetKeep intent or apply directly when no controller."""
         gid = self.vm.selected_group_id
         if not gid or not path:
             return
-        self.vm.set_keep(gid, path)
-        self._load_workspace(gid)
-        self._safety_panel.update_plan(
-            del_count=self.vm.delete_count,
-            keep_count=self.vm.keep_count,
-            reclaim_bytes=self.vm.reclaimable_bytes,
-            risk_flags=self.vm.risk_flags,
-        )
+        if self._review_controller:
+            self._review_controller.handle_set_keep(gid, path)
+        else:
+            self.vm.set_keep(gid, path)
+            self._load_workspace(gid)
+            self._safety_panel.update_plan(
+                del_count=self.vm.delete_count,
+                keep_count=self.vm.keep_count,
+                reclaim_bytes=self.vm.reclaimable_bytes,
+                risk_flags=self.vm.risk_flags,
+            )
 
     def _on_clear_keep(self) -> None:
-        """Clear the keep selection for the current group."""
+        """Emit ClearKeep intent or apply directly when no controller."""
         gid = self.vm.selected_group_id
         if not gid or gid not in self.vm.keep_selections:
             return
-        self.vm.clear_keep(gid)
-        self._load_workspace(gid)
-        self._safety_panel.update_plan(
-            del_count=self.vm.delete_count,
-            keep_count=self.vm.keep_count,
-            reclaim_bytes=self.vm.reclaimable_bytes,
-            risk_flags=self.vm.risk_flags,
-        )
+        if self._review_controller:
+            self._review_controller.handle_clear_keep(gid)
+        else:
+            self.vm.clear_keep(gid)
+            self._load_workspace(gid)
+            self._safety_panel.update_plan(
+                del_count=self.vm.delete_count,
+                keep_count=self.vm.keep_count,
+                reclaim_bytes=self.vm.reclaimable_bytes,
+                risk_flags=self.vm.risk_flags,
+            )
 
     def _on_mode_change(self) -> None:
         mode = self._mode_var.get()

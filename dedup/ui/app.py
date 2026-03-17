@@ -32,6 +32,7 @@ from .utils.ui_state import UIState, load_settings, save_settings
 from .shell.app_shell import AppShell
 from .pages.mission_page import MissionPage
 from .pages.scan_page import ScanPage
+from .controller.review_controller import ReviewController
 from .pages.review_page import ReviewPage
 from .pages.history_page import HistoryPage
 from .pages.diagnostics_page import DiagnosticsPage
@@ -192,11 +193,14 @@ class CerebroApp:
         )
         self.shell.register_page("scan", self._scan)
 
+        self._review_controller = ReviewController(self.coordinator)
         self._review = ReviewPage(
             content,
             coordinator=self.coordinator,
             on_delete_complete=self._on_delete_complete,
+            review_controller=self._review_controller,
         )
+        self._review_controller.attach_page(self._review)
         self.shell.register_page("review", self._review)
 
         self._history = HistoryPage(
