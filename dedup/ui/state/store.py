@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field, replace
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..projections.session_projection import SessionProjection, EMPTY_SESSION
 from ..projections.phase_projection import PhaseProjection, initial_phase_map
@@ -97,12 +97,36 @@ class ReviewState:
     preview: ReviewPreviewState = field(default_factory=ReviewPreviewState)
 
 
+# ---------------------------------------------------------------------------
+# Mission state: last scan summary, resumable IDs, recent sessions (Step 8).
+# Updated by app when navigating to Mission or after scan complete.
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class LastScanSummaryState:
+    """Last scan summary for Mission page."""
+    files_scanned: int = 0
+    duplicate_groups: int = 0
+    reclaimable_bytes: int = 0
+    duration_s: float = 0.0
+
+
+@dataclass(frozen=True)
+class MissionState:
+    """Mission page slice: coordinator-sourced summary data."""
+    last_scan: Optional[LastScanSummaryState] = None
+    resumable_scan_ids: Tuple[str, ...] = ()
+    recent_sessions: Tuple[Dict[str, Any], ...] = ()
+    recent_folders: Tuple[str, ...] = ()
+
+
 @dataclass(frozen=True)
 class UIAppState:
-    """App-wide UI state. Scan = projected live scan; review = four slices (store-only for now)."""
+    """App-wide UI state. Scan = projected live scan; review = four slices; mission = coordinator summary."""
 
     scan: ProjectedScanState = field(default_factory=ProjectedScanState)
     review: ReviewState = field(default_factory=ReviewState)
+    mission: MissionState = field(default_factory=MissionState)
 
 
 class UIStateStore:
@@ -158,6 +182,9 @@ class UIStateStore:
 
     def set_intent_lifecycle(self, lifecycle: IntentLifecycle) -> None:
         self._set_state(replace(self._state, scan=replace(self._state.scan, last_intent=lifecycle)))
+
+    def set_mission(self, mission: MissionState) -> None:
+        self._set_state(replace(self._state, mission=mission))
 
     def _set_state(self, new_state: UIAppState) -> None:
         if new_state is self._state:

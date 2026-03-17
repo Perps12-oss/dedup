@@ -57,10 +57,39 @@ class MissionVM:
     last_scan_date:  str                 = ""
     engine_warnings: List[str]           = field(default_factory=list)
 
-    # --- Mission page UI contract (populated by refresh_from_coordinator) ---
+    # --- Mission page UI contract (populated by refresh_from_coordinator or refresh_from_mission_state) ---
     engine_status:   EngineStatus        = field(default_factory=lambda: EngineStatus("—", False, "—"))
     last_scan:       Optional[LastScanSummary] = None
     recent_sessions: List[Dict[str, Any]] = field(default_factory=list)
+    resumable_scan_ids: List[str]         = field(default_factory=list)
+
+    def refresh_from_mission_state(self, state: Any) -> None:
+        """Update VM from UIStateStore (mission slice). Use when page is fed from store."""
+        mission = getattr(state, "mission", None)
+        scan = getattr(state, "scan", None)
+        if mission is None:
+            return
+        # last_scan
+        ls = getattr(mission, "last_scan", None)
+        self.last_scan = LastScanSummary(
+            files_scanned=getattr(ls, "files_scanned", 0),
+            duplicate_groups=getattr(ls, "duplicate_groups", 0),
+            reclaimable_bytes=getattr(ls, "reclaimable_bytes", 0),
+            duration_s=getattr(ls, "duration_s", 0.0),
+        ) if ls else None
+        self.recent_sessions = list(getattr(mission, "recent_sessions", ()))
+        self.recent_folders = list(getattr(mission, "recent_folders", ()))
+        self.resumable_scan_ids = list(getattr(mission, "resumable_scan_ids", ()))
+        # capabilities and engine_status (still local)
+        self.capabilities = _detect_capabilities()
+        schema = "—"
+        if scan and getattr(scan, "session", None):
+            schema = getattr(scan.session, "schema_version", None) or "—"
+        self.engine_status = EngineStatus(
+            hash_backend=_hash_backend_from_caps(self.capabilities),
+            resume_available=len(self.resumable_scan_ids) > 0,
+            schema_version=schema,
+        )
 
     def refresh_from_coordinator(self, coordinator) -> None:
         """Pull fresh data from the coordinator. Safe to call on UI thread."""
@@ -141,6 +170,15 @@ class MissionVM:
     def capabilities_by_name(self) -> Dict[str, bool]:
         """Dict of capability name -> available for Mission page capability checks."""
         return {c.name: c.available for c in self.capabilities}
+
+
+def _hash_backend_from_caps(caps: List[CapabilityInfo]) -> str:
+    for c in caps:
+        if c.name == "xxhash" and c.available:
+            return "xxhash64"
+        if c.name == "blake3" and c.available:
+            return "blake3"
+    return "stdlib" if caps else "—"
 
 
 def _detect_capabilities() -> List[CapabilityInfo]:

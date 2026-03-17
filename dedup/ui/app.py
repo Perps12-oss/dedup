@@ -39,7 +39,7 @@ from .pages.diagnostics_page import DiagnosticsPage
 from .pages.settings_page import SettingsPage
 
 from .projections.hub import ProjectionHub
-from .state.store import UIStateStore
+from .state.store import UIStateStore, MissionState, LastScanSummaryState
 from .state.hub_adapter import ProjectionHubStoreAdapter
 
 
@@ -182,8 +182,10 @@ class CerebroApp:
             on_start_scan=self._on_start_scan,
             on_resume_scan=self._on_resume_scan,
             coordinator=self.coordinator,
+            on_request_refresh=self._refresh_mission_state,
         )
         self.shell.register_page("mission", self._mission)
+        self._mission.attach_store(self.store)
 
         self._scan = ScanPage(
             content,
@@ -378,6 +380,48 @@ class CerebroApp:
         if result:
             self._review.load_result(result)
             self._navigate("review")
+
+    def _refresh_mission_state(self) -> None:
+        """Build mission slice from coordinator and push to store (Mission page subscribes)."""
+        try:
+            raw = self.coordinator.get_history(limit=8) or []
+        except Exception:
+            raw = []
+        try:
+            resumable_ids = tuple(self.coordinator.get_resumable_scan_ids() or [])
+        except Exception:
+            resumable_ids = ()
+        try:
+            recent_folders = tuple(self.coordinator.get_recent_folders() or [])[:10]
+        except Exception:
+            recent_folders = ()
+        last_scan = None
+        if raw:
+            d = raw[0]
+            last_scan = LastScanSummaryState(
+                files_scanned=int(d.get("files_scanned") or 0),
+                duplicate_groups=int(d.get("duplicates_found") or 0),
+                reclaimable_bytes=int(d.get("reclaimable_bytes") or 0),
+                duration_s=float(d.get("duration_s") or 0),
+            )
+        recent_sessions = []
+        for d in raw:
+            recent_sessions.append({
+                "scan_id": d.get("scan_id", ""),
+                "started_at": d.get("started_at", ""),
+                "roots": d.get("roots") or [],
+                "files_scanned": d.get("files_scanned", 0),
+                "duplicates_found": d.get("duplicates_found", 0),
+                "reclaimable_bytes": d.get("reclaimable_bytes", 0),
+                "status": d.get("status", "—"),
+                "duration_s": d.get("duration_s", 0),
+            })
+        self.store.set_mission(MissionState(
+            last_scan=last_scan,
+            resumable_scan_ids=resumable_ids,
+            recent_sessions=tuple(recent_sessions),
+            recent_folders=recent_folders,
+        ))
 
     # ------------------------------------------------------------------
     # Theme & settings

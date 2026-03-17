@@ -10,7 +10,10 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..state.store import UIStateStore
 
 from ..components import MetricCard, SectionCard, EmptyState, Badge
 from ..viewmodels.mission_vm import MissionVM
@@ -36,13 +39,16 @@ class MissionPage(ttk.Frame):
                  on_start_scan: Callable[[Path, dict], None],
                  on_resume_scan: Callable[[str], None],
                  coordinator,
+                 on_request_refresh: Optional[Callable[[], None]] = None,
                  **kwargs):
         super().__init__(parent, **kwargs)
         self.on_start_scan = on_start_scan
         self.on_resume_scan = on_resume_scan
         self.coordinator = coordinator
+        self._on_request_refresh = on_request_refresh
         self.vm = MissionVM()
         self._selected_path: Optional[Path] = None
+        self._store_unsub: Optional[Callable[[], None]] = None
         self._build()
 
     def _build(self):
@@ -225,10 +231,38 @@ class MissionPage(ttk.Frame):
         self._recent_table.grid(row=0, column=0, sticky="nsew")
 
     # ----------------------------------------------------------------
+    # Store subscription (Step 8: migrate to store)
+    # ----------------------------------------------------------------
+    def attach_store(self, store: "UIStateStore") -> None:
+        """Subscribe to UIStateStore; render from store.mission when present."""
+        if self._store_unsub:
+            self._store_unsub()
+        def on_state(state):
+            mission = getattr(state, "mission", None)
+            if mission is not None:
+                self.vm.refresh_from_mission_state(state)
+                self._update_engine_card()
+                self._update_last_scan()
+                self._update_capabilities()
+                self._update_recent_sessions()
+                self._update_recent_folders()
+                has_resumable = bool(self.vm.resumable_scan_ids)
+                self._resume_btn.configure(state="normal" if has_resumable else "disabled")
+        self._store_unsub = store.subscribe(on_state, fire_immediately=False)
+
+    def detach_store(self) -> None:
+        if self._store_unsub:
+            self._store_unsub()
+            self._store_unsub = None
+
+    # ----------------------------------------------------------------
     # Logic
     # ----------------------------------------------------------------
     def on_show(self):
-        self._refresh()
+        if self._on_request_refresh:
+            self._on_request_refresh()
+        else:
+            self._refresh()
 
     def _refresh(self):
         self.vm.refresh_from_coordinator(self.coordinator)
@@ -272,7 +306,7 @@ class MissionPage(ttk.Frame):
 
     def _update_recent_sessions(self):
         self._recent_table.clear()
-        resumable = set(self.coordinator.get_resumable_scan_ids() or [])
+        resumable = set(getattr(self.vm, "resumable_scan_ids", None) or self.coordinator.get_resumable_scan_ids() or [])
         for item in self.vm.recent_sessions[:8]:
             scan_id = item.get("scan_id", "")
             started = fmt_dt(item.get("started_at", ""))
