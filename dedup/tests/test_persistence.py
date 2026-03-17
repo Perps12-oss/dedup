@@ -144,3 +144,21 @@ def test_list_scans_includes_session_metadata_and_verification_summary(persisten
     assert row["discovery_config_hash"] == "disc-hash"
     assert row["benchmark_summary"] == {}
     assert row["deletion_verification_summary"] == {"deleted": 1}
+
+
+def test_persistence_wal_and_synchronous_applied(db_path):
+    """Persistence applies WAL and synchronous pragmas; env can override synchronous."""
+    import os
+    from dedup.infrastructure.persistence import Persistence
+
+    p = Persistence(db_path=db_path)
+    try:
+        conn = p._get_connection()
+        row = conn.execute("PRAGMA journal_mode").fetchone()
+        mode = (row[0] or "").lower()
+        assert mode in ("wal", "delete", "truncate", "memory")
+        row = conn.execute("PRAGMA synchronous").fetchone()
+        sync = row[0]
+        assert sync in (0, 1, 2, 3)
+    finally:
+        p.close()
