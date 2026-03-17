@@ -33,6 +33,7 @@ from .shell.app_shell import AppShell
 from .pages.mission_page import MissionPage
 from .pages.scan_page import ScanPage
 from .controller.review_controller import ReviewController
+from .controller.scan_controller import ScanController
 from .pages.review_page import ReviewPage
 from .pages.history_page import HistoryPage
 from .pages.diagnostics_page import DiagnosticsPage
@@ -104,18 +105,19 @@ class CerebroApp:
         )
         self.shell.grid(row=0, column=0, sticky="nsew")
 
-        # ── Build pages ───────────────────────────────────────────────
-        self._build_pages()
+        # ── Create store first so ReviewController and store-fed pages can use it ───
+        self.store = UIStateStore(tk_root=self.root)
 
-        # ── Create ProjectionHub (after root + pages exist) ───────────
+        # ── Create ProjectionHub (after root exists) ──────────────────────────────
         self.hub = ProjectionHub(
             event_bus=self.coordinator.event_bus,
             tk_root=self.root,
         )
-        # UIStateStore: canonical consumer of projected live state (Step 1).
-        self.store = UIStateStore(tk_root=self.root)
         self._hub_store_adapter = ProjectionHubStoreAdapter(self.hub, self.store)
         self._hub_store_adapter.start()
+
+        # ── Build pages (store is available for Mission, History, Review) ────────
+        self._build_pages()
         self._wire_hub()
 
         # ── Register app-level state listeners ───────────────────────
@@ -184,26 +186,39 @@ class CerebroApp:
             on_resume_scan=self._on_resume_scan,
             coordinator=self.coordinator,
             on_request_refresh=self._refresh_mission_state,
+            on_open_last_review=lambda: self._navigate("review"),
         )
         self.shell.register_page("mission", self._mission)
         self._mission.attach_store(self.store)
 
+        self._scan_controller = ScanController(self.coordinator, self.store)
         self._scan = ScanPage(
             content,
             coordinator=self.coordinator,
             on_complete=self._on_scan_complete,
             on_cancel=self._on_scan_cancel,
+            scan_controller=self._scan_controller,
         )
         self.shell.register_page("scan", self._scan)
 
-        self._review_controller = ReviewController(self.coordinator)
         self._review = ReviewPage(
             content,
             coordinator=self.coordinator,
             on_delete_complete=self._on_delete_complete,
-            review_controller=self._review_controller,
+            review_controller=None,
+            store=self.store,
         )
-        self._review_controller.attach_page(self._review)
+        self._review_controller = ReviewController(
+            self.coordinator,
+            self.store,
+            get_current_result=lambda: self._review._current_result,
+            on_preview_result=lambda msg: self._review._safety_panel.set_dry_run_result(msg),
+            on_refresh_review_ui=lambda: self._review._sync_review_from_store_and_refresh(),
+            on_confirm_deletion=lambda plan, prev: self._review._show_delete_confirmation(plan, prev),
+            on_execute_start=lambda: self._review._safety_panel._delete_btn.configure(state="disabled", text="Executing…") or self._review.update(),
+            on_execute_done=lambda result: self._review._on_execute_done(result),
+        )
+        self._review._review_controller = self._review_controller
         self.shell.register_page("review", self._review)
 
         self._history = HistoryPage(

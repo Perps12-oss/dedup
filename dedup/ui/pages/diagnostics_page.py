@@ -48,14 +48,20 @@ class DiagnosticsPage(ttk.Frame):
         self._store = None
 
     def _on_state(self, state) -> None:
-        """Update VM from store scan state. Tab content updates on tab focus or Refresh."""
-        scan = getattr(state, "scan", None)
-        if scan is None:
-            return
-        self.vm.session = getattr(scan, "session", self.vm.session)
-        self.vm.phases = getattr(scan, "phases", self.vm.phases)
-        self.vm.compat = getattr(scan, "compat", self.vm.compat)
-        self.vm.events_log = getattr(scan, "events_log", self.vm.events_log)
+        """Update VM from store scan state via selectors. Tab content updates on tab focus or Refresh."""
+        from ..state.selectors import scan_session, scan_phases, scan_compat, scan_events_log
+        session = scan_session(state)
+        phases = scan_phases(state)
+        compat = scan_compat(state)
+        events_log = scan_events_log(state)
+        if session is not None:
+            self.vm.session = session
+        if phases:
+            self.vm.phases = phases
+        if compat is not None:
+            self.vm.compat = compat
+        if events_log is not None:
+            self.vm.events_log = events_log
 
     def _build(self):
         self.columnconfigure(0, weight=1)

@@ -12,6 +12,7 @@ from tkinter import ttk
 from typing import Optional
 
 from ..theme.theme_manager import get_theme_manager
+from ..theme.design_system import font_tuple, SPACING
 from ..utils.icons import IC
 
 
@@ -34,14 +35,14 @@ class StatusStrip(tk.Frame):
         self._sep.pack(fill="x")
 
         row = tk.Frame(self)
-        row.pack(fill="both", expand=True, padx=8)
+        row.pack(fill="both", expand=True, padx=SPACING["md"])
         self._row = row
 
         def _item(icon: str, var: tk.StringVar, fg_key: str = "text_secondary"):
             cell = tk.Frame(row)
-            cell.pack(side="left", padx=(0, 14))
-            tk.Label(cell, text=icon, font=("Segoe UI", 7)).pack(side="left", padx=(0, 2))
-            self._lbl = tk.Label(cell, textvariable=var, font=("Segoe UI", 7))
+            cell.pack(side="left", padx=(0, SPACING["lg"]))
+            tk.Label(cell, text=icon, font=font_tuple("strip")).pack(side="left", padx=(0, SPACING["xs"]))
+            self._lbl = tk.Label(cell, textvariable=var, font=font_tuple("strip"))
             self._lbl.pack(side="left")
             return cell, self._lbl
 

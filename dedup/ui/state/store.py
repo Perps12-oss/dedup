@@ -191,6 +191,10 @@ class UIStateStore:
     def set_history(self, history: HistoryProjection) -> None:
         self._set_state(replace(self._state, history=history))
 
+    def set_review_selection(self, selection: ReviewSelectionState) -> None:
+        """Update review selection slice (keep_selections, selected_group_id). Used by ReviewController."""
+        self._set_state(replace(self._state, review=replace(self._state.review, selection=selection)))
+
     def _set_state(self, new_state: UIAppState) -> None:
         if new_state is self._state:
             return

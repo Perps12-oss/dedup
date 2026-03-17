@@ -10,15 +10,20 @@ from typing import Callable, Dict, List, Tuple, Optional
 
 from ..utils.icons import IC
 from ..theme.theme_manager import get_theme_manager
+from ..theme.design_system import font_tuple, SPACING
 
-NAV_ITEMS: List[Tuple[str, str, str]] = [
-    ("mission",     IC.MISSION,     "Mission"),
-    ("scan",        IC.SCAN,        "Scan"),
-    ("review",      IC.REVIEW,      "Review"),
+# Primary pages: Home (Mission), Scan, Review. Secondary: History, Diagnostics, Settings.
+PRIMARY_NAV: List[Tuple[str, str, str]] = [
+    ("mission", IC.MISSION, "Mission"),
+    ("scan",    IC.SCAN,    "Scan"),
+    ("review",  IC.REVIEW,  "Review"),
+]
+SECONDARY_NAV: List[Tuple[str, str, str]] = [
     ("history",     IC.HISTORY,     "History"),
     ("diagnostics", IC.DIAGNOSTICS, "Diagnostics"),
     ("settings",    IC.SETTINGS,    "Settings"),
 ]
+NAV_ITEMS: List[Tuple[str, str, str]] = PRIMARY_NAV + SECONDARY_NAV
 
 RAIL_WIDTH = 72
 
@@ -47,35 +52,46 @@ class NavRail(tk.Frame):
         # App logo/name strip at top
         self._logo = tk.Label(
             self, text="CE\nRE\nBRO",
-            font=("Segoe UI", 8, "bold"),
-            pady=10, cursor="arrow",
+            font=font_tuple("card_title"),
+            pady=SPACING["lg"], cursor="arrow",
         )
         self._logo.pack(fill="x")
 
         # Separator
         self._sep1 = tk.Frame(self, height=1)
-        self._sep1.pack(fill="x", pady=(0, 4))
+        self._sep1.pack(fill="x", pady=(0, SPACING["sm"]))
 
-        # Navigation buttons
-        for key, icon, label in NAV_ITEMS:
-            cell = tk.Frame(self, cursor="hand2")
-            cell.pack(fill="x", pady=1)
-            icon_lbl = tk.Label(cell, text=icon, font=("Segoe UI", 14))
-            icon_lbl.pack(pady=(6, 0))
-            name_lbl = tk.Label(cell, text=label, font=("Segoe UI", 7))
-            name_lbl.pack(pady=(0, 6))
-            for w in (cell, icon_lbl, name_lbl):
-                w.bind("<Button-1>", lambda e, k=key: self._on_click(k))
-                w.bind("<Enter>",    lambda e, c=cell: self._on_hover(c, True))
-                w.bind("<Leave>",    lambda e, c=cell, k=key: self._on_hover(c, False, k))
-            self._buttons[key] = cell
+        # Primary navigation (Mission, Scan, Review)
+        for key, icon, label in PRIMARY_NAV:
+            self._add_nav_cell(key, icon, label)
+
+        # Separator between primary and secondary
+        self._sep_primary_secondary = tk.Frame(self, height=1)
+        self._sep_primary_secondary.pack(fill="x", pady=SPACING["sm"])
+
+        # Secondary navigation (History, Diagnostics, Settings)
+        for key, icon, label in SECONDARY_NAV:
+            self._add_nav_cell(key, icon, label)
 
         # Bottom spacer + compact toggle
         self._spacer = tk.Frame(self)
         self._spacer.pack(fill="both", expand=True)
 
-        self._compact_lbl = tk.Label(self, text="⇔", font=("Segoe UI", 9), cursor="hand2")
-        self._compact_lbl.pack(pady=6)
+        self._compact_lbl = tk.Label(self, text="⇔", font=font_tuple("body"), cursor="hand2")
+        self._compact_lbl.pack(pady=SPACING["md"])
+
+    def _add_nav_cell(self, key: str, icon: str, label: str) -> None:
+        cell = tk.Frame(self, cursor="hand2")
+        cell.pack(fill="x", pady=1)
+        icon_lbl = tk.Label(cell, text=icon, font=font_tuple("nav_icon"))
+        icon_lbl.pack(pady=(SPACING["md"], 0))
+        name_lbl = tk.Label(cell, text=label, font=font_tuple("strip"))
+        name_lbl.pack(pady=(0, SPACING["md"]))
+        for w in (cell, icon_lbl, name_lbl):
+            w.bind("<Button-1>", lambda e, k=key: self._on_click(k))
+            w.bind("<Enter>", lambda e, c=cell: self._on_hover(c, True))
+            w.bind("<Leave>", lambda e, c=cell, k=key: self._on_hover(c, False, k))
+        self._buttons[key] = cell
 
     def _on_click(self, key: str):
         self._on_navigate(key)
@@ -110,6 +126,7 @@ class NavRail(tk.Frame):
         self._logo.configure(background=t["bg_sidebar"],
                              foreground=t["accent_primary"])
         self._sep1.configure(background=t["border_soft"])
+        self._sep_primary_secondary.configure(background=t["border_soft"])
         self._spacer.configure(background=t["bg_sidebar"])
         self._compact_lbl.configure(background=t["bg_sidebar"],
                                     foreground=t["text_muted"])

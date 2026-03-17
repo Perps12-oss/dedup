@@ -30,6 +30,7 @@ from ..components.review_workspace import ReviewWorkspaceStack
 from ..viewmodels.review_vm import ReviewVM
 from ..utils.formatting import fmt_bytes, truncate_path
 from ..utils.icons import IC
+from ..theme.design_system import font_tuple, SPACING
 from ...orchestration.coordinator import ScanCoordinator
 from ...engine.models import ScanResult, DuplicateGroup, DeletionPlan, DeletionResult
 from ...engine.thumbnails import generate_thumbnails_async, get_cache_dir
@@ -45,11 +46,13 @@ class ReviewPage(ttk.Frame):
                  coordinator: ScanCoordinator,
                  on_delete_complete: Callable[[DeletionResult], None],
                  review_controller: Optional[ReviewController] = None,
+                 store=None,
                  **kwargs):
         super().__init__(parent, **kwargs)
         self.coordinator = coordinator
         self.on_delete_complete = on_delete_complete
         self._review_controller = review_controller
+        self._store = store
         self.vm = ReviewVM()
         self._current_result: Optional[ScanResult] = None
         self._thumbnail_refs: list = []
@@ -58,45 +61,49 @@ class ReviewPage(ttk.Frame):
     def _build(self):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(2, weight=1)
+        pad = SPACING["page"]
 
-        # ── Page header ──────────────────────────────────────────────
-        hdr = ttk.Frame(self, padding=(16, 12, 16, 0))
+        # ── Decision Studio: page title + view mode ───────────────────
+        hdr = ttk.Frame(self, padding=(pad, SPACING["lg"], pad, 0))
         hdr.grid(row=0, column=0, sticky="ew")
         hdr.columnconfigure(1, weight=1)
-        ttk.Label(hdr, text=f"{IC.REVIEW}  Review",
-                  font=("Segoe UI", 14, "bold")).grid(row=0, column=0, sticky="w")
+        ttk.Label(hdr, text=f"{IC.REVIEW}  Decision Studio",
+                  font=font_tuple("page_title")).grid(row=0, column=0, sticky="w")
+        ttk.Label(hdr, text="Groups · Workspace · Decision & Safety",
+                  style="Muted.TLabel",
+                  font=font_tuple("page_subtitle")).grid(row=1, column=0, sticky="w")
 
-        # View mode toggle
+        # View mode: Table | Gallery | Compare
         mode_frame = ttk.Frame(hdr, style="Panel.TFrame")
-        mode_frame.grid(row=0, column=2, sticky="e")
+        mode_frame.grid(row=0, column=2, rowspan=2, sticky="e")
         self._mode_var = tk.StringVar(value="table")
         for label, val in [("Table", "table"), ("Gallery", "gallery"), ("Compare", "compare")]:
             ttk.Radiobutton(mode_frame, text=label, variable=self._mode_var,
-                            value=val, command=self._on_mode_change).pack(side="left", padx=2)
+                            value=val, command=self._on_mode_change).pack(side="left", padx=SPACING["sm"])
 
         # ── Provenance ribbon ─────────────────────────────────────────
         self._prov = ProvenanceRibbon(self)
-        self._prov.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
+        self._prov.grid(row=1, column=0, sticky="ew", padx=pad, pady=(0, SPACING["md"]))
 
-        # ── 3-pane body ───────────────────────────────────────────────
+        # ── 3-pane body: Group Navigator | Workspace | Decision & Safety Rail ─
         body = ttk.Frame(self)
-        body.grid(row=2, column=0, sticky="nsew", padx=16, pady=(0, 12))
+        body.grid(row=2, column=0, sticky="nsew", padx=pad, pady=(0, pad))
         body.rowconfigure(0, weight=1)
         body.columnconfigure(0, minsize=200)
         body.columnconfigure(1, weight=1)
         body.columnconfigure(2, minsize=200)
 
-        # Left: Group Navigator
-        left = SectionCard(body, title=f"{IC.GROUPS}  Groups")
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+        # Left: Group Navigator (decision-state per group in decision-state todo)
+        left = SectionCard(body, title=f"{IC.GROUPS}  Group Navigator")
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, SPACING["md"]))
         self._build_group_navigator(left.body)
 
-        # Center: Review Workspace
+        # Center: Workspace (Gallery / Table / Compare)
         center = SectionCard(body, title=f"{IC.REVIEW}  Workspace")
-        center.grid(row=0, column=1, sticky="nsew", padx=(0, 6))
+        center.grid(row=0, column=1, sticky="nsew", padx=SPACING["md"])
         self._build_workspace(center.body)
 
-        # Right: Plan Drawer
+        # Right: Decision & Safety Rail
         right_frame = ttk.Frame(body)
         right_frame.grid(row=0, column=2, sticky="nsew")
         right_frame.rowconfigure(0, weight=1)
@@ -151,6 +158,14 @@ class ReviewPage(ttk.Frame):
     def load_result(self, result: ScanResult):
         self._current_result = result
         self.vm.load_result(result)
+        if self._store:
+            from ..state.store import ReviewSelectionState
+            self._store.set_review_selection(
+                ReviewSelectionState(
+                    keep_selections={},
+                    selected_group_id=self.vm.selected_group_id,
+                )
+            )
         self._prov.update(
             session_id=getattr(self.vm.session, "session_id", result.scan_id if result else ""),
             verification=getattr(self.vm.current_group, "verification_level", "full") if self.vm.groups else "full",
@@ -188,6 +203,14 @@ class ReviewPage(ttk.Frame):
 
     def _on_group_select(self, group_id: str):
         self.vm.selected_group_id = group_id
+        if self._store:
+            from ..state.store import ReviewSelectionState
+            self._store.set_review_selection(
+                ReviewSelectionState(
+                    keep_selections=dict(self.vm.keep_selections),
+                    selected_group_id=group_id,
+                )
+            )
         self._load_workspace(group_id)
 
     def _load_workspace(self, group_id: str):
@@ -212,6 +235,54 @@ class ReviewPage(ttk.Frame):
             self._review_controller.handle_execute_deletion()
         else:
             self._on_execute()
+
+    def _sync_review_from_store_and_refresh(self) -> None:
+        """Sync VM from store.review.selection and refresh workspace + safety panel. No-op if no store."""
+        if not self._store:
+            return
+        from ..state.selectors import review_selection
+        state = self._store.state
+        sel = review_selection(state)
+        if sel is None:
+            return
+        keep = getattr(sel, "keep_selections", None) or {}
+        self.vm.keep_selections = dict(keep)
+        sid = getattr(sel, "selected_group_id", None)
+        if sid is not None:
+            self.vm.selected_group_id = sid
+        gid = self.vm.selected_group_id
+        if gid:
+            self._load_workspace(gid)
+        self._safety_panel.update_plan(
+            del_count=self.vm.delete_count,
+            keep_count=self.vm.keep_count,
+            reclaim_bytes=self.vm.reclaimable_bytes,
+            risk_flags=self.vm.risk_flags,
+        )
+
+    def _on_execute_done(self, result: DeletionResult) -> None:
+        """Called by ReviewController after execute_deletion. Re-enable button, notify, refresh result."""
+        self._safety_panel._delete_btn.configure(state="normal", text="DELETE")
+        self.on_delete_complete(result)
+        if result.deleted_files and self._current_result:
+            from ...engine.models import DuplicateGroup
+            deleted_set = set(result.deleted_files)
+            new_groups = []
+            for g in self._current_result.duplicate_groups:
+                remaining = [f for f in g.files if f.path not in deleted_set]
+                if len(remaining) >= 2:
+                    new_groups.append(DuplicateGroup(
+                        group_id=g.group_id, group_hash=g.group_hash, files=remaining))
+            self._current_result.duplicate_groups = new_groups
+            self.load_result(self._current_result)
+        if self._store:
+            from ..state.store import ReviewSelectionState
+            self._store.set_review_selection(
+                ReviewSelectionState(
+                    keep_selections=dict(self.vm.keep_selections),
+                    selected_group_id=self.vm.selected_group_id,
+                )
+            )
 
     def _on_set_keep(self, path: str) -> None:
         """Emit SetKeep intent or apply directly when no controller."""

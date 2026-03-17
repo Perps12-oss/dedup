@@ -10,9 +10,11 @@ from .empty_state import EmptyState
 from .badges import Badge, StatusBadge
 from .filter_bar import FilterBar
 from .toolbar import Toolbar
+from .decision_state import DecisionStateBadge, SAFETY_RAIL, get_decision_label, get_decision_variant
 
 __all__ = [
     "MetricCard", "SectionCard", "PhaseTimeline", "StatusRibbon",
     "ProvenanceRibbon", "SafetyPanel", "DataTable", "EmptyState",
     "Badge", "StatusBadge", "FilterBar", "Toolbar",
+    "DecisionStateBadge", "SAFETY_RAIL", "get_decision_label", "get_decision_variant",
 ]
