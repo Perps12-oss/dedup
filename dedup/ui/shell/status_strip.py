@@ -1,16 +1,18 @@
 """
 StatusStrip — global bottom status strip.
 
-Always shows: Session | Phase | Engine Health | Checkpoint | Workers | Warnings
+Shows: Session | Phase | Engine Health | Checkpoint | Workers | Warnings | Intent
+Intent reflects store.scan.last_intent (idle | accepted | failed | completed).
 Color rules: green=safe, amber=warning, red=failure
 """
 from __future__ import annotations
+
 import tkinter as tk
 from tkinter import ttk
 from typing import Optional
 
-from ..utils.icons import IC
 from ..theme.theme_manager import get_theme_manager
+from ..utils.icons import IC
 
 
 class StatusStrip(tk.Frame):
@@ -50,6 +52,7 @@ class StatusStrip(tk.Frame):
         self._workers_var   = tk.StringVar(value="Workers: 0")
         self._warnings_var  = tk.StringVar(value="Warnings: 0")
         self._storage_var   = tk.StringVar(value="")
+        self._intent_var    = tk.StringVar(value="Intent: idle")
 
         self._cells = {}
         self._labels = {}
@@ -61,6 +64,7 @@ class StatusStrip(tk.Frame):
             ("workers",  IC.WORKERS,    self._workers_var),
             ("warnings", IC.WARN,       self._warnings_var),
             ("storage",  IC.SCHEMA,     self._storage_var),
+            ("intent",   IC.INFO,       self._intent_var),
         ]
         for key, icon, var in specs:
             cell, lbl = _item(icon, var)
@@ -110,6 +114,25 @@ class StatusStrip(tk.Frame):
                 storage_mode=f"schema v{proj.schema_version}" if proj.schema_version else "",
             )
         hub.subscribe("session", _on_session)
+
+    def subscribe_to_store(self, store) -> None:
+        """
+        Subscribe to UIStateStore to show scan intent lifecycle.
+        Safe if store or store.scan.last_intent is absent/None — shows "Intent: idle".
+        """
+        def _on_state(state) -> None:
+            scan = getattr(state, "scan", None)
+            if scan is None:
+                self._intent_var.set("Intent: idle")
+                return
+            last = getattr(scan, "last_intent", None)
+            if last is None:
+                self._intent_var.set("Intent: idle")
+                return
+            status = getattr(last, "status", None) or "idle"
+            self._intent_var.set(f"Intent: {status}")
+
+        self._unsub_store = store.subscribe(_on_state, fire_immediately=True)
 
     def _apply_colors(self, t: dict):
         bg = t["bg_sidebar"]

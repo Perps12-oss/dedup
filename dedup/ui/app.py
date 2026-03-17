@@ -38,6 +38,8 @@ from .pages.diagnostics_page import DiagnosticsPage
 from .pages.settings_page import SettingsPage
 
 from .projections.hub import ProjectionHub
+from .state.store import UIStateStore
+from .state.hub_adapter import ProjectionHubStoreAdapter
 
 
 class CerebroApp:
@@ -108,6 +110,10 @@ class CerebroApp:
             event_bus=self.coordinator.event_bus,
             tk_root=self.root,
         )
+        # UIStateStore: canonical consumer of projected live state (Step 1).
+        self.store = UIStateStore(tk_root=self.root)
+        self._hub_store_adapter = ProjectionHubStoreAdapter(self.hub, self.store)
+        self._hub_store_adapter.start()
         self._wire_hub()
 
         # ── Register app-level state listeners ───────────────────────
@@ -139,6 +145,10 @@ class CerebroApp:
             self.shell.top_bar.subscribe_to_hub(self.hub)
         except AttributeError:
             _log.debug("TopBar.subscribe_to_hub not available")
+        try:
+            self.shell.status_strip.subscribe_to_store(self.store)
+        except AttributeError:
+            _log.debug("StatusStrip.subscribe_to_store not available")
 
         # Scan page — primary live-update consumer
         self._scan.attach_hub(self.hub)
