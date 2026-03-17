@@ -153,8 +153,11 @@ class CerebroApp:
         # Scan page — primary live-update consumer
         self._scan.attach_hub(self.hub)
 
-        # Diagnostics page — shares phase/compat projections
-        self._diagnostics.attach_hub(self.hub)
+        # Diagnostics page — renders from store (phase, compat, events_log)
+        try:
+            self._diagnostics.attach_store(self.store)
+        except AttributeError:
+            _log.debug("DiagnosticsPage.attach_store not available")
 
         # App-level terminal handler — navigate to review on completion
         def _on_terminal(proj) -> None:

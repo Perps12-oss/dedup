@@ -1,12 +1,12 @@
 """
 Diagnostics Page — Deep engine transparency.
 
-Layout:
-  Row 0: Session overview strip
-  Row 1: Tab bar  [Phases | Artifacts | Compatibility | Events | Integrity]
-  Row 2: Active tab content
+Renders from UIStateStore (phase, compat, events_log). Hub remains upstream;
+store is fed by hub→store adapter. No direct ProjectionHub dependency for rendering.
 """
 from __future__ import annotations
+
+import logging
 import tkinter as tk
 from tkinter import ttk
 from typing import Callable, List, Optional
@@ -18,45 +18,44 @@ from ..utils.icons import IC
 from ...orchestration.coordinator import ScanCoordinator
 from ...infrastructure.diagnostics import get_diagnostics_recorder
 
+_log = logging.getLogger(__name__)
+
 
 class DiagnosticsPage(ttk.Frame):
-    """Engine diagnostics page."""
+    """Engine diagnostics page. Renders from UIStateStore (projected scan state)."""
 
     def __init__(self, parent, coordinator: ScanCoordinator, **kwargs):
         super().__init__(parent, **kwargs)
         self.coordinator = coordinator
         self.vm = DiagnosticsVM()
-        self._hub = None
-        self._unsubs: List[Callable] = []
+        self._store = None
+        self._unsub_store: Optional[Callable[[], None]] = None
         self._build()
 
-    def attach_hub(self, hub) -> None:
-        """Subscribe to live projection updates for session/phase/compat/events."""
-        self._hub = hub
-        self._unsubs.append(hub.subscribe("session", self._on_hub_session))
-        self._unsubs.append(hub.subscribe("phase", self._on_hub_phases))
-        self._unsubs.append(hub.subscribe("compatibility", self._on_hub_compat))
-        self._unsubs.append(hub.subscribe("events_log", self._on_hub_events))
+    def attach_store(self, store) -> None:
+        """Subscribe to UIStateStore for session/phase/compat/events. Renders from store only."""
+        self.detach_store()
+        self._store = store
+        self._unsub_store = store.subscribe(self._on_state, fire_immediately=True)
 
-    def detach_hub(self) -> None:
-        for unsub in self._unsubs:
+    def detach_store(self) -> None:
+        if self._unsub_store:
             try:
-                unsub()
-            except Exception:
-                pass
-        self._unsubs.clear()
+                self._unsub_store()
+            except Exception as e:
+                _log.warning("DiagnosticsPage detach_store: %s", e)
+            self._unsub_store = None
+        self._store = None
 
-    def _on_hub_session(self, proj) -> None:
-        self.vm.session = proj
-
-    def _on_hub_phases(self, phases) -> None:
-        self.vm.phases = phases
-
-    def _on_hub_compat(self, proj) -> None:
-        self.vm.compat = proj
-
-    def _on_hub_events(self, entries) -> None:
-        self.vm.events_log = entries
+    def _on_state(self, state) -> None:
+        """Update VM from store scan state. Tab content updates on tab focus or Refresh."""
+        scan = getattr(state, "scan", None)
+        if scan is None:
+            return
+        self.vm.session = getattr(scan, "session", self.vm.session)
+        self.vm.phases = getattr(scan, "phases", self.vm.phases)
+        self.vm.compat = getattr(scan, "compat", self.vm.compat)
+        self.vm.events_log = getattr(scan, "events_log", self.vm.events_log)
 
     def _build(self):
         self.columnconfigure(0, weight=1)
