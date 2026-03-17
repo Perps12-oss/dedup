@@ -17,6 +17,7 @@ from ..projections.phase_projection import PhaseProjection, initial_phase_map
 from ..projections.metrics_projection import MetricsProjection, EMPTY_METRICS
 from ..projections.compatibility_projection import CompatibilityProjection, EMPTY_COMPAT
 from ..projections.deletion_projection import DeletionReadinessProjection, EMPTY_DELETION
+from ..projections.history_projection import HistoryProjection, EMPTY_HISTORY
 
 _log = logging.getLogger(__name__)
 
@@ -122,11 +123,12 @@ class MissionState:
 
 @dataclass(frozen=True)
 class UIAppState:
-    """App-wide UI state. Scan = projected live scan; review = four slices; mission = coordinator summary."""
+    """App-wide UI state. Scan = projected live scan; review = four slices; mission = coordinator summary; history = session list."""
 
     scan: ProjectedScanState = field(default_factory=ProjectedScanState)
     review: ReviewState = field(default_factory=ReviewState)
     mission: MissionState = field(default_factory=MissionState)
+    history: HistoryProjection = field(default_factory=lambda: EMPTY_HISTORY)
 
 
 class UIStateStore:
@@ -185,6 +187,9 @@ class UIStateStore:
 
     def set_mission(self, mission: MissionState) -> None:
         self._set_state(replace(self._state, mission=mission))
+
+    def set_history(self, history: HistoryProjection) -> None:
+        self._set_state(replace(self._state, history=history))
 
     def _set_state(self, new_state: UIAppState) -> None:
         if new_state is self._state:

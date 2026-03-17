@@ -41,6 +41,7 @@ from .pages.settings_page import SettingsPage
 from .projections.hub import ProjectionHub
 from .state.store import UIStateStore, MissionState, LastScanSummaryState
 from .state.hub_adapter import ProjectionHubStoreAdapter
+from .projections.history_projection import build_history_from_coordinator
 
 
 class CerebroApp:
@@ -210,8 +211,10 @@ class CerebroApp:
             coordinator=self.coordinator,
             on_load_scan=self._on_load_history_scan,
             on_resume_scan=self._on_resume_scan,
+            on_request_refresh=self._refresh_history_state,
         )
         self.shell.register_page("history", self._history)
+        self._history.attach_store(self.store)
 
         self._diagnostics = DiagnosticsPage(
             content,
@@ -422,6 +425,14 @@ class CerebroApp:
             recent_sessions=tuple(recent_sessions),
             recent_folders=recent_folders,
         ))
+
+    def _refresh_history_state(self) -> None:
+        """Build history slice from coordinator and push to store (History page subscribes)."""
+        try:
+            proj = build_history_from_coordinator(self.coordinator)
+            self.store.set_history(proj)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Theme & settings

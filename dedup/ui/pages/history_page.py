@@ -10,7 +10,10 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk, messagebox
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..state.store import UIStateStore
 
 from ..components import DataTable, SectionCard, MetricCard, EmptyState
 from ..viewmodels.history_vm import HistoryVM, SessionEntry
@@ -27,12 +30,15 @@ class HistoryPage(ttk.Frame):
                  coordinator: ScanCoordinator,
                  on_load_scan: Callable[[str], None],
                  on_resume_scan: Callable[[str], None],
+                 on_request_refresh: Optional[Callable[[], None]] = None,
                  **kwargs):
         super().__init__(parent, **kwargs)
         self.coordinator = coordinator
         self.on_load_scan = on_load_scan
         self.on_resume_scan = on_resume_scan
+        self._on_request_refresh = on_request_refresh
         self.vm = HistoryVM()
+        self._store_unsub: Optional[Callable[[], None]] = None
         self._build()
 
     def _build(self):
@@ -162,8 +168,31 @@ class HistoryPage(ttk.Frame):
             self._detail_vars[label] = var
 
     # ----------------------------------------------------------------
+    # Store subscription (Step 8: migrate to store)
+    # ----------------------------------------------------------------
+    def attach_store(self, store: "UIStateStore") -> None:
+        """Subscribe to UIStateStore; render from store.history when present."""
+        if self._store_unsub:
+            self._store_unsub()
+        def on_state(state):
+            history = getattr(state, "history", None)
+            if history is not None:
+                self.vm.refresh_from_history(history)
+                self._update_summary()
+                self._populate_table()
+        self._store_unsub = store.subscribe(on_state, fire_immediately=False)
+
+    def detach_store(self) -> None:
+        if self._store_unsub:
+            self._store_unsub()
+            self._store_unsub = None
+
+    # ----------------------------------------------------------------
     def on_show(self):
-        self._refresh()
+        if self._on_request_refresh:
+            self._on_request_refresh()
+        else:
+            self._refresh()
 
     def _refresh(self):
         self.vm.refresh(self.coordinator)

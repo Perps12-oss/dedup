@@ -34,6 +34,10 @@ class HistoryVM:
         """Pull fresh data. Safe to call on UI thread (no async work)."""
         self.history = build_history_from_coordinator(coordinator)
 
+    def refresh_from_history(self, history: HistoryProjection) -> None:
+        """Update from store history slice (when page is fed from store)."""
+        self.history = history
+
     @property
     def filtered_sessions(self):
         sessions = list(self.history.sessions)
