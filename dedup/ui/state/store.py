@@ -1,20 +1,22 @@
 """
 UIStateStore — canonical UI-readable state for projected live scan surfaces.
 
-Step 1 scope: store holds projected scan state and intent lifecycle.
-Pages that consume live scan state read from the store (migrated incrementally).
+Step 1: projected scan state and intent lifecycle.
+Step 3: review state split into four explicit slices (index, selection, plan, preview).
+Pages that consume live state read from the store (migrated incrementally).
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field, replace
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from ..projections.session_projection import SessionProjection, EMPTY_SESSION
 from ..projections.phase_projection import PhaseProjection, initial_phase_map
 from ..projections.metrics_projection import MetricsProjection, EMPTY_METRICS
 from ..projections.compatibility_projection import CompatibilityProjection, EMPTY_COMPAT
+from ..projections.deletion_projection import DeletionReadinessProjection, EMPTY_DELETION
 
 _log = logging.getLogger(__name__)
 
@@ -45,11 +47,62 @@ class ProjectedScanState:
     )
 
 
+# ---------------------------------------------------------------------------
+# Review state: four explicit slices (Step 3). Store-only; no page refactor yet.
+# Boundaries: index = navigator/list, selection = keep/selected, plan = deletion
+# readiness, preview = compare/thumbnail/view-mode preview.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ReviewIndexState:
+    """Group navigator / list position and metadata."""
+    current_group_index: int = 0
+    groups_total: int = 0
+    current_group_id: Optional[str] = None
+    filter_text: str = ""
+
+
+@dataclass(frozen=True)
+class ReviewSelectionState:
+    """Keep selections and selected group; clear/override state."""
+    keep_selections: Dict[str, str] = field(default_factory=dict)  # group_id -> keep path
+    selected_group_id: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class ReviewPlanState:
+    """Deletion plan summary, safety counts, reclaimable bytes, risk flags."""
+    deletion_readiness: DeletionReadinessProjection = EMPTY_DELETION
+    reclaimable_bytes: int = 0
+    risk_flags: int = 0
+    plan_summary: str = ""
+
+
+@dataclass(frozen=True)
+class ReviewPreviewState:
+    """Preview/compare targets and view-mode-specific preview metadata."""
+    preview_target_path: Optional[str] = None
+    compare_target_path: Optional[str] = None
+    view_mode: str = "table"  # "table" | "gallery" | "compare"
+    preview_metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ReviewState:
+    """All four review slices. Populated by adapter/page when review is migrated."""
+    index: ReviewIndexState = field(default_factory=ReviewIndexState)
+    selection: ReviewSelectionState = field(default_factory=ReviewSelectionState)
+    plan: ReviewPlanState = field(default_factory=ReviewPlanState)
+    preview: ReviewPreviewState = field(default_factory=ReviewPreviewState)
+
+
 @dataclass(frozen=True)
 class UIAppState:
-    """App-wide UI state. Step 1: only projected scan state."""
+    """App-wide UI state. Scan = projected live scan; review = four slices (store-only for now)."""
 
     scan: ProjectedScanState = field(default_factory=ProjectedScanState)
+    review: ReviewState = field(default_factory=ReviewState)
 
 
 class UIStateStore:

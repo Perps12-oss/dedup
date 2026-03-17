@@ -2,12 +2,18 @@
 UI state package.
 
 UIStateStore is the canonical consumer of ProjectionHub for currently projected
-live state. Non-projected pages may continue refresh-based loading until migrated.
+live state. Review state is split into four slices (index, selection, plan, preview).
+Non-projected pages may continue refresh-based loading until migrated.
 """
 
 from .store import (
     IntentLifecycle,
     ProjectedScanState,
+    ReviewIndexState,
+    ReviewPlanState,
+    ReviewPreviewState,
+    ReviewSelectionState,
+    ReviewState,
     UIAppState,
     UIStateStore,
 )
@@ -15,6 +21,11 @@ from .store import (
 __all__ = [
     "IntentLifecycle",
     "ProjectedScanState",
+    "ReviewIndexState",
+    "ReviewPlanState",
+    "ReviewPreviewState",
+    "ReviewSelectionState",
+    "ReviewState",
     "UIAppState",
     "UIStateStore",
 ]
