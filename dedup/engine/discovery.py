@@ -29,7 +29,11 @@ except ImportError:
 
 @dataclass(slots=True)
 class DiscoveryOptions:
-    """Options for file discovery."""
+    """
+    Options for file discovery.
+    resolve_paths=False (default) keeps the discovery hot path minimal; paths
+    are used as returned by the OS. Set True only when canonical paths are required.
+    """
     roots: List[Path]
     min_size_bytes: int = 1
     max_size_bytes: Optional[int] = None
@@ -293,15 +297,14 @@ class FileDiscovery:
                             if ext not in self.options.allowed_extensions:
                                 continue
                         
-                        # Create metadata
+                        # Create metadata; avoid resolve/measure when not needed (hot path).
                         mtime_ns = getattr(st, 'st_mtime_ns', int(st.st_mtime * 1_000_000_000))
-                        self._stats["resolve_calls"] += 1
-                        with measure("discovery.resolve"):
-                            path_str = (
-                                str(Path(entry.path).resolve())
-                                if self.options.resolve_paths
-                                else entry.path
-                            )
+                        if self.options.resolve_paths:
+                            self._stats["resolve_calls"] += 1
+                            with measure("discovery.resolve"):
+                                path_str = str(Path(entry.path).resolve())
+                        else:
+                            path_str = entry.path
                         metadata = FileMetadata(
                             path=path_str,
                             size=size,

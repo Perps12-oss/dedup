@@ -70,3 +70,9 @@ Output format (from `bench_incremental_scan` and `run_baseline`): JSON with `sum
 4. Compare `summary.second_total_elapsed_ms_mean`, `summary.second_discovery_elapsed_ms_mean`, and scenario speedups.
 
 No production behavior change is required to run benchmarks; they use the same pipeline and persistence APIs as the app.
+
+## Discovery hot path
+
+- **Default**: `resolve_paths=False` in ScanConfig and DiscoveryOptions; discovery does not call `Path.resolve()` per file, keeping the hot path minimal. Paths are used as returned by the OS (e.g. scandir).
+- **Comparison**: Use `--resolve` in `bench_discovery` to measure the cost of enabling path resolution; compare against the default run to validate hot-path reduction.
+- **Boundary**: Discovery-time data (path, size, mtime_ns, inode) is sufficient for hashing and grouping; any later path normalization is outside the discovery hot path.
