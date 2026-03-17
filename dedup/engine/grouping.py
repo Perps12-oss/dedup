@@ -263,13 +263,14 @@ class SizeReducer:
             grouped[file.size].append(file)
 
         candidate_groups = {size: group for size, group in grouped.items() if len(group) >= 2}
-        for size, group in candidate_groups.items():
-            file_ids = []
-            for file in group:
-                file_id = persistence.inventory_repo.get_file_id(scan_id, file.path)
-                if file_id is not None:
-                    file_ids.append(file_id)
-            persistence.size_candidate_repo.replace_group(scan_id, size, file_ids)
+        if persistence is not None:
+            for size, group in candidate_groups.items():
+                file_ids = []
+                for file in group:
+                    file_id = persistence.inventory_repo.get_file_id(scan_id, file.path)
+                    if file_id is not None:
+                        file_ids.append(file_id)
+                persistence.size_candidate_repo.replace_group(scan_id, size, file_ids)
 
         return candidate_groups
 
@@ -297,22 +298,23 @@ class PartialHashReducer:
             progress_cb=None,
         )
 
-        for partial_hash, group in partial_hash_groups.items():
-            file_ids = []
-            for file in group:
-                file_id = persistence.inventory_repo.get_file_id(scan_id, file.path)
-                if file_id is None:
-                    continue
-                file_ids.append(file_id)
-                persistence.partial_hash_repo.upsert(
-                    session_id=scan_id,
-                    file_id=file_id,
-                    algorithm=self.hash_engine.algorithm.value,
-                    strategy_version=self.hash_engine.partial_spec.version,
-                    sample_spec=self.hash_engine.partial_spec.to_dict(),
-                    partial_hash=partial_hash,
-                )
-            persistence.partial_candidate_repo.replace_group(scan_id, partial_hash, file_ids)
+        if persistence is not None:
+            for partial_hash, group in partial_hash_groups.items():
+                file_ids = []
+                for file in group:
+                    file_id = persistence.inventory_repo.get_file_id(scan_id, file.path)
+                    if file_id is None:
+                        continue
+                    file_ids.append(file_id)
+                    persistence.partial_hash_repo.upsert(
+                        session_id=scan_id,
+                        file_id=file_id,
+                        algorithm=self.hash_engine.algorithm.value,
+                        strategy_version=self.hash_engine.partial_spec.version,
+                        sample_spec=self.hash_engine.partial_spec.to_dict(),
+                        partial_hash=partial_hash,
+                    )
+                persistence.partial_candidate_repo.replace_group(scan_id, partial_hash, file_ids)
 
         return partial_hash_groups
 
@@ -332,11 +334,14 @@ class FullHashReducer:
     ) -> List[DuplicateGroup]:
         confirmed_groups = confirm_duplicates(partial_hash_groups, self.hash_engine, progress_cb=None)
         duplicate_groups: List[DuplicateGroup] = []
-        persistence.duplicate_group_repo.clear_session(scan_id)
+        if persistence is not None:
+            persistence.duplicate_group_repo.clear_session(scan_id)
 
         for hash_value, files in confirmed_groups.items():
             group = DuplicateGroup(group_id="", group_hash=hash_value, files=files)
             duplicate_groups.append(group)
+            if persistence is None:
+                continue
             members = []
             keeper_path = files[0].path if files else None
             keeper_file_id = persistence.inventory_repo.get_file_id(scan_id, keeper_path) if keeper_path else None

@@ -7,14 +7,17 @@ Provides progress callbacks and cancellation support.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable, Optional, Dict, Any
+from typing import Any, Callable, Dict, Optional
 
 from ..engine.models import ScanConfig, ScanProgress, ScanResult
-from ..engine.pipeline import ScanPipeline, ResumableScanPipeline
+from ..engine.pipeline import ResumableScanPipeline, ScanPipeline
 from .events import EventBus, ScanEvent, ScanEventType, get_event_bus
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -185,17 +188,7 @@ class ScanWorker:
                         ))
                     
                     # Call user callback
-                    if self.callbacks.on_progress:
-                        try:
-                            self.callbacks.on_progress(progress)
-                        except Exception as e:
-                            import logging
-                            logging.getLogger(__name__).warning("Progress callback failed: %s", e)
-                            try:
-                                from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
-                                get_diagnostics_recorder().record(CATEGORY_CALLBACK, "Progress callback failed", str(e))
-                            except Exception:
-                                pass
+                    self._safe_callback("Progress", self.callbacks.on_progress, progress)
                     
                     # Publish event
                     self.event_bus.publish(ScanEvent(
@@ -222,18 +215,8 @@ class ScanWorker:
             
             # Check if cancelled
             if self._cancelled:
-                if self.callbacks.on_cancel:
-                    try:
-                        self.callbacks.on_cancel()
-                    except Exception as e:
-                        import logging
-                        logging.getLogger(__name__).warning("Cancel callback failed: %s", e)
-                        try:
-                            from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
-                            get_diagnostics_recorder().record(CATEGORY_CALLBACK, "Cancel callback failed", str(e))
-                        except Exception:
-                            pass
-                
+                self._safe_callback("Cancel", self.callbacks.on_cancel)
+
                 self.event_bus.publish(ScanEvent(
                     event_type=ScanEventType.SESSION_CANCELLED,
                     scan_id=self._pipeline.scan_id,
@@ -245,12 +228,7 @@ class ScanWorker:
                 ))
             elif self._result and self._result.errors:
                 self._error = "; ".join(self._result.errors)
-                if self.callbacks.on_error:
-                    try:
-                        self.callbacks.on_error(self._error)
-                    except Exception as e:
-                        import logging
-                        logging.getLogger(__name__).warning("Error callback failed: %s", e)
+                self._safe_callback("Error", self.callbacks.on_error, self._error)
                 self.event_bus.publish(ScanEvent(
                     event_type=ScanEventType.SESSION_FAILED,
                     scan_id=self._pipeline.scan_id,
@@ -263,18 +241,8 @@ class ScanWorker:
                 ))
             else:
                 # Success
-                if self.callbacks.on_complete:
-                    try:
-                        self.callbacks.on_complete(self._result)
-                    except Exception as e:
-                        import logging
-                        logging.getLogger(__name__).warning("Complete callback failed: %s", e)
-                        try:
-                            from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
-                            get_diagnostics_recorder().record(CATEGORY_CALLBACK, "Complete callback failed", str(e))
-                        except Exception:
-                            pass
-                
+                self._safe_callback("Complete", self.callbacks.on_complete, self._result)
+
                 self.event_bus.publish(ScanEvent(
                     event_type=ScanEventType.SESSION_COMPLETED,
                     scan_id=self._pipeline.scan_id,
@@ -289,19 +257,9 @@ class ScanWorker:
         
         except Exception as e:
             self._error = str(e)
-            
-            if self.callbacks.on_error:
-                try:
-                    self.callbacks.on_error(self._error)
-                except Exception as e:
-                    import logging
-                    logging.getLogger(__name__).warning("Error callback failed: %s", e)
-                    try:
-                        from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
-                        get_diagnostics_recorder().record(CATEGORY_CALLBACK, "Error callback failed", str(e))
-                    except Exception:
-                        pass
-            
+            _log.exception("Worker run failed: %s", e)
+            self._safe_callback("Error", self.callbacks.on_error, self._error)
+
             self.event_bus.publish(ScanEvent(
                 event_type=ScanEventType.SESSION_FAILED,
                 scan_id=self._pipeline.scan_id if self._pipeline else "unknown",
@@ -344,3 +302,27 @@ class ScanWorker:
     def get_error(self) -> Optional[str]:
         """Get error message (if failed)."""
         return self._error
+
+    @staticmethod
+    def _safe_callback(
+        name: str,
+        callback: Optional[Callable[..., None]],
+        *args: Any,
+    ) -> None:
+        """Invoke a user callback; log and record diagnostics on failure without raising."""
+        if callback is None:
+            return
+        try:
+            callback(*args)
+        except Exception as e:
+            _log.warning("%s callback failed: %s", name, e, exc_info=True)
+            try:
+                from ..infrastructure.diagnostics import (
+                    CATEGORY_CALLBACK,
+                    get_diagnostics_recorder,
+                )
+                get_diagnostics_recorder().record(
+                    CATEGORY_CALLBACK, f"{name} callback failed", str(e)
+                )
+            except Exception as diag_err:
+                _log.debug("Diagnostics record failed: %s", diag_err)

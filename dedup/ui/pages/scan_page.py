@@ -14,11 +14,16 @@ Update flow:
       →  _render_*()  update individual widgets (no whole-page repaint)
 """
 from __future__ import annotations
+
+import logging
+import time
 import tkinter as tk
-from tkinter import ttk, messagebox
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
-import time
+
+from tkinter import ttk, messagebox
+
+_log = logging.getLogger(__name__)
 
 from ..components import (
     MetricCard, SectionCard, PhaseTimeline, StatusRibbon, EmptyState
@@ -83,8 +88,8 @@ class ScanPage(ttk.Frame):
         for unsub in self._unsubs:
             try:
                 unsub()
-            except Exception:
-                pass
+            except Exception as e:
+                _log.warning("ScanPage detach_hub: unsubscribe failed: %s", e)
         self._unsubs.clear()
 
     # ------------------------------------------------------------------
@@ -106,11 +111,12 @@ class ScanPage(ttk.Frame):
             if self.winfo_exists():
                 try:
                     fn()
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log.warning("ScanPage deferred render failed: %s", e)
         try:
             self.after_idle(run)
-        except Exception:
+        except Exception as e:
+            _log.debug("ScanPage after_idle failed: %s", e)
             if key:
                 self._pending_defer.discard(key)
 

@@ -1,11 +1,14 @@
 """
 Deletion safety: plan matches selection; keep file never deleted.
+
+Characterisation tests: preview_deletion, delete_file dry_run, progress_cb stop, audit log.
 """
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 from dedup.engine.models import (
     FileMetadata, DuplicateGroup, DeletionPlan, DeletionResult,
@@ -245,3 +248,70 @@ def test_post_delete_verification_persists_summary(temp_dir):
         assert stored["summary_json"] == verification.summary
     finally:
         persistence.close()
+
+
+def test_preview_deletion_returns_summary(temp_dir):
+    """preview_deletion returns dict with scan_id, policy, total_files, total_bytes."""
+    f1 = temp_dir / "a.txt"
+    f2 = temp_dir / "b.txt"
+    f1.write_text("x" * 100)
+    f2.write_text("y" * 200)
+    plan = DeletionPlan(
+        scan_id="preview-1",
+        policy=DeletionPolicy.TRASH,
+        groups=[{
+            "group_id": "g1",
+            "keep": str(f1.resolve()),
+            "delete": [str(f2.resolve())],
+        }],
+    )
+    out = preview_deletion(plan)
+    assert out["scan_id"] == "preview-1"
+    assert out["policy"] == "trash"
+    assert out["total_files"] == 1
+    assert out["total_groups"] == 1
+    assert "total_bytes" in out
+    assert "human_readable_size" in out
+
+
+def test_delete_file_dry_run_returns_success(temp_dir):
+    """delete_file in dry_run mode returns (True, None) without deleting."""
+    path = temp_dir / "dry.txt"
+    path.write_text("content")
+    engine = DeletionEngine(dry_run=True)
+    success, err = engine.delete_file(path, DeletionPolicy.PERMANENT)
+    assert success is True
+    assert err is None
+    assert path.exists()
+
+
+def test_execute_plan_stops_when_progress_cb_returns_false(temp_dir):
+    """execute_plan stops early when progress_cb returns False."""
+    keep_f = temp_dir / "keep.txt"
+    del_f = temp_dir / "del1.txt"
+    del_f2 = temp_dir / "del2.txt"
+    keep_f.write_text("k")
+    del_f.write_text("a")
+    del_f2.write_text("b")
+    plan = DeletionPlan(
+        scan_id="stop-1",
+        policy=DeletionPolicy.TRASH,
+        groups=[{
+            "group_id": "g1",
+            "keep": str(keep_f.resolve()),
+            "delete": [str(del_f.resolve()), str(del_f2.resolve())],
+            "allowed_roots": [str(temp_dir.resolve())],
+        }],
+    )
+    call_count = 0
+
+    def stop_after_first(_cur, _total, _name):
+        nonlocal call_count
+        call_count += 1
+        return call_count < 2
+
+    engine = DeletionEngine(dry_run=True)
+    result = engine.execute_plan(plan, progress_cb=stop_after_first)
+    assert result.completed_at is not None
+    assert call_count >= 1
+    assert len(result.deleted_files) <= 1

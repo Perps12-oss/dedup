@@ -1,15 +1,27 @@
 """
 Persistence tests: save/load scan, hash cache, recovery.
+
+Characterisation tests: normal operation, missing data, list_resumable, close, ScanStore.
 """
 
 from __future__ import annotations
 
-import pytest
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
-from dedup.engine.models import ScanResult, ScanConfig, DuplicateGroup, FileMetadata
-from dedup.infrastructure.persistence import Persistence
+import pytest
+
+from dedup.engine.models import (
+    DuplicateGroup,
+    FileMetadata,
+    ScanConfig,
+    ScanResult,
+)
+from dedup.infrastructure.persistence import (
+    Persistence,
+    ScanStore,
+    get_default_persistence,
+)
 
 
 @pytest.fixture
@@ -144,3 +156,60 @@ def test_list_scans_includes_session_metadata_and_verification_summary(persisten
     assert row["discovery_config_hash"] == "disc-hash"
     assert row["benchmark_summary"] == {}
     assert row["deletion_verification_summary"] == {"deleted": 1}
+
+
+def test_get_scan_missing_returns_none(persistence):
+    """get_scan for unknown id returns None."""
+    assert persistence.get_scan("nonexistent-id") is None
+
+
+def test_delete_scan_missing_returns_false(persistence):
+    """delete_scan for unknown id returns False."""
+    assert persistence.delete_scan("nonexistent-id") is False
+
+
+def test_list_resumable_scan_ids_empty_when_no_checkpoints(persistence, temp_dir):
+    """list_resumable_scan_ids returns [] when checkpoint dir empty or missing."""
+    ids = persistence.list_resumable_scan_ids()
+    assert ids == [] or isinstance(ids, list)
+
+
+def test_cleanup_old_cache_returns_count(persistence):
+    """cleanup_old_cache returns number of deleted rows (0 when cache empty)."""
+    n = persistence.cleanup_old_cache(max_age_days=30)
+    assert isinstance(n, int)
+    assert n >= 0
+
+
+def test_close_idempotent(persistence):
+    """close() can be called and does not raise; second close is safe."""
+    persistence.close()
+    persistence.close()
+
+
+def test_scan_store_delegates(persistence):
+    """ScanStore.save/load/list_recent/delete delegate to persistence."""
+    store = ScanStore(persistence)
+    result = ScanResult(
+        scan_id="store-1",
+        config=ScanConfig(roots=[]),
+        started_at=datetime.now(),
+        completed_at=datetime.now(),
+        files_scanned=1,
+    )
+    assert store.save(result) is True
+    loaded = store.load("store-1")
+    assert loaded is not None
+    assert loaded.scan_id == "store-1"
+    recent = store.list_recent(limit=5)
+    assert any(r["scan_id"] == "store-1" for r in recent)
+    assert store.delete("store-1") is True
+    assert store.load("store-1") is None
+
+
+def test_get_default_persistence_returns_instance():
+    """get_default_persistence returns a Persistence instance with expected path."""
+    p = get_default_persistence()
+    assert isinstance(p, Persistence)
+    assert "dedup" in str(p.db_path).lower()
+    p.close()

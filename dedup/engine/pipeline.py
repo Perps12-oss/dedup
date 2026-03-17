@@ -34,6 +34,7 @@ from .models import (
     DuplicateGroup,
     FileMetadata,
     PhaseStatus,
+    ResumeDecision,
     ScanConfig,
     ScanPhase,
     ScanProgress,
@@ -307,7 +308,8 @@ class ScanPipeline:
     hash_cache_getter: Optional[Callable[[str], Optional[Dict[str, Any]]]] = None
     hash_cache_setter: Optional[Callable[[FileMetadata], bool]] = None
     persistence: Optional[Any] = None
-    
+    event_publisher: Optional[Any] = None  # EventPublisher protocol; when set, used for resume/phase events
+
     # Components
     discovery: FileDiscovery = field(init=False)
     hash_engine: HashEngine = field(init=False)
@@ -490,7 +492,8 @@ class ScanPipeline:
                 self._prior_dir_mtimes = self.persistence.discovery_dir_repo.get_dir_mtimes(prior_session_id)
                 if self._benchmark and self._prior_dir_mtimes:
                     self._benchmark.discovery_reuse_mode = "subtree_skip"
-            except Exception:
+            except (OSError, ValueError, TypeError) as e:
+                _log.warning("Could not load prior dir mtimes for incremental discovery: %s", e)
                 self._prior_dir_mtimes = None
         self._sync_discovery_engine()
 
@@ -641,24 +644,31 @@ class ScanPipeline:
             if self._cancelled:
                 result.errors.append("Scan cancelled by user")
             
-        except Exception as e:
+        except (OSError, ValueError, TypeError, KeyError, RuntimeError) as e:
             self._errors.append(str(e))
             result.errors = self._errors
+            _log.exception("Pipeline run failed: %s", e)
             if self.persistence:
-                self.persistence.shadow_update_session(
-                    session_id=self.scan_id,
-                    status="failed",
-                    current_phase=ScanPhase.RESULT_ASSEMBLY.value,
-                    failure_reason=str(e),
-                    completed=True,
-                )
+                try:
+                    self.persistence.shadow_update_session(
+                        session_id=self.scan_id,
+                        status="failed",
+                        current_phase=ScanPhase.RESULT_ASSEMBLY.value,
+                        failure_reason=str(e),
+                        completed=True,
+                    )
+                except Exception as session_err:
+                    _log.warning("Failed to update session status after pipeline error: %s", session_err)
             if progress_cb:
-                progress_cb(self._create_progress(
-                    phase="error",
-                    phase_description=f"Error: {str(e)}",
-                    error_count=len(self._errors),
-                    last_error=str(e),
-                ))
+                try:
+                    progress_cb(self._create_progress(
+                        phase="error",
+                        phase_description=f"Error: {str(e)}",
+                        error_count=len(self._errors),
+                        last_error=str(e),
+                    ))
+                except Exception as cb_err:
+                    _log.warning("Progress callback failed during error reporting: %s", cb_err)
         
         finally:
             result.completed_at = datetime.now()
@@ -834,7 +844,37 @@ class ScanPipeline:
         decision: ResumeDecision,
         first_runnable_phase: ScanPhase,
     ) -> None:
-        """Publish resume decision events; no-op on failures."""
+        """Publish resume decision events; no-op on failures. Uses event_publisher if set."""
+        if self.event_publisher is not None:
+            try:
+                self.event_publisher.publish("RESUME_REQUESTED", self.scan_id, {"decision": decision.log_message()})
+                if decision.outcome.value == "safe_resume" and self.persistence:
+                    reused_phases: List[str] = []
+                    time_saved_s: float = 0.0
+                    order_idx = {p: i for i, p in enumerate(PHASE_ORDER)}
+                    first_idx = order_idx.get(first_runnable_phase, 0)
+                    for phase in PHASE_ORDER:
+                        if order_idx.get(phase, 0) >= first_idx:
+                            break
+                        cp = self.persistence.checkpoint_repo.get(self.scan_id, phase)
+                        if cp and cp.status == PhaseStatus.COMPLETED and cp.is_finalized:
+                            reused_phases.append(phase.value)
+                            dur_ms = (cp.metadata_json or {}).get("duration_ms", 0)
+                            time_saved_s += dur_ms / 1000.0
+                    self.event_publisher.publish("RESUME_VALIDATED", self.scan_id, {
+                        "reason": decision.reason,
+                        "first_phase": first_runnable_phase.value,
+                        "reused_phases": reused_phases,
+                        "time_saved_estimate": time_saved_s,
+                    })
+                elif decision.outcome.value != "safe_resume":
+                    self.event_publisher.publish("RESUME_REJECTED", self.scan_id, {
+                        "reason": decision.reason,
+                        "outcome": decision.outcome.value,
+                    })
+            except Exception as e:
+                _log.warning("Failed to publish resume decision event: %s", e, exc_info=True)
+            return
         if event_bus is None or not self.persistence:
             return
         try:
@@ -875,21 +915,27 @@ class ScanPipeline:
                     {"reason": decision.reason, "outcome": decision.outcome.value},
                 ))
         except Exception as e:
-            _log.warning("Failed to publish resume decision event: %s", e)
+            _log.warning("Failed to publish resume decision event: %s", e, exc_info=True)
             try:
                 from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
                 get_diagnostics_recorder().record(
                     CATEGORY_CALLBACK, "Resume decision event publish failed", str(e)
                 )
-            except Exception:
-                pass
+            except Exception as diag_err:
+                _log.debug("Diagnostics record failed: %s", diag_err)
 
     def _publish_phase_rebuild_started(
         self,
         event_bus: Optional[Any],
         phase_name: ScanPhase,
     ) -> None:
-        """Publish phase rebuild start event; no-op on failures."""
+        """Publish phase rebuild start event; no-op on failures. Uses event_publisher if set."""
+        if self.event_publisher is not None:
+            try:
+                self.event_publisher.publish("PHASE_REBUILD_STARTED", self.scan_id, {"phase": phase_name.value})
+            except Exception as e:
+                _log.warning("Failed to publish phase rebuild event: %s", e, exc_info=True)
+            return
         if event_bus is None or not self.persistence:
             return
         try:
@@ -900,14 +946,14 @@ class ScanPipeline:
                 {"phase": phase_name.value},
             ))
         except Exception as e:
-            _log.warning("Failed to publish phase rebuild event: %s", e)
+            _log.warning("Failed to publish phase rebuild event: %s", e, exc_info=True)
             try:
                 from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
                 get_diagnostics_recorder().record(
                     CATEGORY_CALLBACK, "Phase rebuild event publish failed", str(e)
                 )
-            except Exception:
-                pass
+            except Exception as diag_err:
+                _log.debug("Diagnostics record failed: %s", diag_err)
     
     def _discover_files(
         self,
@@ -1140,8 +1186,8 @@ class ResumableScanPipeline(ScanPipeline):
                     "Checkpoint write failed",
                     str(e),
                 )
-            except Exception:
-                pass
+            except Exception as diag_err:
+                _log.debug("Diagnostics record failed: %s", diag_err)
     
     def _load_checkpoint(self) -> Optional[List[FileMetadata]]:
         """Load state from disk if available."""
@@ -1275,16 +1321,20 @@ class ResumableScanPipeline(ScanPipeline):
             if self._cancelled:
                 result.errors.append("Scan cancelled by user")
 
-        except Exception as e:
+        except (OSError, ValueError, TypeError, KeyError, RuntimeError) as e:
             self._errors.append(str(e))
             result.errors = self._errors
+            _log.exception("ResumableScanPipeline run failed: %s", e)
             if progress_cb:
-                progress_cb(self._create_progress(
-                    phase="error",
-                    phase_description=f"Error: {str(e)}",
-                    error_count=len(self._errors),
-                    last_error=str(e),
-                ))
+                try:
+                    progress_cb(self._create_progress(
+                        phase="error",
+                        phase_description=f"Error: {str(e)}",
+                        error_count=len(self._errors),
+                        last_error=str(e),
+                    ))
+                except Exception as cb_err:
+                    _log.warning("Progress callback failed during error reporting: %s", cb_err)
 
         finally:
             result.completed_at = datetime.now()

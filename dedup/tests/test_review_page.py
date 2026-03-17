@@ -328,6 +328,21 @@ def test_safety_panel_update_plan_enable_delete_when_positive(tk_root):
 
 
 # ---------------------------------------------------------------------------
+# Plan creation
+# ---------------------------------------------------------------------------
+
+def test_create_plan_returns_none_when_no_result(tk_root):
+    """_create_plan returns None when _current_result is not set."""
+    from unittest.mock import MagicMock
+    from dedup.ui.pages.review_page import ReviewPage
+
+    coordinator = MagicMock()
+    page = ReviewPage(tk_root, coordinator=coordinator, on_delete_complete=lambda _: None)
+    page._current_result = None
+    assert page._create_plan() is None
+
+
+# ---------------------------------------------------------------------------
 # Confirmation dialog intent
 # ---------------------------------------------------------------------------
 
@@ -389,11 +404,18 @@ def test_on_execute_preview_calls_dry_run_not_execute(tk_root):
 
 def test_on_execute_delete_calls_executor(tk_root):
     """When confirmation returns 'delete', delete worker is started with plan."""
+    import threading
     from unittest.mock import MagicMock, patch
     from dedup.ui.pages.review_page import ReviewPage
-    from dedup.engine.models import DeletionResult, DeletionPlan
+    from dedup.engine.models import DeletionResult, DeletionPlan, DeletionPolicy
 
-    from dedup.engine.models import DeletionPolicy
+    real_thread = threading.Thread
+    thread_captured = []
+
+    def capture_thread(*args, **kwargs):
+        th = real_thread(*args, **kwargs)
+        thread_captured.append(th)
+        return th
 
     grp = dict(keep=["/a/file.jpg"], delete=["/b/file.jpg"])
     plan = DeletionPlan(scan_id="t", groups=[grp])
@@ -413,9 +435,12 @@ def test_on_execute_delete_calls_executor(tk_root):
     page.vm.keep_selections = {"g1": "/a/file.jpg"}
 
     with patch.object(page, "_show_delete_confirmation") as mock_conf, \
-            patch.object(page, "_execute_deletion_worker") as worker_mock:
+            patch.object(page, "_execute_deletion_worker") as worker_mock, \
+            patch("dedup.ui.pages.review_page.threading.Thread", side_effect=capture_thread):
         mock_conf.return_value = "delete"
         page._on_execute()
+    if thread_captured:
+        thread_captured[0].join(timeout=2.0)
 
     worker_mock.assert_called_once_with(plan)
     coordinator.execute_deletion.assert_not_called()

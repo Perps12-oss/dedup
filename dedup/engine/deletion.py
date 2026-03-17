@@ -11,14 +11,17 @@ Safety features:
 
 from __future__ import annotations
 
+import logging
 import os
+import platform
 import shutil
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Callable
-import platform
+from typing import Any, Callable, Dict, List, Optional
+
+_log = logging.getLogger(__name__)
 
 from .models import (
     DeletionPlan,
@@ -328,13 +331,17 @@ class DeletionEngine:
             with open(self.audit_log_path, 'a', encoding='utf-8') as f:
                 f.write(f"[{timestamp}] {status} | {operation} | {path}{error_str}\n")
         except (OSError, IOError) as e:
-            import logging
-            logging.getLogger(__name__).warning("Audit log write failed: %s", e)
+            _log.warning("Audit log write failed: %s", e)
             try:
-                from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_AUDIT_LOG
-                get_diagnostics_recorder().record(CATEGORY_AUDIT_LOG, "Audit log write failed", str(e))
-            except Exception:
-                pass
+                from ..infrastructure.diagnostics import (
+                    CATEGORY_AUDIT_LOG,
+                    get_diagnostics_recorder,
+                )
+                get_diagnostics_recorder().record(
+                    CATEGORY_AUDIT_LOG, "Audit log write failed", str(e)
+                )
+            except Exception as diag_err:
+                _log.debug("Diagnostics record failed: %s", diag_err)
     
     def _move_to_trash_fallback(self, path: Path) -> tuple[bool, Optional[str]]:
         """Move file to ~/.dedup/trash (always works if we have write access)."""
@@ -352,7 +359,8 @@ class DeletionEngine:
                 counter += 1
             shutil.move(str(path), str(dest))
             return True, None
-        except Exception as e:
+        except (OSError, shutil.Error, ValueError) as e:
+            _log.debug("Trash fallback failed for %s: %s", path, e)
             return False, str(e)
 
     def _move_to_trash(self, path: Path) -> tuple[bool, Optional[str]]:
@@ -382,8 +390,8 @@ class DeletionEngine:
                 return self._move_to_trash_fallback(path)
             except ImportError:
                 pass
-            except Exception as e:
-                # send2trash failed - try fallback
+            except (OSError, ValueError, RuntimeError) as e:
+                _log.debug("send2trash failed for %s: %s", path, e)
                 ok, _ = self._move_to_trash_fallback(path)
                 if ok:
                     return True, None
@@ -422,16 +430,17 @@ class DeletionEngine:
                         return True, None
                 except ImportError:
                     pass
-                except Exception:
-                    pass
+                except (OSError, ValueError, RuntimeError) as we:
+                    _log.debug("winshell delete failed for %s: %s", path, we)
                 return self._move_to_trash_fallback(path)
 
             # Fallback: move to ~/.dedup/trash
             return self._move_to_trash_fallback(path)
 
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
+            _log.debug("_move_to_trash failed for %s: %s", path, e)
             return False, str(e)
-    
+
     def _delete_permanently(self, path: Path) -> tuple[bool, Optional[str]]:
         """Permanently delete a file. Verifies file is gone after."""
         path = path.resolve()
@@ -444,7 +453,8 @@ class DeletionEngine:
             if path.exists():
                 return False, "File still exists after delete"
             return True, None
-        except Exception as e:
+        except OSError as e:
+            _log.debug("_delete_permanently failed for %s: %s", path, e)
             return False, str(e)
 
     @staticmethod
@@ -591,7 +601,8 @@ class DeletionEngine:
             return True
         try:
             return bool(progress_cb(current, total_files, Path(file_path).name))
-        except Exception:
+        except Exception as e:
+            _log.warning("Deletion progress callback failed: %s", e)
             return True
 
     def _validate_delete_target(self, file_path: str, keep_path: str, allowed_roots: List[str]) -> Optional[str]:
@@ -762,8 +773,8 @@ def preview_deletion(plan: DeletionPlan) -> Dict[str, Any]:
             try:
                 st = Path(file_path).stat()
                 total_bytes += st.st_size
-            except (OSError, ValueError):
-                pass
+            except (OSError, ValueError) as e:
+                _log.debug("preview_deletion: stat failed for %s: %s", file_path, e)
     
     return {
         "scan_id": plan.scan_id,

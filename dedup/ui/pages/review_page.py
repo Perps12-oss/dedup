@@ -16,11 +16,16 @@ Clear Selection:
   Workspace state and plan state are both driven by vm.keep_selections.
 """
 from __future__ import annotations
+
+import logging
 import threading
 import tkinter as tk
-from tkinter import ttk, messagebox
 from pathlib import Path
-from typing import Callable, Optional, List
+from typing import Callable, List, Optional
+
+from tkinter import ttk, messagebox
+
+_log = logging.getLogger(__name__)
 
 from ..components import (
     DataTable, SectionCard, SafetyPanel, ProvenanceRibbon,
@@ -250,6 +255,7 @@ class ReviewPage(ttk.Frame):
             self._safety_panel.set_dry_run_result(
                 f"Preview Effects: {prev['total_files']} files → {prev['human_readable_size']}")
         except Exception as e:
+            _log.warning("ReviewPage dry run failed: %s", e)
             self._safety_panel.set_dry_run_result(f"Error: {e}")
 
     def _show_delete_confirmation(
@@ -322,7 +328,8 @@ class ReviewPage(ttk.Frame):
         try:
             from ...engine.deletion import preview_deletion
             prev = preview_deletion(plan)
-        except Exception:
+        except Exception as e:
+            _log.warning("ReviewPage preview_deletion failed: %s", e)
             prev = {"total_files": "?", "human_readable_size": "?"}
 
         choice = self._show_delete_confirmation(plan, prev)
@@ -347,8 +354,8 @@ class ReviewPage(ttk.Frame):
         try:
             if self.winfo_exists():
                 self.after(0, lambda: self._on_deletion_complete(result))
-        except Exception:
-            pass
+        except Exception as e:
+            _log.warning("ReviewPage marshal deletion complete failed: %s", e)
 
     def _on_deletion_complete(self, result: DeletionResult) -> None:
         self._safety_panel._delete_btn.configure(state="normal", text="DELETE")

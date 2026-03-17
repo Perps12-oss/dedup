@@ -10,7 +10,7 @@ Provides SQLite-based storage for:
 from __future__ import annotations
 
 import json
-import os
+import logging
 import sqlite3
 import sys
 import threading
@@ -18,7 +18,9 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
+
+_log = logging.getLogger(__name__)
 
 from ..engine.models import (
     CheckpointInfo,
@@ -68,8 +70,47 @@ class Persistence:
         """Directory for scan checkpoints (resume support)."""
         return self.db_path.parent / "checkpoints"
 
+    @staticmethod
+    def _scan_list_row_to_dict(r: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert a list_scans result row to the public dict shape."""
+        roots = []
+        if r.get("config"):
+            try:
+                cfg = json.loads(r["config"])
+                roots = cfg.get("roots") or []
+            except (json.JSONDecodeError, TypeError):
+                pass
+        benchmark = {}
+        if r.get("metrics_json"):
+            try:
+                benchmark = (json.loads(r["metrics_json"]) or {}).get("benchmark", {})
+            except (json.JSONDecodeError, TypeError):
+                pass
+        verification = {}
+        raw_verification = r.get("deletion_verification_summary")
+        if raw_verification:
+            try:
+                verification = json.loads(raw_verification)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return {
+            "scan_id": r["scan_id"],
+            "started_at": r["started_at"],
+            "completed_at": r["completed_at"],
+            "files_scanned": r["files_scanned"],
+            "duplicates_found": r["duplicates_found"],
+            "reclaimable_bytes": r["reclaimable_bytes"],
+            "status": r["status"],
+            "roots": roots,
+            "config_hash": r.get("config_hash") or "",
+            "root_fingerprint": r.get("root_fingerprint") or "",
+            "discovery_config_hash": r.get("discovery_config_hash") or "",
+            "benchmark_summary": benchmark,
+            "deletion_verification_summary": verification,
+        }
+
     def list_resumable_scan_ids(self) -> List[str]:
-        """List scan_ids that have a checkpoint (can be resumed)."""
+        """List scan_ids that have a checkpoint (can be resumed). Returns [] on I/O or path errors."""
         try:
             cp_dir = self.checkpoint_dir
             if not cp_dir.exists():
@@ -79,14 +120,13 @@ class Persistence:
                 for f in cp_dir.glob("*_checkpoint.json")
                 if f.is_file()
             ]
-        except Exception:
+        except (OSError, ValueError) as e:
+            _log.warning("list_resumable_scan_ids failed: %s", e)
             return []
     
     def _get_connection(self) -> sqlite3.Connection:
         """Get or create database connection."""
         if self._connection is None:
-            import logging
-            _log = logging.getLogger(__name__)
             self._connection = sqlite3.connect(str(self.db_path), check_same_thread=False)
             self._connection.row_factory = sqlite3.Row
             wal = getattr(self, "_sqlite_wal", True)
@@ -312,9 +352,10 @@ class Persistence:
                 
                 conn.commit()
                 return True
-        except sqlite3.Error:
+        except sqlite3.Error as e:
+            _log.warning("save_scan failed for scan_id=%s: %s", result.scan_id, e)
             return False
-    
+
     def get_scan(self, scan_id: str) -> Optional[ScanResult]:
         """Get scan result by ID."""
         try:
@@ -332,9 +373,10 @@ class Persistence:
                     data = json.loads(row['result'])
                     return ScanResult.from_dict(data)
                 return None
-        except (sqlite3.Error, json.JSONDecodeError, KeyError):
+        except (sqlite3.Error, json.JSONDecodeError, KeyError) as e:
+            _log.debug("get_scan failed for scan_id=%s: %s", scan_id, e)
             return None
-    
+
     def list_scans(
         self,
         limit: int = 100,
@@ -361,43 +403,11 @@ class Persistence:
                 """, (limit, offset))
                 
                 rows = cursor.fetchall()
-                out = []
-                for row in rows:
-                    r = dict(row)
-                    roots = []
-                    if r.get('config'):
-                        try:
-                            cfg = json.loads(r['config'])
-                            roots = cfg.get('roots') or []
-                        except (json.JSONDecodeError, TypeError):
-                            pass
-                    out.append({
-                        "scan_id": r['scan_id'],
-                        "started_at": r['started_at'],
-                        "completed_at": r['completed_at'],
-                        "files_scanned": r['files_scanned'],
-                        "duplicates_found": r['duplicates_found'],
-                        "reclaimable_bytes": r['reclaimable_bytes'],
-                        "status": r['status'],
-                        "roots": roots,
-                        "config_hash": r.get("config_hash") or "",
-                        "root_fingerprint": r.get("root_fingerprint") or "",
-                        "discovery_config_hash": r.get("discovery_config_hash") or "",
-                        "benchmark_summary": (
-                            (json.loads(r["metrics_json"]) or {}).get("benchmark", {})
-                            if r.get("metrics_json")
-                            else {}
-                        ),
-                        "deletion_verification_summary": (
-                            json.loads(r["deletion_verification_summary"])
-                            if r.get("deletion_verification_summary")
-                            else {}
-                        ),
-                    })
-                return out
-        except sqlite3.Error:
+                return [self._scan_list_row_to_dict(dict(row)) for row in rows]
+        except sqlite3.Error as e:
+            _log.warning("list_scans failed: %s", e)
             return []
-    
+
     def delete_scan(self, scan_id: str) -> bool:
         """Delete a scan from history."""
         try:
@@ -407,9 +417,10 @@ class Persistence:
                 cursor.execute("DELETE FROM scan_history WHERE scan_id = ?", (scan_id,))
                 conn.commit()
                 return cursor.rowcount > 0
-        except sqlite3.Error:
+        except sqlite3.Error as e:
+            _log.warning("delete_scan failed for scan_id=%s: %s", scan_id, e)
             return False
-    
+
     def get_hash_cache(self, path: str) -> Optional[Dict[str, Any]]:
         """Get cached hash for a file."""
         try:
@@ -432,9 +443,10 @@ class Persistence:
                         "cached_at": row['cached_at'],
                     }
                 return None
-        except sqlite3.Error:
+        except sqlite3.Error as e:
+            _log.debug("get_hash_cache failed for path=%s: %s", path, e)
             return None
-    
+
     def set_hash_cache(self, file: FileMetadata) -> bool:
         """Cache hash for a file."""
         try:
@@ -477,9 +489,10 @@ class Persistence:
                         hash_value=file.hash_full,
                     )
                 return True
-        except sqlite3.Error:
+        except sqlite3.Error as e:
+            _log.warning("set_hash_cache failed for path=%s: %s", file.path, e)
             return False
-    
+
     def log_deletion(
         self,
         scan_id: str,
@@ -509,9 +522,10 @@ class Persistence:
                 
                 conn.commit()
                 return True
-        except sqlite3.Error:
+        except sqlite3.Error as e:
+            _log.warning("log_deletion failed: %s", e)
             return False
-    
+
     def cleanup_old_cache(self, max_age_days: int = 30) -> int:
         """Remove old hash cache entries."""
         try:
@@ -526,10 +540,11 @@ class Persistence:
                 )
                 conn.commit()
                 return cursor.rowcount
-        except sqlite3.Error:
+        except sqlite3.Error as e:
+            _log.warning("cleanup_old_cache failed: %s", e)
             return 0
-    
-    def close(self):
+
+    def close(self) -> None:
         """Close database connection."""
         with self._lock:
             if self._connection:

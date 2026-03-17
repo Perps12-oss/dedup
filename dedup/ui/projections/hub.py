@@ -524,10 +524,15 @@ class ProjectionHub:
             if self._alive:
                 _log.warning("Hub poll schedule failed (root may be destroyed): %s", e)
                 try:
-                    from ...infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_HUB_DELIVERY
-                    get_diagnostics_recorder().record(CATEGORY_HUB_DELIVERY, "Poll schedule failed", str(e))
-                except Exception:
-                    pass
+                    from ...infrastructure.diagnostics import (
+                        CATEGORY_HUB_DELIVERY,
+                        get_diagnostics_recorder,
+                    )
+                    get_diagnostics_recorder().record(
+                        CATEGORY_HUB_DELIVERY, "Poll schedule failed", str(e)
+                    )
+                except Exception as diag_err:
+                    _log.debug("Diagnostics record failed: %s", diag_err)
 
     def _poll(self) -> None:
         """Called on Tk main thread every POLL_MS ms."""
@@ -539,10 +544,15 @@ class ProjectionHub:
         except Exception as e:
             _log.warning("Hub flush failed: %s", e)
             try:
-                from ...infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_HUB_DELIVERY
-                get_diagnostics_recorder().record(CATEGORY_HUB_DELIVERY, "Flush failed", str(e))
-            except Exception:
-                pass
+                from ...infrastructure.diagnostics import (
+                    CATEGORY_HUB_DELIVERY,
+                    get_diagnostics_recorder,
+                )
+                get_diagnostics_recorder().record(
+                    CATEGORY_HUB_DELIVERY, "Flush failed", str(e)
+                )
+            except Exception as diag_err:
+                _log.debug("Diagnostics record failed: %s", diag_err)
         self._schedule_poll()
 
     def _flush(self, now: float) -> None:
@@ -568,12 +578,17 @@ class ProjectionHub:
                 except Exception as e:
                     _log.warning("Hub delivery callback failed for %s: %s", ptype, e)
                     try:
-                        from ...infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_HUB_DELIVERY
-                        get_diagnostics_recorder().record(
-                            CATEGORY_HUB_DELIVERY, f"Callback failed ({ptype})", str(e)
+                        from ...infrastructure.diagnostics import (
+                            CATEGORY_HUB_DELIVERY,
+                            get_diagnostics_recorder,
                         )
-                    except Exception:
-                        pass
+                        get_diagnostics_recorder().record(
+                            CATEGORY_HUB_DELIVERY,
+                            f"Callback failed ({ptype})",
+                            str(e),
+                        )
+                    except Exception as diag_err:
+                        _log.debug("Diagnostics record failed: %s", diag_err)
 
     def _snapshot(self, ptype: str) -> Any:
         """Return the current snapshot for a projection type (called under lock)."""
@@ -632,8 +647,8 @@ class ProjectionHub:
             total_ms = benchmark.get("total_elapsed_ms")
             if isinstance(total_ms, (int, float)) and total_ms > 0:
                 return float(total_ms) / 1000.0
-        except Exception:
-            pass
+        except (TypeError, KeyError) as e:
+            _log.debug("_elapsed_from_session_completed: %s", e)
         return float(prior_elapsed or 0.0)
 
     @staticmethod
