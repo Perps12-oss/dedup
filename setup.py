@@ -22,6 +22,9 @@ setup(
         "console_scripts": [
             "dedup=dedup.main:main",
         ],
+        "gui_scripts": [
+            "cerebro=dedup.main:run_gui",
+        ],
     },
     install_requires=[
         # Core has no required dependencies - uses standard library only
