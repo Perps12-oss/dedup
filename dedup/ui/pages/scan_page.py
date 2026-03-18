@@ -30,6 +30,7 @@ from ..projections.metrics_projection import MetricsProjection
 from ..projections.compatibility_projection import CompatibilityProjection
 from ..utils.formatting import fmt_bytes, fmt_int, fmt_duration, truncate_path
 from ..utils.icons import IC
+from ..theme.design_system import font_tuple, SPACING
 from ...orchestration.coordinator import ScanCoordinator
 from ...engine.models import ScanProgress, ScanResult
 
@@ -50,6 +51,7 @@ class ScanPage(ttk.Frame):
         on_complete: Callable[[ScanResult], None],
         on_cancel: Callable[[], None],
         hub=None,      # ProjectionHub — injected by app.py after creation
+        scan_controller=None,
         **kwargs,
     ):
         super().__init__(parent, **kwargs)
@@ -57,6 +59,7 @@ class ScanPage(ttk.Frame):
         self.on_complete  = on_complete
         self.on_cancel    = on_cancel
         self._hub         = hub
+        self._scan_controller = scan_controller
         self._unsubs: List[Callable] = []
 
         self.vm           = ScanVM()
@@ -265,58 +268,63 @@ class ScanPage(ttk.Frame):
 
     def _build(self):
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(5, weight=1)  # events row stretches
-        pad = {"padx": 16, "pady": (0, 8)}
+        self.rowconfigure(6, weight=1)  # Activity Feed row stretches
+        pad = SPACING["page"]
+        pad_kw = {"padx": pad, "pady": (0, SPACING["md"])}
 
-        # ── Page header ──────────────────────────────────────────────
-        hdr = ttk.Frame(self, padding=(16, 12, 16, 0))
+        # ── Live Scan Studio: page title + Cancel ──────────────────────
+        hdr = ttk.Frame(self, padding=(pad, SPACING["lg"], pad, 0))
         hdr.grid(row=0, column=0, sticky="ew")
         hdr.columnconfigure(1, weight=1)
         self._title_lbl = ttk.Label(
-            hdr, text=f"{IC.SCAN}  Scan", font=("Segoe UI", 14, "bold"))
+            hdr, text=f"{IC.SCAN}  Live Scan Studio",
+            font=font_tuple("page_title"))
         self._title_lbl.grid(row=0, column=0, sticky="w")
+        ttk.Label(hdr, text="Session · Phase timeline · Metrics · Activity",
+                  style="Muted.TLabel",
+                  font=font_tuple("page_subtitle")).grid(row=1, column=0, sticky="w")
         self._cancel_btn = ttk.Button(
             hdr, text=f"{IC.STOPPED}  Cancel",
             style="Ghost.TButton", command=self._on_cancel)
-        self._cancel_btn.grid(row=0, column=2, sticky="e")
+        self._cancel_btn.grid(row=0, column=2, rowspan=2, sticky="e")
 
-        # ── Tier 1: Scan Status Ribbon ───────────────────────────────
+        # ── Scan Target Card (status ribbon) ──────────────────────────
         self._ribbon = StatusRibbon(self)
-        self._ribbon.grid(row=1, column=0, sticky="ew", **pad)
+        self._ribbon.grid(row=2, column=0, sticky="ew", **pad_kw)
 
-        # ── Phase timeline ───────────────────────────────────────────
-        tl_card = SectionCard(self, title="Pipeline")
-        tl_card.grid(row=2, column=0, sticky="ew", **pad)
+        # ── Phase Timeline ────────────────────────────────────────────
+        tl_card = SectionCard(self, title=f"{IC.ACTIVE}  Phase Timeline")
+        tl_card.grid(row=3, column=0, sticky="ew", **pad_kw)
         self._timeline = PhaseTimeline(tl_card.body)
         self._timeline.pack(fill="x")
 
-        # ── Tier 2: Session Metrics Dashboard ────────────────────────
-        metrics_card = SectionCard(self, title=f"{IC.SPEED}  Session Metrics")
-        metrics_card.grid(row=3, column=0, sticky="ew", **pad)
+        # ── Live Metrics Panel ────────────────────────────────────────
+        metrics_card = SectionCard(self, title=f"{IC.SPEED}  Live Metrics Panel")
+        metrics_card.grid(row=4, column=0, sticky="ew", **pad_kw)
         self._build_live_metrics(metrics_card.body)
 
-        # ── Tier 3: Operational Panels ───────────────────────────────
+        # ── Progress/Session · Health/Compatibility · Result Summary ───
         ops_row = ttk.Frame(self)
-        ops_row.grid(row=4, column=0, sticky="ew", **pad)
+        ops_row.grid(row=5, column=0, sticky="ew", **pad_kw)
         ops_row.columnconfigure(0, weight=1)
         ops_row.columnconfigure(1, weight=1)
         ops_row.columnconfigure(2, weight=1)
 
-        phase_card = SectionCard(ops_row, title=f"{IC.ACTIVE}  Current Phase")
-        phase_card.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
+        phase_card = SectionCard(ops_row, title=f"{IC.ACTIVE}  Progress & Session")
+        phase_card.grid(row=0, column=0, sticky="nsew", padx=(0, SPACING["sm"]))
         self._build_phase_detail(phase_card.body)
 
-        self._work_card = SectionCard(ops_row, title=f"{IC.SAVED}  Incremental Reuse")
-        self._work_card.grid(row=0, column=1, sticky="nsew", padx=4)
+        self._work_card = SectionCard(ops_row, title=f"{IC.SHIELD}  Health & Compatibility")
+        self._work_card.grid(row=0, column=1, sticky="nsew", padx=SPACING["sm"])
         self._build_work_saved(self._work_card.body)
 
         result_card = SectionCard(ops_row, title=f"{IC.GROUPS}  Result Summary")
-        result_card.grid(row=0, column=2, sticky="nsew", padx=(4, 0))
+        result_card.grid(row=0, column=2, sticky="nsew", padx=(SPACING["sm"], 0))
         self._build_result_summary(result_card.body)
 
-        # ── Bottom: Event Stream ─────────────────────────────────────
-        events_card = SectionCard(self, title=f"{IC.INFO}  Events")
-        events_card.grid(row=5, column=0, sticky="nsew", **pad)
+        # ── Activity Feed ─────────────────────────────────────────────
+        events_card = SectionCard(self, title=f"{IC.INFO}  Activity Feed")
+        events_card.grid(row=6, column=0, sticky="nsew", **pad_kw)
         self._build_events(events_card.body)
 
     def _build_live_metrics(self, body: ttk.Frame):
@@ -355,11 +363,11 @@ class ScanPage(ttk.Frame):
         ]
         for i, (label, default) in enumerate(rows):
             ttk.Label(body, text=label + ":", style="Panel.Muted.TLabel",
-                      font=("Segoe UI", 8)).grid(row=i, column=0, sticky="w", pady=1)
+                      font=font_tuple("data_label")).grid(row=i, column=0, sticky="w", pady=1)
             var = tk.StringVar(value=default)
             ttk.Label(body, textvariable=var, style="Panel.TLabel",
-                      font=("Segoe UI", 8, "bold")).grid(
-                row=i, column=1, sticky="w", padx=(4, 0))
+                      font=font_tuple("data_value")).grid(
+                row=i, column=1, sticky="w", padx=(SPACING["sm"], 0))
             self._work_vars[label] = var
 
     def _build_phase_detail(self, body: ttk.Frame):
@@ -376,11 +384,11 @@ class ScanPage(ttk.Frame):
         ]
         for i, (label, default) in enumerate(rows):
             ttk.Label(body, text=label + ":", style="Panel.Muted.TLabel",
-                      font=("Segoe UI", 8)).grid(row=i, column=0, sticky="w", pady=2)
+                      font=font_tuple("data_label")).grid(row=i, column=0, sticky="w", pady=2)
             var = tk.StringVar(value=default)
             lbl = ttk.Label(body, textvariable=var, style="Panel.TLabel",
-                           font=("Segoe UI", 8), wraplength=240)
-            lbl.grid(row=i, column=1, sticky="w", padx=(6, 0))
+                           font=font_tuple("data_value"), wraplength=240)
+            lbl.grid(row=i, column=1, sticky="w", padx=(SPACING["md"], 0))
             self._phase_vars[label] = var
         self._progress_bar = ttk.Progressbar(
             body, mode="indeterminate", length=240)
@@ -399,11 +407,11 @@ class ScanPage(ttk.Frame):
         ]
         for i, (label, default) in enumerate(rows):
             ttk.Label(body, text=label + ":", style="Panel.Muted.TLabel",
-                      font=("Segoe UI", 8)).grid(row=i, column=0, sticky="w", pady=1)
+                      font=font_tuple("data_label")).grid(row=i, column=0, sticky="w", pady=1)
             var = tk.StringVar(value=default)
             ttk.Label(body, textvariable=var, style="Panel.TLabel",
-                      font=("Segoe UI", 8, "bold")).grid(
-                row=i, column=1, sticky="w", padx=(4, 0))
+                      font=font_tuple("data_value")).grid(
+                row=i, column=1, sticky="w", padx=(SPACING["sm"], 0))
             self._result_vars[label] = var
 
     def _build_events(self, body: ttk.Frame):
@@ -429,14 +437,22 @@ class ScanPage(ttk.Frame):
         self._ribbon.set_state("scanning", detail="Initialising…")
         self._progress_bar.start(12)
         self._schedule_elapsed()
-        # Still pass on_progress for fallback (pre-hub or no-hub mode)
-        self.coordinator.start_scan(
-            roots=[path],
-            on_progress=self._on_progress_fallback,
-            on_complete=self._on_complete_fallback,
-            on_error=self._on_error_fallback,
-            **options,
-        )
+        if self._scan_controller:
+            self._scan_controller.handle_start_scan(
+                path,
+                options,
+                on_progress=self._on_progress_fallback,
+                on_complete=self._on_complete_fallback,
+                on_error=self._on_error_fallback,
+            )
+        else:
+            self.coordinator.start_scan(
+                roots=[path],
+                on_progress=self._on_progress_fallback,
+                on_complete=self._on_complete_fallback,
+                on_error=self._on_error_fallback,
+                **options,
+            )
 
     def start_resume(self, scan_id: str) -> None:
         self._reset_vm()
@@ -445,13 +461,21 @@ class ScanPage(ttk.Frame):
                                label_override="Resume in progress")
         self._progress_bar.start(12)
         self._schedule_elapsed()
-        self.coordinator.start_scan(
-            roots=[],
-            resume_scan_id=scan_id,
-            on_progress=self._on_progress_fallback,
-            on_complete=self._on_complete_fallback,
-            on_error=self._on_error_fallback,
-        )
+        if self._scan_controller:
+            self._scan_controller.handle_start_resume(
+                scan_id,
+                on_progress=self._on_progress_fallback,
+                on_complete=self._on_complete_fallback,
+                on_error=self._on_error_fallback,
+            )
+        else:
+            self.coordinator.start_scan(
+                roots=[],
+                resume_scan_id=scan_id,
+                on_progress=self._on_progress_fallback,
+                on_complete=self._on_complete_fallback,
+                on_error=self._on_error_fallback,
+            )
 
     # ------------------------------------------------------------------
     # Fallback callbacks (used when no hub is attached, or for current_file)
@@ -524,7 +548,10 @@ class ScanPage(ttk.Frame):
             self.on_cancel()
             return
         if messagebox.askyesno("Cancel Scan", "Cancel the current scan?"):
-            self.coordinator.cancel_scan()
+            if self._scan_controller:
+                self._scan_controller.handle_cancel()
+            else:
+                self.coordinator.cancel_scan()
             self.vm.is_scanning = False
             self._progress_bar.stop()
             self._cancel_elapsed()

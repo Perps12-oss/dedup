@@ -13,6 +13,7 @@ from typing import Callable, Optional, List, Tuple
 from ..utils.icons import IC
 from ..theme.theme_manager import get_theme_manager
 from ..theme.theme_registry import get_display_names, key_from_display_name, THEMES
+from ..theme.design_system import font_tuple, SPACING
 
 ActionSpec = Tuple[str, str, Callable]  # (label, style, command)
 
@@ -50,27 +51,27 @@ class TopBar(tk.Frame):
 
         self._title_lbl = tk.Label(
             left, text="CEREBRO",
-            font=("Segoe UI", 12, "bold"), pady=0)
-        self._title_lbl.pack(side="left", padx=(4, 6))
+            font=font_tuple("section_title"), pady=0)
+        self._title_lbl.pack(side="left", padx=(SPACING["sm"], SPACING["md"]))
 
         self._subtitle_lbl = tk.Label(
             left, text="Dedup Engine",
-            font=("Segoe UI", 8))
+            font=font_tuple("caption"))
         self._subtitle_lbl.pack(side="left")
 
         # Session chip
         self._session_chip = tk.Label(
             left, text="No session",
-            font=("Segoe UI", 7, "bold"),
-            padx=6, pady=2, cursor="arrow")
-        self._session_chip.pack(side="left", padx=(10, 0))
+            font=font_tuple("strip"),
+            padx=SPACING["md"], pady=SPACING["xs"], cursor="arrow")
+        self._session_chip.pack(side="left", padx=(SPACING["lg"], 0))
 
         # Mode chip
         self._mode_chip = tk.Label(
             left, text="Idle",
-            font=("Segoe UI", 7, "bold"),
-            padx=6, pady=2)
-        self._mode_chip.pack(side="left", padx=(4, 0))
+            font=font_tuple("strip"),
+            padx=SPACING["md"], pady=SPACING["xs"])
+        self._mode_chip.pack(side="left", padx=(SPACING["sm"], 0))
 
         # ---- CENTER section (contextual actions) ----
         self._center_frame = tk.Frame(self)
@@ -92,23 +93,23 @@ class TopBar(tk.Frame):
 
         # Density toggle
         self._density_btn = tk.Label(
-            right, text="⊞ Cozy", font=("Segoe UI", 7),
-            padx=6, pady=2, cursor="hand2")
-        self._density_btn.pack(side="left", padx=(0, 4))
+            right, text="⊞ Cozy", font=font_tuple("strip"),
+            padx=SPACING["md"], pady=SPACING["xs"], cursor="hand2")
+        self._density_btn.pack(side="left", padx=(0, SPACING["sm"]))
         self._density_btn.bind("<Button-1>", lambda e: self._on_density_toggle())
 
         # Advanced toggle
         self._adv_var = tk.BooleanVar(value=False)
         self._adv_btn = tk.Label(
-            right, text="Advanced", font=("Segoe UI", 7),
-            padx=6, pady=2, cursor="hand2")
-        self._adv_btn.pack(side="left", padx=(0, 4))
+            right, text="Advanced", font=font_tuple("strip"),
+            padx=SPACING["md"], pady=SPACING["xs"], cursor="hand2")
+        self._adv_btn.pack(side="left", padx=(0, SPACING["sm"]))
         self._adv_btn.bind("<Button-1>", lambda e: self._on_advanced_toggle())
 
         # Settings
         settings_btn = tk.Label(
-            right, text=IC.SETTINGS, font=("Segoe UI", 10),
-            padx=6, cursor="hand2")
+            right, text=IC.SETTINGS, font=font_tuple("body"),
+            padx=SPACING["md"], cursor="hand2")
         settings_btn.pack(side="left")
         settings_btn.bind("<Button-1>", lambda e: self._on_settings())
         self._settings_lbl = settings_btn
@@ -121,7 +122,7 @@ class TopBar(tk.Frame):
         t = self._tm.tokens
         for label, style, cmd in actions:
             btn = ttk.Button(self._center_frame, text=label, style=style, command=cmd)
-            btn.pack(side="left", padx=3)
+            btn.pack(side="left", padx=SPACING["sm"])
             self._action_widgets.append(btn)
 
     def set_session(self, session_id: str, mode: str = "Idle"):

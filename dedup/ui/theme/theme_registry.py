@@ -5,11 +5,13 @@ from .theme_tokens import (
     AURORA_SLATE, MIDNIGHT_CIRCUIT, EMERALD_FORGE, GRAPHITE_EMBER,
     OBSIDIAN_GOLD, VIOLET_LEDGER, OCEAN_DEPTH, FOREST_NIGHT,
     NEON_CARBON, STORM_METAL, ORCHID_SMOKE,
+    CEREBRO_NOIR,
     ARCTIC_GLASS, POLAR_MINT, BRONZE_LEDGER, SILVER_HORIZON,
     ThemeDict,
 )
 
 THEMES: Dict[str, ThemeDict] = {
+    "cerebro_noir":    CEREBRO_NOIR,
     "aurora_slate":    AURORA_SLATE,
     "midnight_circuit":MIDNIGHT_CIRCUIT,
     "emerald_forge":   EMERALD_FORGE,
@@ -27,7 +29,7 @@ THEMES: Dict[str, ThemeDict] = {
     "silver_horizon":  SILVER_HORIZON,
 }
 
-DEFAULT_THEME = "aurora_slate"
+DEFAULT_THEME = "cerebro_noir"
 
 
 def get_theme_names() -> List[str]:

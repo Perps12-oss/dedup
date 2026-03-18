@@ -46,17 +46,42 @@ from .repositories import (
 )
 
 
+def _env_bool(key: str, default: bool) -> bool:
+    v = os.environ.get(key, "").strip().lower()
+    if v in ("1", "true", "yes"):
+        return True
+    if v in ("0", "false", "no"):
+        return False
+    return default
+
+
+def _env_synchronous(default: str) -> str:
+    """Allowed: FULL, NORMAL, OFF. Default NORMAL balances safety and speed."""
+    v = os.environ.get("DEDUP_SQLITE_SYNCHRONOUS", "").strip().upper()
+    if v in ("FULL", "NORMAL", "OFF"):
+        return v
+    return default
+
+
 @dataclass
 class Persistence:
-    """Database persistence layer."""
-    
+    """
+    Database persistence layer.
+
+    Write-path tuning (safe defaults; override via env for stricter durability):
+    - WAL: DEDUP_SQLITE_WAL=0 to disable (default 1). WAL improves concurrent read/write.
+    - Synchronous: DEDUP_SQLITE_SYNCHRONOUS=FULL for maximum durability (default NORMAL).
+    - Inventory batch size and checkpoint cadence: use ScanConfig.batch_size and
+      ScanConfig.checkpoint_every_files (pipeline uses these; decoupled).
+    """
+
     db_path: Path
     _connection: Optional[sqlite3.Connection] = None
     _lock: threading.Lock = None
     _schema_version: int = 0
     _sqlite_wal: bool = True
     _sqlite_synchronous: str = "NORMAL"
-    
+
     def __post_init__(self):
         if self._lock is None:
             self._lock = threading.Lock()
@@ -83,14 +108,14 @@ class Persistence:
             return []
     
     def _get_connection(self) -> sqlite3.Connection:
-        """Get or create database connection."""
+        """Get or create database connection. Env overrides: DEDUP_SQLITE_WAL, DEDUP_SQLITE_SYNCHRONOUS."""
         if self._connection is None:
             import logging
             _log = logging.getLogger(__name__)
             self._connection = sqlite3.connect(str(self.db_path), check_same_thread=False)
             self._connection.row_factory = sqlite3.Row
-            wal = getattr(self, "_sqlite_wal", True)
-            sync = getattr(self, "_sqlite_synchronous", "NORMAL")
+            wal = _env_bool("DEDUP_SQLITE_WAL", getattr(self, "_sqlite_wal", True))
+            sync = _env_synchronous(getattr(self, "_sqlite_synchronous", "NORMAL"))
             if wal:
                 try:
                     self._connection.execute("PRAGMA journal_mode=WAL;")

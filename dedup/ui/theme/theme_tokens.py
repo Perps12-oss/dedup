@@ -377,6 +377,45 @@ ORCHID_SMOKE: ThemeDict = {
 }
 
 # ---------------------------------------------------------------------------
+# CEREBRO Noir — Master Plan flagship theme
+# Graphite/charcoal, layered dark panels, cyan-blue accent, amber warning,
+# muted green, red for destructive only.
+# ---------------------------------------------------------------------------
+
+CEREBRO_NOIR: ThemeDict = {
+    "name": "CEREBRO Noir",
+    "mode": "dark",
+    "bg_base":        "#0c0d0e",
+    "bg_panel":       "#141618",
+    "bg_elevated":    "#1c1e22",
+    "bg_sidebar":     "#0c0d0e",
+    "border_soft":    "#1c1e22",
+    "border_strong":  "#2a2d32",
+    "text_primary":   "#e8eaed",
+    "text_secondary": "#9aa0a6",
+    "text_muted":     "#5f6368",
+    "accent_primary": "#5eb8e6",
+    "accent_secondary":"#34a8c4",
+    "gradient_start": "#0d2a3a",
+    "gradient_mid":   "#1a4a5e",
+    "gradient_end":   "#5eb8e6",
+    "success":        "#6b9b7a",
+    "warning":        "#d4a84b",
+    "danger":         "#c85c5c",
+    "info":           "#5eb8e6",
+    "selection_bg":   "#1a3a4a",
+    "focus_ring":     "#5eb8e6",
+    "shadow_soft":    "#08090a",
+    "shadow_strong":  "#040506",
+    "nav_active_bg":  "#1a3a4a",
+    "nav_active_fg":  "#5eb8e6",
+    "row_alt":        "#141618",
+    "tag_safe":       "#0d2614",
+    "tag_warn":       "#2a2000",
+    "tag_danger":     "#2a0d0d",
+}
+
+# ---------------------------------------------------------------------------
 # LIGHT / MIXED THEMES (4)
 # ---------------------------------------------------------------------------
 

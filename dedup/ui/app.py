@@ -32,12 +32,17 @@ from .utils.ui_state import UIState, load_settings, save_settings
 from .shell.app_shell import AppShell
 from .pages.mission_page import MissionPage
 from .pages.scan_page import ScanPage
+from .controller.review_controller import ReviewController
+from .controller.scan_controller import ScanController
 from .pages.review_page import ReviewPage
 from .pages.history_page import HistoryPage
 from .pages.diagnostics_page import DiagnosticsPage
 from .pages.settings_page import SettingsPage
 
 from .projections.hub import ProjectionHub
+from .state.store import UIStateStore, MissionState, LastScanSummaryState
+from .state.hub_adapter import ProjectionHubStoreAdapter
+from .projections.history_projection import build_history_from_coordinator
 
 
 class CerebroApp:
@@ -100,14 +105,19 @@ class CerebroApp:
         )
         self.shell.grid(row=0, column=0, sticky="nsew")
 
-        # ── Build pages ───────────────────────────────────────────────
-        self._build_pages()
+        # ── Create store first so ReviewController and store-fed pages can use it ───
+        self.store = UIStateStore(tk_root=self.root)
 
-        # ── Create ProjectionHub (after root + pages exist) ───────────
+        # ── Create ProjectionHub (after root exists) ──────────────────────────────
         self.hub = ProjectionHub(
             event_bus=self.coordinator.event_bus,
             tk_root=self.root,
         )
+        self._hub_store_adapter = ProjectionHubStoreAdapter(self.hub, self.store)
+        self._hub_store_adapter.start()
+
+        # ── Build pages (store is available for Mission, History, Review) ────────
+        self._build_pages()
         self._wire_hub()
 
         # ── Register app-level state listeners ───────────────────────
@@ -139,12 +149,19 @@ class CerebroApp:
             self.shell.top_bar.subscribe_to_hub(self.hub)
         except AttributeError:
             _log.debug("TopBar.subscribe_to_hub not available")
+        try:
+            self.shell.status_strip.subscribe_to_store(self.store)
+        except AttributeError:
+            _log.debug("StatusStrip.subscribe_to_store not available")
 
         # Scan page — primary live-update consumer
         self._scan.attach_hub(self.hub)
 
-        # Diagnostics page — shares phase/compat projections
-        self._diagnostics.attach_hub(self.hub)
+        # Diagnostics page — renders from store (phase, compat, events_log)
+        try:
+            self._diagnostics.attach_store(self.store)
+        except AttributeError:
+            _log.debug("DiagnosticsPage.attach_store not available")
 
         # App-level terminal handler — navigate to review on completion
         def _on_terminal(proj) -> None:
@@ -168,14 +185,19 @@ class CerebroApp:
             on_start_scan=self._on_start_scan,
             on_resume_scan=self._on_resume_scan,
             coordinator=self.coordinator,
+            on_request_refresh=self._refresh_mission_state,
+            on_open_last_review=lambda: self._navigate("review"),
         )
         self.shell.register_page("mission", self._mission)
+        self._mission.attach_store(self.store)
 
+        self._scan_controller = ScanController(self.coordinator, self.store)
         self._scan = ScanPage(
             content,
             coordinator=self.coordinator,
             on_complete=self._on_scan_complete,
             on_cancel=self._on_scan_cancel,
+            scan_controller=self._scan_controller,
         )
         self.shell.register_page("scan", self._scan)
 
@@ -183,7 +205,20 @@ class CerebroApp:
             content,
             coordinator=self.coordinator,
             on_delete_complete=self._on_delete_complete,
+            review_controller=None,
+            store=self.store,
         )
+        self._review_controller = ReviewController(
+            self.coordinator,
+            self.store,
+            get_current_result=lambda: self._review._current_result,
+            on_preview_result=lambda msg: self._review._safety_panel.set_dry_run_result(msg),
+            on_refresh_review_ui=lambda: self._review._sync_review_from_store_and_refresh(),
+            on_confirm_deletion=lambda plan, prev: self._review._show_delete_confirmation(plan, prev),
+            on_execute_start=lambda: self._review._safety_panel._delete_btn.configure(state="disabled", text="Executing…") or self._review.update(),
+            on_execute_done=lambda result: self._review._on_execute_done(result),
+        )
+        self._review._review_controller = self._review_controller
         self.shell.register_page("review", self._review)
 
         self._history = HistoryPage(
@@ -191,8 +226,10 @@ class CerebroApp:
             coordinator=self.coordinator,
             on_load_scan=self._on_load_history_scan,
             on_resume_scan=self._on_resume_scan,
+            on_request_refresh=self._refresh_history_state,
         )
         self.shell.register_page("history", self._history)
+        self._history.attach_store(self.store)
 
         self._diagnostics = DiagnosticsPage(
             content,
@@ -361,6 +398,56 @@ class CerebroApp:
         if result:
             self._review.load_result(result)
             self._navigate("review")
+
+    def _refresh_mission_state(self) -> None:
+        """Build mission slice from coordinator and push to store (Mission page subscribes)."""
+        try:
+            raw = self.coordinator.get_history(limit=8) or []
+        except Exception:
+            raw = []
+        try:
+            resumable_ids = tuple(self.coordinator.get_resumable_scan_ids() or [])
+        except Exception:
+            resumable_ids = ()
+        try:
+            recent_folders = tuple(self.coordinator.get_recent_folders() or [])[:10]
+        except Exception:
+            recent_folders = ()
+        last_scan = None
+        if raw:
+            d = raw[0]
+            last_scan = LastScanSummaryState(
+                files_scanned=int(d.get("files_scanned") or 0),
+                duplicate_groups=int(d.get("duplicates_found") or 0),
+                reclaimable_bytes=int(d.get("reclaimable_bytes") or 0),
+                duration_s=float(d.get("duration_s") or 0),
+            )
+        recent_sessions = []
+        for d in raw:
+            recent_sessions.append({
+                "scan_id": d.get("scan_id", ""),
+                "started_at": d.get("started_at", ""),
+                "roots": d.get("roots") or [],
+                "files_scanned": d.get("files_scanned", 0),
+                "duplicates_found": d.get("duplicates_found", 0),
+                "reclaimable_bytes": d.get("reclaimable_bytes", 0),
+                "status": d.get("status", "—"),
+                "duration_s": d.get("duration_s", 0),
+            })
+        self.store.set_mission(MissionState(
+            last_scan=last_scan,
+            resumable_scan_ids=resumable_ids,
+            recent_sessions=tuple(recent_sessions),
+            recent_folders=recent_folders,
+        ))
+
+    def _refresh_history_state(self) -> None:
+        """Build history slice from coordinator and push to store (History page subscribes)."""
+        try:
+            proj = build_history_from_coordinator(self.coordinator)
+            self.store.set_history(proj)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Theme & settings

@@ -12,6 +12,7 @@ from typing import Optional, Callable, List
 
 from .theme_registry import THEMES, DEFAULT_THEME, get_theme
 from .theme_tokens import ThemeDict
+from .design_system import font_tuple
 
 _INSTANCE: Optional["ThemeManager"] = None
 
@@ -84,7 +85,7 @@ class ThemeManager:
 
         # ---- Base widgets ----
         style.configure("TFrame",        background=bg)
-        style.configure("TLabel",        background=bg,    foreground=fg,  font=("Segoe UI", 9))
+        style.configure("TLabel",        background=bg,    foreground=fg,  font=font_tuple("body"))
         style.configure("TEntry",        fieldbackground=elev, foreground=fg, insertcolor=fg,
                         bordercolor=bstrong, lightcolor=bsoft, darkcolor=bsoft)
         style.configure("TCombobox",     fieldbackground=elev, foreground=fg,
@@ -153,7 +154,7 @@ class ThemeManager:
 
         style.configure("Accent.TButton", background=acc, foreground=bg,
                         bordercolor=acc, relief="flat", padding=[12, 5],
-                        font=("Segoe UI", 9, "bold"))
+                        font=font_tuple("body_bold"))
         style.map("Accent.TButton",
                   background=[("active", t["gradient_end"]), ("pressed", t["gradient_start"])],
                   foreground=[("active", bg)])
@@ -171,7 +172,7 @@ class ThemeManager:
 
         style.configure("Nav.TButton", background=sidebar, foreground=fg2,
                         bordercolor=sidebar, relief="flat", padding=[12, 8],
-                        font=("Segoe UI", 9))
+                        font=font_tuple("body"))
         style.map("Nav.TButton",
                   background=[("active", t["nav_active_bg"]), ("disabled", sidebar)],
                   foreground=[("active", t["nav_active_fg"]), ("disabled", t["nav_active_fg"])])
@@ -180,11 +181,11 @@ class ThemeManager:
         style.configure("Treeview",
                         background=panel, foreground=fg,
                         fieldbackground=panel, bordercolor=bsoft,
-                        rowheight=28, font=("Segoe UI", 9))
+                        rowheight=28, font=font_tuple("body"))
         style.configure("Treeview.Heading",
                         background=sidebar, foreground=fg2,
                         bordercolor=bsoft, relief="flat",
-                        font=("Segoe UI", 9, "bold"))
+                        font=font_tuple("body_bold"))
         style.map("Treeview",
                   background=[("selected", sel)],
                   foreground=[("selected", fg)])

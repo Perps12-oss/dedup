@@ -1,4 +1,13 @@
-"""Settings page — theme picker and UI preferences."""
+"""
+Settings page — theme picker and UI preferences.
+
+State/action boundary (Step 8):
+  - State: Read-only source is UIState.settings (app-level persisted). No UIStateStore
+    slice; settings are not projected scan/review state.
+  - Actions: Theme change and preference toggles are emitted via callbacks
+    (on_theme_change, on_preference_changed). App applies changes and persists.
+  - Page-local: Theme dropdown and checkbox vars; synced from state on show.
+"""
 from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
@@ -12,7 +21,7 @@ from ..utils.icons import IC
 
 
 class SettingsPage(ttk.Frame):
-    """Settings and theme page."""
+    """Settings and theme page. Renders from UIState.settings; emits actions via callbacks."""
 
     def __init__(self, parent, state: UIState,
                  on_theme_change: Callable[[str], None],

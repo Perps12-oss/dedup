@@ -1,16 +1,19 @@
 """
 StatusStrip — global bottom status strip.
 
-Always shows: Session | Phase | Engine Health | Checkpoint | Workers | Warnings
+Shows: Session | Phase | Engine Health | Checkpoint | Workers | Warnings | Intent
+Intent reflects store.scan.last_intent (idle | accepted | failed | completed).
 Color rules: green=safe, amber=warning, red=failure
 """
 from __future__ import annotations
+
 import tkinter as tk
 from tkinter import ttk
 from typing import Optional
 
-from ..utils.icons import IC
 from ..theme.theme_manager import get_theme_manager
+from ..theme.design_system import font_tuple, SPACING
+from ..utils.icons import IC
 
 
 class StatusStrip(tk.Frame):
@@ -32,14 +35,14 @@ class StatusStrip(tk.Frame):
         self._sep.pack(fill="x")
 
         row = tk.Frame(self)
-        row.pack(fill="both", expand=True, padx=8)
+        row.pack(fill="both", expand=True, padx=SPACING["md"])
         self._row = row
 
         def _item(icon: str, var: tk.StringVar, fg_key: str = "text_secondary"):
             cell = tk.Frame(row)
-            cell.pack(side="left", padx=(0, 14))
-            tk.Label(cell, text=icon, font=("Segoe UI", 7)).pack(side="left", padx=(0, 2))
-            self._lbl = tk.Label(cell, textvariable=var, font=("Segoe UI", 7))
+            cell.pack(side="left", padx=(0, SPACING["lg"]))
+            tk.Label(cell, text=icon, font=font_tuple("strip")).pack(side="left", padx=(0, SPACING["xs"]))
+            self._lbl = tk.Label(cell, textvariable=var, font=font_tuple("strip"))
             self._lbl.pack(side="left")
             return cell, self._lbl
 
@@ -50,6 +53,7 @@ class StatusStrip(tk.Frame):
         self._workers_var   = tk.StringVar(value="Workers: 0")
         self._warnings_var  = tk.StringVar(value="Warnings: 0")
         self._storage_var   = tk.StringVar(value="")
+        self._intent_var    = tk.StringVar(value="Intent: idle")
 
         self._cells = {}
         self._labels = {}
@@ -61,6 +65,7 @@ class StatusStrip(tk.Frame):
             ("workers",  IC.WORKERS,    self._workers_var),
             ("warnings", IC.WARN,       self._warnings_var),
             ("storage",  IC.SCHEMA,     self._storage_var),
+            ("intent",   IC.INFO,       self._intent_var),
         ]
         for key, icon, var in specs:
             cell, lbl = _item(icon, var)
@@ -110,6 +115,25 @@ class StatusStrip(tk.Frame):
                 storage_mode=f"schema v{proj.schema_version}" if proj.schema_version else "",
             )
         hub.subscribe("session", _on_session)
+
+    def subscribe_to_store(self, store) -> None:
+        """
+        Subscribe to UIStateStore to show scan intent lifecycle.
+        Safe if store or store.scan.last_intent is absent/None — shows "Intent: idle".
+        """
+        def _on_state(state) -> None:
+            scan = getattr(state, "scan", None)
+            if scan is None:
+                self._intent_var.set("Intent: idle")
+                return
+            last = getattr(scan, "last_intent", None)
+            if last is None:
+                self._intent_var.set("Intent: idle")
+                return
+            status = getattr(last, "status", None) or "idle"
+            self._intent_var.set(f"Intent: {status}")
+
+        self._unsub_store = store.subscribe(_on_state, fire_immediately=True)
 
     def _apply_colors(self, t: dict):
         bg = t["bg_sidebar"]
