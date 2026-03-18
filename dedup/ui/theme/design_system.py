@@ -24,6 +24,7 @@ TYPOGRAPHY: Dict[str, Any] = {
     # Data: compact labels and values (consistent numeric typography)
     "data_label": {"size": 8, "weight": "normal"},
     "data_value": {"size": 9, "weight": "bold"},
+    "metric_value": {"size": 18, "weight": "bold"},  # large stat (e.g. MetricCard)
     "numeric": {"size": 9, "weight": "normal"},  # tabular where applicable
     # Body and UI default
     "body": {"size": 9, "weight": "normal"},
@@ -33,6 +34,8 @@ TYPOGRAPHY: Dict[str, Any] = {
     "strip": {"size": 7, "weight": "normal"},
     # Shell/nav
     "nav_icon": {"size": 14, "weight": "normal"},
+    # Empty state / large placeholder
+    "empty_icon": {"size": 32, "weight": "normal"},
 }
 
 

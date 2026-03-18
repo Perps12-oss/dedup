@@ -17,6 +17,7 @@ from typing import Optional, List, Tuple
 
 from ..utils.icons import IC
 from ..theme.theme_manager import get_theme_manager
+from ..theme.design_system import font_tuple, SPACING
 
 DRAWER_WIDTH = 220
 
@@ -42,11 +43,11 @@ class InsightDrawer(tk.Frame):
         self._header.pack_propagate(False)
         self._title_lbl = tk.Label(
             self._header, text=f"{IC.INFO}  Insights",
-            font=("Segoe UI", 9, "bold"), anchor="w")
-        self._title_lbl.pack(side="left", fill="both", padx=10)
+            font=font_tuple("card_title"), anchor="w")
+        self._title_lbl.pack(side="left", fill="both", padx=SPACING["lg"])
         close_lbl = tk.Label(
             self._header, text=IC.DRAWER_CLOSE,
-            font=("Segoe UI", 10), cursor="hand2", padx=6)
+            font=font_tuple("body"), cursor="hand2", padx=SPACING["md"])
         close_lbl.pack(side="right")
         close_lbl.bind("<Button-1>", lambda e: self.hide())
         self._close_lbl = close_lbl
@@ -124,8 +125,8 @@ class _DrawerSection(tk.Frame):
         self.title = title
         self._vars: dict[str, tk.StringVar] = {}
         tk.Label(self, text=title.upper(),
-                 font=("Segoe UI", 7, "bold")).pack(anchor="w", pady=(4, 2))
-        tk.Frame(self, height=1).pack(fill="x", pady=(0, 4))
+                 font=font_tuple("strip")).pack(anchor="w", pady=(SPACING["sm"], SPACING["xs"]))
+        tk.Frame(self, height=1).pack(fill="x", pady=(0, SPACING["sm"]))
         self._grid = tk.Frame(self)
         self._grid.pack(fill="x")
         for k, v in rows:
@@ -134,10 +135,10 @@ class _DrawerSection(tk.Frame):
     def _add_row(self, key: str, value: str):
         row = tk.Frame(self._grid)
         row.pack(fill="x", pady=1)
-        tk.Label(row, text=key + ":", font=("Segoe UI", 7),
+        tk.Label(row, text=key + ":", font=font_tuple("strip"),
                  anchor="w", width=12).pack(side="left")
         var = tk.StringVar(value=value)
-        tk.Label(row, textvariable=var, font=("Segoe UI", 7, "bold"),
+        tk.Label(row, textvariable=var, font=font_tuple("data_value"),
                  anchor="w", wraplength=110).pack(side="left", fill="x", expand=True)
         self._vars[key] = var
 

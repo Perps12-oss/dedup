@@ -16,6 +16,7 @@ from typing import Callable
 from ..components import SectionCard
 from ..theme.theme_preview import ThemeSwatchGrid
 from ..theme.theme_registry import get_display_names, key_from_display_name, THEMES
+from ..theme.design_system import font_tuple, SPACING
 from ..utils.ui_state import UIState
 from ..utils.icons import IC
 
@@ -37,19 +38,23 @@ class SettingsPage(ttk.Frame):
         self.columnconfigure(0, weight=1)
 
         # ── Page header ──────────────────────────────────────────────
-        hdr = ttk.Frame(self, padding=(16, 12, 16, 0))
+        pad = SPACING["page"]
+        hdr = ttk.Frame(self, padding=(pad, SPACING["lg"], pad, 0))
         hdr.grid(row=0, column=0, sticky="ew")
         ttk.Label(hdr, text=f"{IC.SETTINGS}  Settings",
-                  font=("Segoe UI", 14, "bold")).pack(side="left")
+                  font=font_tuple("page_title")).pack(side="left")
+        ttk.Label(hdr, text="Theme · Density · Preferences",
+                  style="Muted.TLabel",
+                  font=font_tuple("page_subtitle")).pack(side="left", padx=(SPACING["lg"], 0), pady=3)
 
         # ── Themes ───────────────────────────────────────────────────
         theme_card = SectionCard(self, title=f"{IC.THEMES}  Themes")
-        theme_card.grid(row=1, column=0, sticky="ew", padx=16, pady=8)
+        theme_card.grid(row=1, column=0, sticky="ew", padx=pad, pady=SPACING["md"])
         self._build_themes(theme_card.body)
 
         # ── UI Preferences ───────────────────────────────────────────
         pref_card = SectionCard(self, title=f"{IC.INFO}  UI Preferences")
-        pref_card.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 8))
+        pref_card.grid(row=2, column=0, sticky="ew", padx=pad, pady=(0, SPACING["md"]))
         self._build_prefs(pref_card.body)
 
     def _build_themes(self, body: ttk.Frame):
@@ -59,7 +64,7 @@ class SettingsPage(ttk.Frame):
         sel_frame = ttk.Frame(body, style="Panel.TFrame")
         sel_frame.grid(row=0, column=0, sticky="w", pady=(0, 12))
         ttk.Label(sel_frame, text="Active theme:", style="Panel.Muted.TLabel",
-                  font=("Segoe UI", 8)).pack(side="left")
+                  font=font_tuple("data_label")).pack(side="left")
         self._theme_var = tk.StringVar()
         display_names = get_display_names()
         cb = ttk.Combobox(sel_frame, textvariable=self._theme_var,

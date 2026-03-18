@@ -82,6 +82,14 @@ class SafetyPanel(ttk.Frame):
 
         br = _row(f"{IC.WARN} Risk flags", self._risk_var, "Panel.Warning.TLabel")
 
+        # One-line readiness: "Ready to delete N files (size)" when plan has items
+        self._readiness_var = tk.StringVar(value="")
+        self._readiness_lbl = ttk.Label(t, textvariable=self._readiness_var,
+                                        style="Panel.Secondary.TLabel",
+                                        font=font_tuple("body"), wraplength=200)
+        self._readiness_lbl.grid(row=row, column=0, sticky="w", padx=SPACING["lg"], pady=(0, SPACING["xs"]))
+        row += 1
+
         # Preview result (safety rail: show outcome of Preview before Execute)
         self._dryrun_result = tk.StringVar(value="")
         self._dryrun_lbl = ttk.Label(t, textvariable=self._dryrun_result,
@@ -90,23 +98,23 @@ class SafetyPanel(ttk.Frame):
         self._dryrun_lbl.grid(row=row, column=0, sticky="w", padx=SPACING["lg"])
         row += 1
 
-        # Safety rail: Preview (secondary) then Execute (destructive, primary when ready)
+        # Safety rail: Preview first (non-destructive), then Execute (destructive, only when ready)
         btn_frame = ttk.Frame(t, style="Panel.TFrame", padding=(SPACING["lg"], SPACING["sm"], SPACING["lg"], SPACING["lg"]))
         btn_frame.grid(row=row, column=0, sticky="ew")
         btn_frame.columnconfigure(0, weight=1)
         btn_frame.columnconfigure(1, weight=1)
         row += 1
 
+        self._preview_btn = ttk.Button(btn_frame, text=SAFETY_RAIL["preview_effects"],
+                                       style="Ghost.TButton",
+                                       command=self._do_dry_run)
+        self._preview_btn.grid(row=0, column=0, sticky="ew", padx=(0, SPACING["sm"]))
+
         self._delete_btn = ttk.Button(btn_frame, text=SAFETY_RAIL["execute_deletion"],
                                       style="Danger.TButton",
                                       command=self._do_execute,
                                       state="disabled")
         self._delete_btn.grid(row=0, column=1, sticky="ew", padx=(SPACING["sm"], 0))
-
-        self._preview_btn = ttk.Button(btn_frame, text=SAFETY_RAIL["preview_effects"],
-                                      style="Ghost.TButton",
-                                      command=self._do_dry_run)
-        self._preview_btn.grid(row=0, column=0, sticky="ew", padx=(0, SPACING["sm"]))
 
     def update_plan(self, del_count: int, keep_count: int, reclaim_bytes: int,
                     risk_flags: int = 0, mode: str = "Trash"):
@@ -115,7 +123,14 @@ class SafetyPanel(ttk.Frame):
         self._keep_count.set(fmt_int(keep_count))
         self._reclaim_var.set(fmt_bytes(reclaim_bytes))
         self._risk_var.set(str(risk_flags) if risk_flags else "None")
-        self._delete_btn.configure(state="normal" if del_count > 0 else "disabled")
+        ready = del_count > 0
+        self._delete_btn.configure(
+            state="normal" if ready else "disabled",
+            text=f"Delete {del_count} files" if ready else SAFETY_RAIL["execute_deletion"],
+        )
+        self._readiness_var.set(
+            f"Ready to delete {del_count} files ({fmt_bytes(reclaim_bytes)})" if ready else ""
+        )
         self._dryrun_result.set("")
 
     def set_dry_run_result(self, text: str):

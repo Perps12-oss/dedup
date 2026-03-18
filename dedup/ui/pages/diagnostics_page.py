@@ -15,6 +15,7 @@ from ..components import DataTable, SectionCard, EmptyState
 from ..viewmodels.diagnostics_vm import DiagnosticsVM
 from ..utils.formatting import fmt_int, fmt_duration, fmt_dt
 from ..utils.icons import IC
+from ..theme.design_system import font_tuple, SPACING
 from ...orchestration.coordinator import ScanCoordinator
 from ...infrastructure.diagnostics import get_diagnostics_recorder
 
@@ -68,28 +69,32 @@ class DiagnosticsPage(ttk.Frame):
         self.rowconfigure(3, weight=1)
 
         # ── Page header ──────────────────────────────────────────────
-        hdr = ttk.Frame(self, padding=(16, 12, 16, 0))
+        pad = SPACING["page"]
+        hdr = ttk.Frame(self, padding=(pad, SPACING["lg"], pad, 0))
         hdr.grid(row=0, column=0, sticky="ew")
         hdr.columnconfigure(1, weight=1)
         ttk.Label(hdr, text=f"{IC.DIAGNOSTICS}  Diagnostics",
-                  font=("Segoe UI", 14, "bold")).grid(row=0, column=0, sticky="w")
+                  font=font_tuple("page_title")).grid(row=0, column=0, sticky="w")
+        ttk.Label(hdr, text="Session · Phases · Compatibility · Events",
+                  style="Muted.TLabel",
+                  font=font_tuple("page_subtitle")).grid(row=1, column=0, sticky="w")
         ttk.Button(hdr, text=f"{IC.REFRESH} Refresh",
                    style="Ghost.TButton",
-                   command=self._refresh).grid(row=0, column=2, sticky="e")
+                   command=self._refresh).grid(row=0, column=2, rowspan=2, sticky="e")
 
         # ── Operational warnings (exception hygiene surface) ──────────
         self._warn_card = SectionCard(self, title=f"{IC.WARN}  Operational Warnings")
-        self._warn_card.grid(row=1, column=0, sticky="ew", padx=16, pady=(4, 4))
+        self._warn_card.grid(row=1, column=0, sticky="ew", padx=pad, pady=(SPACING["sm"], SPACING["sm"]))
         self._build_warnings_section(self._warn_card.body)
 
         # ── Session overview ─────────────────────────────────────────
         ov_card = SectionCard(self, title=f"{IC.INFO}  Session Overview")
-        ov_card.grid(row=2, column=0, sticky="ew", padx=16, pady=8)
+        ov_card.grid(row=2, column=0, sticky="ew", padx=pad, pady=SPACING["md"])
         self._build_overview(ov_card.body)
 
         # ── Tab notebook ─────────────────────────────────────────────
         self._notebook = ttk.Notebook(self)
-        self._notebook.grid(row=3, column=0, sticky="nsew", padx=16, pady=(0, 12))
+        self._notebook.grid(row=3, column=0, sticky="nsew", padx=pad, pady=(0, pad))
 
         self._tab_phases  = ttk.Frame(self._notebook)
         self._tab_arts    = ttk.Frame(self._notebook)
@@ -125,18 +130,18 @@ class DiagnosticsPage(ttk.Frame):
             col = (i % 2) * 2
             row = i // 2
             ttk.Label(body, text=label + ":", style="Panel.Muted.TLabel",
-                      font=("Segoe UI", 8)).grid(row=row, column=col, sticky="w",
-                                                 padx=(0, 4), pady=2)
+                      font=font_tuple("data_label")).grid(row=row, column=col, sticky="w",
+                                                 padx=(0, SPACING["sm"]), pady=2)
             var = tk.StringVar(value=default)
             ttk.Label(body, textvariable=var, style="Panel.TLabel",
-                      font=("Segoe UI", 8, "bold")).grid(row=row, column=col + 1, sticky="w")
+                      font=font_tuple("data_value")).grid(row=row, column=col + 1, sticky="w")
             self._ov_vars[label] = var
 
         # Session selector
         sel_frame = ttk.Frame(body, style="Panel.TFrame")
         sel_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(8, 0))
         ttk.Label(sel_frame, text="View session:", style="Panel.Muted.TLabel",
-                  font=("Segoe UI", 8)).pack(side="left")
+                  font=font_tuple("data_label")).pack(side="left")
         self._session_var = tk.StringVar()
         self._session_combo = ttk.Combobox(
             sel_frame, textvariable=self._session_var, state="readonly", width=36)
@@ -148,7 +153,7 @@ class DiagnosticsPage(ttk.Frame):
         body.rowconfigure(1, weight=1)
         self._warn_summary_var = tk.StringVar(value="No operational warnings recorded.")
         ttk.Label(body, textvariable=self._warn_summary_var, style="Panel.Muted.TLabel",
-                  font=("Segoe UI", 8)).grid(row=0, column=0, sticky="w", pady=(0, 4))
+                  font=font_tuple("data_label")).grid(row=0, column=0, sticky="w", pady=(0, SPACING["sm"]))
         self._warn_table = DataTable(
             body,
             columns=[
@@ -239,7 +244,7 @@ class DiagnosticsPage(ttk.Frame):
         fb.grid(row=0, column=0, sticky="ew")
         self._event_filter_var = tk.StringVar(value="All")
         ttk.Label(fb, text="Severity:", style="Panel.Muted.TLabel",
-                  font=("Segoe UI", 8)).pack(side="left")
+                  font=font_tuple("data_label")).pack(side="left")
         ttk.Combobox(fb, textvariable=self._event_filter_var,
                      values=["All", "info", "warning", "error"],
                      state="readonly", width=10).pack(side="left", padx=(4, 0))
@@ -273,6 +278,10 @@ class DiagnosticsPage(ttk.Frame):
 
     # ----------------------------------------------------------------
     def on_show(self):
+        self.refresh()
+
+    def refresh(self):
+        """Public API: refresh diagnostics data from coordinator."""
         self._refresh()
 
     def _refresh(self):

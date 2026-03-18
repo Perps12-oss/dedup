@@ -1,30 +1,31 @@
-# DEDUP - Minimal Duplicate File Finder
+# CEREBRO Dedup — Duplicate File Finder & Operations Shell
 
-A simplified duplicate file finder with a production-grade engine, derived from the Cerebro project.
+A production-grade duplicate file finder with a six-page CEREBRO operations shell: Mission, Scan, Review, History, Diagnostics, and Settings. The UI is store- and controller-driven with a clear separation between engine, orchestration, and shell.
 
 ## Philosophy
 
-- **Engine First**: The engine is the product. The UI is only a thin interface.
-- **Truthful Metrics**: Every number shown is based on real measured data.
-- **Safe Deletion**: Destructive actions require explicit review and audit.
-- **Scalable**: Designed for datasets up to 1,000,000 files.
+- **Engine first**: The engine is the product; the UI is a structured operations shell, not a thin one-off.
+- **Truthful metrics**: Every number is based on real measured data.
+- **Safe deletion**: Destructive actions require explicit review, preview, and audit.
+- **Scalable**: Designed for large datasets with bounded UI and store-centric state.
 
 ## Features
 
-- **Streaming Discovery**: Memory-efficient file discovery using generators
-- **Layered Hashing**: Fast partial hash first, full hash only when needed
-- **Safe Deletion**: Trash/recycle bin by default, permanent only with confirmation
-- **Minimal UI**: Four screens only - Home, Scan, Results, History
-- **Cross-Platform**: Works on Windows, macOS, and Linux
+- **Streaming discovery**: Memory-efficient file discovery using generators.
+- **Layered hashing**: Fast partial hash first, full hash when needed.
+- **Safe deletion**: Trash/recycle bin by default; permanent only with confirmation.
+- **Six-page shell**: Mission (home), Scan (live), Review (decision studio), History, Diagnostics, Settings.
+- **Store + controllers**: UIStateStore is the read authority; ScanController and ReviewController handle commands; no direct page/backend coupling in action paths.
+- **Cross-platform**: Windows, macOS, Linux.
 
 ## Installation
 
 ```bash
-# Clone or download the source
 cd dedup
 
-# Optional: Install recommended dependencies
-pip install xxhash send2trash
+# Optional: recommended dependencies (faster hashing, drag-drop, thumbnails)
+pip install -e ".[recommended]"
+# or: pip install xxhash send2trash tkinterdnd2 Pillow
 
 # Run
 python -m dedup
@@ -32,22 +33,17 @@ python -m dedup
 
 ## Usage
 
-### GUI Mode
+### GUI
 
 ```bash
 python -m dedup
 ```
 
-### CLI Mode
+### CLI
 
 ```bash
-# Quick scan
 python -m dedup /path/to/scan
-
-# Skip small files
 python -m dedup /path/to/scan --min-size 1M
-
-# Verbose output
 python -m dedup /path/to/scan -v
 ```
 
@@ -57,125 +53,33 @@ python -m dedup /path/to/scan -v
 from pathlib import Path
 from dedup.engine import ScanConfig, ScanPipeline
 
-# Configure scan
-config = ScanConfig(
-    roots=[Path("/data")],
-    min_size_bytes=1024,  # Skip files smaller than 1KB
-)
-
-# Run scan
+config = ScanConfig(roots=[Path("/data")], min_size_bytes=1024)
 pipeline = ScanPipeline(config)
 result = pipeline.run()
-
-# Print results
-print(f"Files scanned: {result.files_scanned}")
-print(f"Duplicate groups: {len(result.duplicate_groups)}")
-print(f"Reclaimable space: {result.total_reclaimable_bytes} bytes")
-
-# Create deletion plan
 plan = pipeline.create_deletion_plan(result)
-print(f"Files to delete: {plan.total_files_to_delete}")
-
-# Execute deletion (dry run first)
-dry_result = pipeline.execute_deletion(plan, dry_run=True)
-print(f"Dry run: would delete {len(dry_result.deleted_files)} files")
-
-# Actually delete
-result = pipeline.execute_deletion(plan)
-print(f"Deleted: {len(result.deleted_files)} files")
+# Execute via pipeline or coordinator as needed.
 ```
 
 ## Architecture
 
-```
-dedup/
-├── engine/           # Core duplicate detection (no UI deps)
-│   ├── models.py     # Data structures
-│   ├── discovery.py  # File discovery
-│   ├── hashing.py    # Hash computation
-│   ├── grouping.py   # Duplicate grouping
-│   ├── deletion.py   # Safe deletion
-│   └── pipeline.py   # Scan orchestration
-├── orchestration/    # Scan lifecycle management
-│   ├── events.py     # Event bus
-│   ├── worker.py     # Background worker
-│   └── coordinator.py # High-level coordination
-├── infrastructure/   # Supporting services
-│   ├── config.py     # Settings management
-│   ├── logger.py     # Structured logging
-│   ├── persistence.py # SQLite storage
-│   └── utils.py      # Utilities
-├── ui/               # CEREBRO modern-classic UI shell
-│   ├── app.py        # Main application & ProjectionHub wiring
-│   ├── shell/        # AppShell, NavRail, TopBar, StatusStrip
-│   ├── pages/        # Mission, Scan, Review, History, Diagnostics, Settings
-│   ├── components/   # Reusable widgets (MetricCard, DataTable, etc.)
-│   ├── viewmodels/   # MVVM state holders per page
-│   ├── projections/  # Canonical UI state contract (ProjectionHub)
-│   └── theme/        # 15-theme token system
-└── main.py           # Entry point
-```
+- **dedup/engine/** — Core duplicate detection (no UI deps).
+- **dedup/orchestration/** — Scan lifecycle, coordinator, worker.
+- **dedup/infrastructure/** — Config, persistence, trash, logging.
+- **dedup/ui/** — CEREBRO shell: app, store, controllers, pages, components, viewmodels, projections, theme.
+  - **Authority**: When store is attached, ScanPage reads from store only (hub feeds store). Review reads via selectors; commands go through ReviewController/ScanController.
+  - **Pages**: Mission, Scan, Review, History, Diagnostics, Settings (six destinations in NavRail).
 
-## Performance
+See `docs/CONTROLLER_CONTRACTS.md` and `docs/REPO_AUTHORITY.md` for single-authority and command-path details.
 
-Tested on synthetic datasets:
+## Packaging
 
-| Files | Size | Time | Memory |
-|-------|------|------|--------|
-| 10,000 | 10 GB | ~30s | ~50 MB |
-| 100,000 | 100 GB | ~5m | ~100 MB |
-| 1,000,000 | 1 TB | ~45m | ~200 MB |
-
-Performance depends on:
-- Storage speed (SSD vs HDD)
-- File sizes (larger files = slower hashing)
-- Duplicate ratio (more duplicates = more hashing)
-
-## Repository Audit Summary
-
-Based on analysis of the Cerebro repository:
-
-### Modules Classified
-
-| Module | Decision | Reason |
-|--------|----------|--------|
-| core/models.py | **Keep** | Solid data structures, minimal changes |
-| core/discovery.py | **Refactor** | Good base, optimize for streaming |
-| core/hashing.py | **Keep** | Layered hashing strategy is sound |
-| core/grouping.py | **Refactor** | Simplify, remove visual similarity |
-| core/deletion.py | **Keep** | Safety logic is well-designed |
-| core/pipeline.py | **Rewrite** | Simplify, remove legacy compatibility |
-| services/ | **Refactor** | Keep persistence, simplify config |
-| ui/ | **Rewrite** | Remove theme engine, minimal tkinter |
-| workers/ | **Refactor** | Simplify, integrate into orchestration |
-
-### What Was Simplified
-
-- **UI**: Removed theme engine, animations, decorative elements
-- **Modes**: Removed visual/fuzzy matching (exact only)
-- **Pages**: Reduced from 7+ to 4 essential screens
-- **Dependencies**: Removed PySide6, use tkinter instead
-
-### What Was Enhanced
-
-- **Streaming**: Discovery uses generators for 1M+ file support
-- **Memory**: FileMetadata uses `__slots__` for efficiency
-- **Hashing**: Added xxhash support for faster hashing
-- **Persistence**: SQLite-based scan history and hash cache
-
-## Risk Register
-
-| Risk | Likelihood | Impact | Mitigation |
-|------|------------|--------|------------|
-| False positives in duplicate detection | Low | High | Two-phase hashing (partial + full) |
-| Accidental file deletion | Low | High | Trash by default, confirmation dialogs |
-| Memory exhaustion on large scans | Low | Medium | Streaming discovery, batch processing |
-| Permission errors | Medium | Low | Graceful error handling, continues scan |
-| Hash collisions | Very Low | High | Use 64-bit+ hashes, verify on delete |
+- **Core**: No required dependencies (standard library).
+- **Optional**: `pip install -e ".[recommended]"` for xxhash, send2trash, tkinterdnd2, Pillow.
+- **Tests**: Excluded from distribution via `setup.py` (packages exclude `dedup.tests`).
 
 ## License
 
-MIT License - See LICENSE file for details.
+MIT. See LICENSE.
 
 ## Acknowledgments
 

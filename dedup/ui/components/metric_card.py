@@ -7,6 +7,8 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Optional
 
+from ..theme.design_system import font_tuple, SPACING
+
 
 VARIANT_STYLES = {
     "neutral":  ("Panel.TFrame", "Panel.TLabel",         "Panel.Secondary.TLabel"),
@@ -40,7 +42,7 @@ class MetricCard(ttk.Frame):
         **kwargs,
     ):
         frame_style, val_style, sub_style = VARIANT_STYLES.get(variant, VARIANT_STYLES["neutral"])
-        super().__init__(parent, style=frame_style, padding=(14, 10), **kwargs)
+        super().__init__(parent, style=frame_style, padding=(SPACING["card"], SPACING["lg"]), **kwargs)
         self._val_style = val_style
         self._sub_style = sub_style
 
@@ -52,19 +54,19 @@ class MetricCard(ttk.Frame):
         self._label_var = tk.StringVar(value=label_text)
         ttk.Label(self, textvariable=self._label_var,
                   style=sub_style,
-                  font=("Segoe UI", 8)).pack(anchor="w")
+                  font=font_tuple("data_label")).pack(anchor="w")
 
         # Value
         self._value_var = tk.StringVar(value=value)
         ttk.Label(self, textvariable=self._value_var,
                   style=val_style,
-                  font=("Segoe UI", 18, "bold")).pack(anchor="w", pady=(2, 0))
+                  font=font_tuple("metric_value")).pack(anchor="w", pady=(SPACING["xs"], 0))
 
         # Sub-label
         self._sub_var = tk.StringVar(value=sub_label)
         self._sub_lbl = ttk.Label(self, textvariable=self._sub_var,
                                   style=sub_style,
-                                  font=("Segoe UI", 8))
+                                  font=font_tuple("data_label"))
         self._sub_lbl.pack(anchor="w")
 
     def update(self, value: str, sub_label: str = "", label: str = ""):

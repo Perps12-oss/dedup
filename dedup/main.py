@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-DEDUP - A minimal, high-performance duplicate file finder.
+CEREBRO Dedup - Duplicate file finder and operations shell.
 
-A simplified duplicate file finder with a production-grade engine
-capable of handling 1,000,000+ files.
+Production-grade engine and six-page UI (Mission, Scan, Review, History, Diagnostics, Settings).
+Capable of handling 1,000,000+ files with store- and controller-driven architecture.
 
 Usage:
     python -m dedup                    # Launch GUI
