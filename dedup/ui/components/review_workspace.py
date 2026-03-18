@@ -12,6 +12,7 @@ from __future__ import annotations
 import threading
 import tkinter as tk
 from tkinter import ttk
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, List, Optional, Any
 
@@ -49,6 +50,8 @@ class ReviewTableView(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
         self._on_keep = on_keep
+        self._file_meta: dict[str, Any] = {}
+        self._quick_peek_tip: Optional[tk.Toplevel] = None
 
         self._file_table = DataTable(
             self,
@@ -66,6 +69,8 @@ class ReviewTableView(ttk.Frame):
             on_double_click=on_double_click,
         )
         self._file_table.grid(row=1, column=0, sticky="nsew")
+        self._file_table.tree.bind("<Motion>", self._on_table_hover, add="+")
+        self._file_table.tree.bind("<Leave>", lambda e: self._hide_quick_peek(), add="+")
 
         act = ttk.Frame(self, style="Panel.TFrame")
         act.grid(row=2, column=0, sticky="ew", pady=(6, 0))
@@ -97,20 +102,60 @@ class ReviewTableView(ttk.Frame):
         self._file_table.grid()
         self._file_table.clear()
         for f in group.files:
+            self._file_meta[f.path] = f
             is_keep = (f.path == keep_path)
             action = f"{IC.KEEP} KEEP" if is_keep else f"{IC.DELETE_TGT} DEL"
             tag = "safe" if is_keep else "warn"
+            modified = datetime.fromtimestamp(getattr(f, "mtime_ns", 0) / 1_000_000_000).strftime("%Y-%m-%d")
             self._file_table.insert_row(
                 f.path,
                 (
                     action, f.filename, truncate_path(f.path, 40),
-                    fmt_bytes(f.size), "—", Path(f.path).suffix or "—", "OK",
+                    fmt_bytes(f.size), modified, Path(f.path).suffix or "—", "OK",
                 ),
                 tags=(tag,),
             )
 
     def selection(self) -> Optional[str]:
         return self._file_table.selection()
+
+    def _on_table_hover(self, event) -> None:
+        iid = self._file_table.tree.identify_row(event.y)
+        if not iid:
+            self._hide_quick_peek()
+            return
+        f = self._file_meta.get(iid)
+        if not f:
+            self._hide_quick_peek()
+            return
+        self._show_quick_peek(event.x_root + 12, event.y_root + 12, f)
+
+    def _show_quick_peek(self, x: int, y: int, f: Any) -> None:
+        text = f"{f.filename}\n{fmt_bytes(f.size)}\n{truncate_path(f.path, 60)}"
+        if self._quick_peek_tip is None or not self._quick_peek_tip.winfo_exists():
+            tip = tk.Toplevel(self)
+            tip.wm_overrideredirect(True)
+            lbl = tk.Label(
+                tip,
+                text=text,
+                justify="left",
+                background="#1f1f1f",
+                foreground="#dfe7ff",
+                padx=8,
+                pady=6,
+                font=("Segoe UI", 8),
+            )
+            lbl.pack()
+            self._quick_peek_tip = tip
+        else:
+            lbl = self._quick_peek_tip.winfo_children()[0]
+            lbl.configure(text=text)
+        self._quick_peek_tip.geometry(f"+{x}+{y}")
+
+    def _hide_quick_peek(self) -> None:
+        if self._quick_peek_tip is not None and self._quick_peek_tip.winfo_exists():
+            self._quick_peek_tip.destroy()
+        self._quick_peek_tip = None
 
 
 class ReviewGalleryView(ttk.Frame):
@@ -275,12 +320,17 @@ class ReviewCompareView(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=1)
         self.rowconfigure(1, weight=1)
+        self.rowconfigure(3, weight=0)
         self._on_keep_left = on_keep_left
         self._on_keep_right = on_keep_right
         self._thumb_refs: List[Any] = []
         self._thumb_cancel = threading.Event()
         self._pair_index = 0
+        self._left_idx = 0
+        self._right_idx = 1
         self.bind("<Destroy>", self._on_destroy, add="+")
+
+        self.configure(style="Panel.TFrame")
 
         self._left_frame = ttk.Frame(self, style="Panel.TFrame", padding=8)
         self._right_frame = ttk.Frame(self, style="Panel.TFrame", padding=8)
@@ -298,6 +348,8 @@ class ReviewCompareView(ttk.Frame):
         self._next_btn = ttk.Button(nav, text="Next ▶", style="Ghost.TButton")
         self._prev_btn.grid(row=0, column=0, padx=(0, 8))
         self._next_btn.grid(row=0, column=2, padx=(8, 0))
+        self._pair_lbl = ttk.Label(nav, text="", style="Panel.Muted.TLabel")
+        self._pair_lbl.grid(row=0, column=1)
 
         act = ttk.Frame(self, style="Panel.TFrame")
         act.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
@@ -307,6 +359,19 @@ class ReviewCompareView(ttk.Frame):
                    command=on_keep_left).grid(row=0, column=0, padx=4)
         ttk.Button(act, text="Keep Right", style="Ghost.TButton",
                    command=on_keep_right).grid(row=0, column=1, padx=4)
+        ttk.Button(act, text="Keep All Except Left", style="Ghost.TButton",
+                   command=on_keep_left).grid(row=1, column=0, padx=4, pady=(4, 0))
+        ttk.Button(act, text="Keep All Except Right", style="Ghost.TButton",
+                   command=on_keep_right).grid(row=1, column=1, padx=4, pady=(4, 0))
+
+        # Tier 3: Multi-compare strip (up to 6)
+        mc = ttk.Frame(self, style="Panel.TFrame")
+        mc.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        mc.columnconfigure(0, weight=1)
+        ttk.Label(mc, text="Multi-Compare (up to 6): promote to left/right",
+                  style="Panel.Muted.TLabel").grid(row=0, column=0, sticky="w")
+        self._multi_grid = ttk.Frame(mc, style="Panel.TFrame")
+        self._multi_grid.grid(row=1, column=0, sticky="ew", pady=(4, 0))
 
         self._empty = EmptyState(
             self, icon=IC.REVIEW,
@@ -343,6 +408,8 @@ class ReviewCompareView(ttk.Frame):
         self._group = group
         self._keep_path = keep_path
         self._pair_index = 0
+        self._left_idx = 0
+        self._right_idx = 1
         self._empty.hide()
         self._left_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 4))
         self._right_frame.grid(row=1, column=1, sticky="nsew", padx=(4, 0))
@@ -359,6 +426,7 @@ class ReviewCompareView(ttk.Frame):
             self._next_btn.grid_remove()
 
         self._render_pair()
+        self._render_multi_compare()
 
     def _prev_pair(self) -> None:
         if not hasattr(self, "_group"):
@@ -366,6 +434,8 @@ class ReviewCompareView(ttk.Frame):
         n = len(self._group.files)
         if n > 2:
             self._pair_index = (self._pair_index - 1) % (n - 1)
+            self._left_idx = self._pair_index
+            self._right_idx = self._pair_index + 1
             self._render_pair()
 
     def _next_pair(self) -> None:
@@ -374,6 +444,8 @@ class ReviewCompareView(ttk.Frame):
         n = len(self._group.files)
         if n > 2:
             self._pair_index = (self._pair_index + 1) % (n - 1)
+            self._left_idx = self._pair_index
+            self._right_idx = self._pair_index + 1
             self._render_pair()
 
     def _render_pair(self) -> None:
@@ -385,9 +457,15 @@ class ReviewCompareView(ttk.Frame):
             return
         if n == 2:
             left_f, right_f = files[0], files[1]
+            self._left_idx, self._right_idx = 0, 1
         else:
-            i = self._pair_index % (n - 1)
-            left_f, right_f = files[i], files[i + 1]
+            li = max(0, min(self._left_idx, n - 1))
+            ri = max(0, min(self._right_idx, n - 1))
+            if li == ri:
+                ri = min(n - 1, li + 1)
+            left_f, right_f = files[li], files[ri]
+            self._left_idx, self._right_idx = li, ri
+        self._pair_lbl.configure(text=f"Comparing {self._left_idx + 1} vs {self._right_idx + 1}")
 
         def add_preview(frame: ttk.Frame, f, is_left: bool):
             for w in frame.winfo_children():
@@ -426,6 +504,34 @@ class ReviewCompareView(ttk.Frame):
         add_preview(self._left_frame, left_f, True)
         add_preview(self._right_frame, right_f, False)
 
+    def _render_multi_compare(self) -> None:
+        for w in self._multi_grid.winfo_children():
+            w.destroy()
+        if not hasattr(self, "_group"):
+            return
+        files = list(self._group.files)[:6]
+        for idx, f in enumerate(files):
+            card = ttk.Frame(self._multi_grid, style="Panel.TFrame", padding=4)
+            card.grid(row=0, column=idx, padx=4, sticky="nw")
+            ttk.Label(card, text=f.filename[:14], style="Panel.Muted.TLabel").grid(row=0, column=0, columnspan=2)
+            ttk.Label(card, text=fmt_bytes(f.size), style="Panel.Muted.TLabel").grid(row=1, column=0, columnspan=2)
+            ttk.Button(card, text="Set Left", style="Ghost.TButton",
+                       command=lambda i=idx: self._promote_left(i)).grid(row=2, column=0, padx=(0, 2))
+            ttk.Button(card, text="Set Right", style="Ghost.TButton",
+                       command=lambda i=idx: self._promote_right(i)).grid(row=2, column=1, padx=(2, 0))
+
+    def _promote_left(self, idx: int) -> None:
+        self._left_idx = idx
+        if self._right_idx == idx:
+            self._right_idx = min(idx + 1, len(self._group.files) - 1)
+        self._render_pair()
+
+    def _promote_right(self, idx: int) -> None:
+        self._right_idx = idx
+        if self._left_idx == idx:
+            self._left_idx = max(0, idx - 1)
+        self._render_pair()
+
 
 class ReviewWorkspaceStack(ttk.Frame):
     """Stacked workspace: Table | Gallery | Compare. Mode switch swaps visible view."""
@@ -452,6 +558,13 @@ class ReviewWorkspaceStack(ttk.Frame):
             command=self._on_clear_keep,
         )
         self._clear_btn.pack(side="left", padx=(0, 6))
+        self._quick_cmp_btn = ttk.Button(
+            self._clear_toolbar,
+            text="Compare Icon",
+            style="Ghost.TButton",
+            command=self.open_quick_compare_overlay,
+        )
+        self._quick_cmp_btn.pack(side="left", padx=(0, 6))
         self._clear_toolbar.grid(row=0, column=0, sticky="w", pady=(0, 4))
         self._clear_toolbar.grid_remove()
         self._clear_toolbar_visible = False
@@ -485,13 +598,49 @@ class ReviewWorkspaceStack(ttk.Frame):
         if n == 2:
             path = files[idx].path
         else:
-            i = getattr(self._compare, "_pair_index", 0) % (n - 1)
-            path = files[i + idx].path
+            li = max(0, min(getattr(self._compare, "_left_idx", 0), n - 1))
+            ri = max(0, min(getattr(self._compare, "_right_idx", 1), n - 1))
+            path = files[li].path if idx == 0 else files[ri].path
         self._on_keep(path)
 
     def set_mode(self, mode: str) -> None:
         idx = {"table": 0, "gallery": 1, "compare": 2}.get(mode, 0)
         self._show_index(idx)
+
+    def compare_next(self) -> None:
+        self._compare._next_pair()
+
+    def compare_prev(self) -> None:
+        self._compare._prev_pair()
+
+    def open_quick_compare_overlay(self) -> None:
+        """Tier 1 quick compare overlay without switching workspace mode."""
+        if not hasattr(self._compare, "_group"):
+            return
+        files = list(self._compare._group.files)
+        if len(files) < 2:
+            return
+        li = max(0, min(getattr(self._compare, "_left_idx", 0), len(files) - 1))
+        ri = max(0, min(getattr(self._compare, "_right_idx", 1), len(files) - 1))
+        left = files[li]
+        right = files[ri]
+        top = tk.Toplevel(self)
+        top.title("Quick Compare")
+        top.transient(self.winfo_toplevel())
+        top.geometry("680x300")
+        wrap = ttk.Frame(top, padding=10)
+        wrap.pack(fill="both", expand=True)
+        wrap.columnconfigure(0, weight=1)
+        wrap.columnconfigure(1, weight=1)
+        for col, f in enumerate((left, right)):
+            pane = ttk.Frame(wrap, style="Panel.TFrame", padding=8)
+            pane.grid(row=0, column=col, sticky="nsew", padx=4)
+            ttk.Label(pane, text=f.filename, style="Panel.Secondary.TLabel", wraplength=280).pack(anchor="w")
+            ttk.Label(pane, text=fmt_bytes(f.size), style="Panel.Muted.TLabel").pack(anchor="w")
+            ttk.Label(pane, text=truncate_path(f.path, 70), style="Panel.Muted.TLabel", wraplength=280).pack(anchor="w")
+        ttk.Button(wrap, text="Close", style="Ghost.TButton", command=top.destroy).grid(
+            row=1, column=0, columnspan=2, sticky="e", pady=(8, 0)
+        )
 
     def _show_index(self, idx: int) -> None:
         self._views[self._current].grid_remove()

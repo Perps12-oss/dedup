@@ -42,6 +42,58 @@ class ReviewController:
         self._store = store
         self._cb = callbacks
 
+    def handle_apply_smart_rule(self, rule: str) -> None:
+        """
+        Apply auto smart selection across all duplicate groups.
+        Supported rules: first | newest | oldest | largest | smallest.
+        """
+        result = self._cb.get_current_result()
+        if not result or not getattr(result, "duplicate_groups", None):
+            self._cb.set_preview_result("Smart rule skipped: no scan result.")
+            return
+        keep_map: dict[str, str] = {}
+        for group in result.duplicate_groups:
+            files = list(getattr(group, "files", []) or [])
+            if len(files) < 2:
+                continue
+            selected = self._pick_keep_file(files, rule)
+            if selected is not None:
+                keep_map[str(getattr(group, "group_id", ""))] = selected.path
+
+        state = self._store.state
+        sel = review_selection(state)
+        selected_id = getattr(sel, "selected_group_id", None)
+        self._store.set_review_selection(
+            ReviewSelectionState(keep_selections=keep_map, selected_group_id=selected_id)
+        )
+        self._cb.set_preview_result(f"Smart rule applied: {rule} ({len(keep_map)} groups).")
+        self._cb.refresh_review_ui()
+
+    def handle_clear_all_keeps(self) -> None:
+        """Clear all keep selections to fully reverse smart/manual choices."""
+        state = self._store.state
+        sel = review_selection(state)
+        selected_id = getattr(sel, "selected_group_id", None)
+        self._store.set_review_selection(
+            ReviewSelectionState(keep_selections={}, selected_group_id=selected_id)
+        )
+        self._cb.set_preview_result("Keep selections cleared.")
+        self._cb.refresh_review_ui()
+
+    @staticmethod
+    def _pick_keep_file(files: list, rule: str):
+        if not files:
+            return None
+        if rule == "newest":
+            return max(files, key=lambda f: getattr(f, "mtime_ns", 0))
+        if rule == "oldest":
+            return min(files, key=lambda f: getattr(f, "mtime_ns", 0))
+        if rule == "largest":
+            return max(files, key=lambda f: getattr(f, "size", 0))
+        if rule == "smallest":
+            return min(files, key=lambda f: getattr(f, "size", 0))
+        return files[0]
+
     def handle_set_keep(self, group_id: str, path: str) -> None:
         """Apply SetKeep intent: update store selection, then refresh UI via callback."""
         if not group_id or not path:

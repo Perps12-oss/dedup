@@ -52,3 +52,9 @@ app.py routes History and Diagnostics actions to `self._history.refresh()` and `
 
 **5. Scan page is decoupled from coordinator at app level.**  
 app.py passes only `scan_controller` to ScanPage (no coordinator). Display is store-driven via `attach_store`. Commands go through ScanController. Coordinator is optional on ScanPage for fallback (e.g. tests) only.
+
+## Blueprint authority
+
+- Product-level UX/UI authority for the redesign lives in `docs/CEREBRO_BLUEPRINT_ADDENDUM.md`.
+- Implementation remains phase-based; partial delivery is acceptable as long as
+  each shipped slice preserves single-authority state and controller boundaries.

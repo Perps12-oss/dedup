@@ -17,10 +17,14 @@ class SafetyPanel(ttk.Frame):
     """Right-side deletion plan + safety summary panel."""
 
     def __init__(self, parent, on_dry_run: Optional[Callable] = None,
-                 on_execute: Optional[Callable] = None, **kwargs):
+                 on_execute: Optional[Callable] = None,
+                 on_undo_hint: Optional[Callable] = None,
+                 **kwargs):
         super().__init__(parent, style="Panel.TFrame", **kwargs)
         self._on_dry_run = on_dry_run
         self._on_execute = on_execute
+        self._on_undo_hint = on_undo_hint
+        self._action_history: list[str] = []
         self._build()
 
     def _build(self):
@@ -90,12 +94,50 @@ class SafetyPanel(ttk.Frame):
         self._readiness_lbl.grid(row=row, column=0, sticky="w", padx=SPACING["lg"], pady=(0, SPACING["xs"]))
         row += 1
 
+        # Predictive hint: compact next-action/risk anticipation line.
+        self._predictive_var = tk.StringVar(value="")
+        self._predictive_lbl = ttk.Label(
+            t,
+            textvariable=self._predictive_var,
+            style="Panel.Muted.TLabel",
+            font=font_tuple("data_label"),
+            wraplength=200,
+        )
+        self._predictive_lbl.grid(row=row, column=0, sticky="w", padx=SPACING["lg"], pady=(0, SPACING["xs"]))
+        row += 1
+
         # Preview result (safety rail: show outcome of Preview before Execute)
         self._dryrun_result = tk.StringVar(value="")
         self._dryrun_lbl = ttk.Label(t, textvariable=self._dryrun_result,
                                      style="Panel.Muted.TLabel",
                                      font=font_tuple("data_label"), wraplength=180)
         self._dryrun_lbl.grid(row=row, column=0, sticky="w", padx=SPACING["lg"])
+        row += 1
+
+        # Undo + action history foundation (trust surface)
+        self._undo_var = tk.StringVar(value="")
+        self._undo_lbl = ttk.Label(
+            t,
+            textvariable=self._undo_var,
+            style="Panel.Muted.TLabel",
+            font=font_tuple("data_label"),
+            wraplength=200,
+        )
+        self._undo_lbl.grid(row=row, column=0, sticky="w", padx=SPACING["lg"], pady=(0, SPACING["xs"]))
+        row += 1
+
+        hist = ttk.Frame(t, style="Panel.TFrame", padding=(SPACING["lg"], 0, SPACING["lg"], SPACING["sm"]))
+        hist.grid(row=row, column=0, sticky="nsew")
+        hist.columnconfigure(0, weight=1)
+        ttk.Label(hist, text="Action history", style="Panel.TLabel",
+                  font=font_tuple("data_label")).grid(row=0, column=0, sticky="w")
+        self._history_list = tk.Listbox(
+            hist, height=4, selectmode="browse", font=("Consolas", 8),
+            borderwidth=0, highlightthickness=0, activestyle="none")
+        hscroll = ttk.Scrollbar(hist, orient="vertical", command=self._history_list.yview)
+        self._history_list.configure(yscrollcommand=hscroll.set)
+        self._history_list.grid(row=1, column=0, sticky="nsew", pady=(SPACING["xs"], 0))
+        hscroll.grid(row=1, column=1, sticky="ns", pady=(SPACING["xs"], 0))
         row += 1
 
         # Safety rail: Preview first (non-destructive), then Execute (destructive, only when ready)
@@ -115,6 +157,9 @@ class SafetyPanel(ttk.Frame):
                                       command=self._do_execute,
                                       state="disabled")
         self._delete_btn.grid(row=0, column=1, sticky="ew", padx=(SPACING["sm"], 0))
+        self._undo_btn = ttk.Button(btn_frame, text="Undo hint", style="Ghost.TButton",
+                                    command=self._do_undo_hint)
+        self._undo_btn.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(SPACING["sm"], 0))
 
     def update_plan(self, del_count: int, keep_count: int, reclaim_bytes: int,
                     risk_flags: int = 0, mode: str = "Trash"):
@@ -131,6 +176,7 @@ class SafetyPanel(ttk.Frame):
         self._readiness_var.set(
             f"Ready to delete {del_count} files ({fmt_bytes(reclaim_bytes)})" if ready else ""
         )
+        self._predictive_var.set(self._predictive_hint(del_count, reclaim_bytes, risk_flags))
         self._dryrun_result.set("")
 
     def set_dry_run_result(self, text: str):
@@ -143,3 +189,28 @@ class SafetyPanel(ttk.Frame):
     def _do_execute(self):
         if self._on_execute:
             self._on_execute()
+
+    def _do_undo_hint(self):
+        if self._on_undo_hint:
+            self._on_undo_hint()
+
+    def add_action_entry(self, text: str) -> None:
+        """Append action history entry and keep it bounded."""
+        self._action_history.insert(0, text)
+        self._action_history = self._action_history[:20]
+        self._history_list.delete(0, "end")
+        for item in self._action_history:
+            self._history_list.insert("end", item)
+
+    def set_undo_message(self, text: str) -> None:
+        self._undo_var.set(text)
+
+    def _predictive_hint(self, del_count: int, reclaim_bytes: int, risk_flags: int) -> str:
+        """Compact predictive safety guidance without chatty behavior."""
+        if del_count <= 0:
+            return "Select a keep file in each group to unlock execution."
+        if risk_flags > 0:
+            return f"Review {risk_flags} risk flag(s) before execution."
+        if reclaim_bytes >= 1_000_000_000:
+            return "Large cleanup detected. Run Preview Effects before execution."
+        return "Deletion plan looks safe. Preview Effects is still recommended."

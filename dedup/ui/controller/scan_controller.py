@@ -82,3 +82,10 @@ class ScanController:
         """Cancel current scan; set intent idle and delegate to coordinator."""
         self._store.set_intent_lifecycle(IntentLifecycle(status="idle", intent_type="scan"))
         self._coordinator.cancel_scan()
+
+    def get_resumable_scan_ids(self) -> list[str]:
+        """Expose resumable scans for interruption zero-state actions."""
+        try:
+            return list(self._coordinator.get_resumable_scan_ids() or [])
+        except Exception:
+            return []

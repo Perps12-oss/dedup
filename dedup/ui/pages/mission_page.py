@@ -73,16 +73,28 @@ class MissionPage(ttk.Frame):
         hero = ttk.Frame(self, padding=(pad, 0, pad, SPACING["lg"]))
         hero.grid(row=1, column=0, columnspan=2, sticky="ew")
         hero.columnconfigure(0, weight=1)
+        self._welcome_var = tk.StringVar(value="")
+        self._welcome_lbl = ttk.Label(
+            hero,
+            textvariable=self._welcome_var,
+            style="Muted.TLabel",
+            font=font_tuple("body"),
+        )
+        self._welcome_lbl.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, SPACING["sm"]))
         ttk.Button(hero, text=f"{IC.SCAN}  Start New Scan",
                    style="Accent.TButton",
-                   command=self._on_start).grid(row=0, column=0, sticky="w", padx=(0, SPACING["sm"]))
+                   command=self._on_start).grid(row=1, column=0, sticky="w", padx=(0, SPACING["sm"]))
         ttk.Button(hero, text=f"{IC.RESUME}  Resume",
                    style="Ghost.TButton",
-                   command=self._on_resume).grid(row=0, column=1, sticky="w", padx=SPACING["sm"])
+                   command=self._on_resume).grid(row=1, column=1, sticky="w", padx=SPACING["sm"])
         self._open_review_btn = ttk.Button(hero, text=f"{IC.REVIEW}  Open Last Review",
                                            style="Ghost.TButton",
                                            command=self._on_open_last_review)
-        self._open_review_btn.grid(row=0, column=2, sticky="w")
+        self._open_review_btn.grid(row=1, column=2, sticky="w")
+        self._tour_btn = ttk.Button(hero, text="Watch Tour",
+                                    style="Ghost.TButton",
+                                    command=self._show_quick_tour)
+        self._tour_btn.grid(row=2, column=0, sticky="w", pady=(SPACING["sm"], 0))
 
         # ── Readiness row: Engine Status + Last Scan ───────────────────
         self._engine_card = SectionCard(self, title=f"{IC.SHIELD}  Engine Status")
@@ -326,6 +338,14 @@ class MissionPage(ttk.Frame):
     def _update_recent_sessions(self):
         self._recent_table.clear()
         resumable = set(getattr(self.vm, "resumable_scan_ids", None) or self.coordinator.get_resumable_scan_ids() or [])
+        if not self.vm.recent_sessions:
+            self._welcome_var.set(
+                "Welcome to CEREBRO\nYour first scan takes 2 minutes. No data leaves your device."
+            )
+            self._tour_btn.grid()
+            return
+        self._tour_btn.grid_remove()
+        self._welcome_var.set("")
         for item in self.vm.recent_sessions[:8]:
             scan_id = item.get("scan_id", "")
             started = fmt_dt(item.get("started_at", ""))
@@ -344,6 +364,16 @@ class MissionPage(ttk.Frame):
                 "danger" if status == "failed" else "")
             self._recent_table.insert_row(scan_id, (started, roots_str, files, groups, reclaim, status),
                                           tags=(tag,) if tag else ())
+        return
+
+    def _show_quick_tour(self) -> None:
+        messagebox.showinfo(
+            "CEREBRO Quick Tour",
+            "Scan -> Review -> Cleanup\n\n"
+            "1) Start Scan to discover duplicates.\n"
+            "2) Use Decision Studio to choose keep/delete safely.\n"
+            "3) Execute cleanup with preview and audit protections."
+        )
 
     def _update_recent_folders(self):
         for w in self._recent_frame.winfo_children():

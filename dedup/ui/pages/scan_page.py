@@ -76,6 +76,9 @@ class ScanPage(ttk.Frame):
         self._pending_defer: set = set()  # coalesce deferred renders
         self._last_events_snapshot: Optional[tuple] = None  # (len, first, last) to skip no-op refresh
         self._scan_completed = False  # show "Go to Review" when True
+        self._last_scan_path: Optional[Path] = None
+        self._last_scan_options: Optional[dict] = None
+        self._last_resume_id: str = ""
         self._build()
 
     # ------------------------------------------------------------------
@@ -175,13 +178,19 @@ class ScanPage(ttk.Frame):
                     for pname in PHASE_ORDER:
                         self._timeline.set_phase_state(pname, "completed")
                     self._scan_completed = True
+                    self._state_hint.set("Scan complete. Continue in Decision Studio.")
+                    self._interrupt_banner.grid_remove()
                     self._defer(self._update_go_to_review_btn, "go_to_review_btn")
                 elif terminal.status == "cancelled":
                     self._ribbon.set_state("idle", label_override="Cancelled")
+                    self._state_hint.set("Scan interrupted. You can resume this session from Mission Control.")
+                    self._show_interruption_banner("Scan interrupted. Resume where you left off?")
                 elif terminal.status == "failed":
                     err_msg = (terminal.resume_reason or "Scan failed")[:200]
                     self.vm.error_message = err_msg
                     self._ribbon.set_state("failed", detail=err_msg[:60])
+                    self._state_hint.set("Scan failed. Inspect diagnostics, then retry or resume.")
+                    self._show_interruption_banner("Scan interrupted. Resume where you left off?")
                     self._error_panel.set_message(err_msg)
                     self._error_panel.show()
             self._defer(self._render_metrics, "metrics")
@@ -279,12 +288,18 @@ class ScanPage(ttk.Frame):
             for pname in PHASE_ORDER:
                 self._timeline.set_phase_state(pname, "completed")
             self._scan_completed = True
+            self._state_hint.set("Scan complete. Continue in Decision Studio.")
+            self._interrupt_banner.grid_remove()
             self._defer(self._update_go_to_review_btn, "go_to_review_btn")
         elif proj.status == "cancelled":
             self._ribbon.set_state("idle", label_override="Cancelled")
+            self._state_hint.set("Scan interrupted. You can resume this session from Mission Control.")
+            self._show_interruption_banner("Scan interrupted. Resume where you left off?")
         elif proj.status == "failed":
             self._ribbon.set_state("failed",
                                    detail=proj.resume_reason[:60] if proj.resume_reason else "Error")
+            self._state_hint.set("Scan failed. Inspect diagnostics, then retry or resume.")
+            self._show_interruption_banner("Scan interrupted. Resume where you left off?")
 
     # ------------------------------------------------------------------
     # Widget rendering (granular — no whole-page repaint)
@@ -368,11 +383,43 @@ class ScanPage(ttk.Frame):
         if snapshot == self._last_events_snapshot:
             return
         self._last_events_snapshot = snapshot
-        self._events_list.delete(0, "end")
+        critical: list[str] = []
+        progress: list[str] = []
+        details: list[str] = []
         for entry in display:
-            self._events_list.insert("end", entry)
-        if display:
-            self._events_list.see("end")
+            zone = self._classify_event_zone(entry)
+            if zone == "critical":
+                critical.append(entry)
+            elif zone == "progress":
+                progress.append(entry)
+            else:
+                details.append(entry)
+
+        self._events_critical.delete(0, "end")
+        self._events_progress.delete(0, "end")
+        self._events_detail.delete(0, "end")
+        for e in critical[:30]:
+            self._events_critical.insert("end", e)
+        for e in progress[:30]:
+            self._events_progress.insert("end", e)
+        for e in details[:50]:
+            self._events_detail.insert("end", e)
+
+        if critical:
+            self._events_critical.see("end")
+        if progress:
+            self._events_progress.see("end")
+        if details:
+            self._events_detail.see("end")
+        self._details_toggle_var.set(f"Show details ({len(details)})")
+
+    def _classify_event_zone(self, entry: str) -> str:
+        text = (entry or "").lower()
+        if any(k in text for k in ("error", "warn", "failed", "exception", "critical")):
+            return "critical"
+        if any(k in text for k in ("scan", "files", "groups", "throughput", "progress", "phase")):
+            return "progress"
+        return "detail"
 
     # ------------------------------------------------------------------
     # Layout
@@ -380,7 +427,7 @@ class ScanPage(ttk.Frame):
 
     def _build(self):
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(7, weight=1)  # Activity Feed row stretches
+        self.rowconfigure(8, weight=1)  # Activity Feed row stretches
         pad = SPACING["page"]
         pad_kw = {"padx": pad, "pady": (0, SPACING["md"])}
 
@@ -395,46 +442,65 @@ class ScanPage(ttk.Frame):
         ttk.Label(hdr, text="Session · Phase timeline · Metrics · Activity",
                   style="Muted.TLabel",
                   font=font_tuple("page_subtitle")).grid(row=1, column=0, sticky="w")
+        self._state_hint = tk.StringVar(value="No active scan. Start or resume from Mission Control.")
+        ttk.Label(hdr, textvariable=self._state_hint, style="Muted.TLabel",
+                  font=font_tuple("data_label")).grid(row=2, column=0, sticky="w", pady=(SPACING["xs"], 0))
         self._cancel_btn = ttk.Button(
             hdr, text=f"{IC.STOPPED}  Cancel",
             style="Ghost.TButton", command=self._on_cancel)
-        self._cancel_btn.grid(row=0, column=2, rowspan=2, sticky="e")
+        self._cancel_btn.grid(row=0, column=2, rowspan=3, sticky="e")
         self._go_to_review_btn = ttk.Button(
             hdr, text=f"{IC.REVIEW}  Go to Review",
             style="Accent.TButton", command=self._on_go_to_review)
-        self._go_to_review_btn.grid(row=0, column=3, rowspan=2, sticky="e", padx=(SPACING["md"], 0))
+        self._go_to_review_btn.grid(row=0, column=3, rowspan=3, sticky="e", padx=(SPACING["md"], 0))
         self._go_to_review_btn.grid_remove()
+
+        # Zero-state interruption banner
+        self._interrupt_banner = ttk.Frame(self, style="Panel.TFrame", padding=(pad, SPACING["sm"], pad, SPACING["sm"]))
+        self._interrupt_banner.grid(row=1, column=0, sticky="ew", **pad_kw)
+        self._interrupt_msg = tk.StringVar(value="Scan interrupted. Resume where you left off?")
+        ttk.Label(self._interrupt_banner, textvariable=self._interrupt_msg,
+                  style="Panel.Warning.TLabel", font=font_tuple("body_bold")).pack(anchor="w")
+        _ibtn = ttk.Frame(self._interrupt_banner, style="Panel.TFrame")
+        _ibtn.pack(anchor="w", pady=(SPACING["xs"], 0))
+        ttk.Button(_ibtn, text="Resume", style="Accent.TButton",
+                   command=self._on_resume_interrupted).pack(side="left", padx=(0, SPACING["sm"]))
+        ttk.Button(_ibtn, text="Restart", style="Ghost.TButton",
+                   command=self._on_restart_interrupted).pack(side="left", padx=(0, SPACING["sm"]))
+        ttk.Button(_ibtn, text="Cancel", style="Ghost.TButton",
+                   command=self._on_dismiss_interrupt).pack(side="left")
+        self._interrupt_banner.grid_remove()
 
         # ── Degraded banner (store-driven; hidden when no degraded state) ─
         self._degraded_banner = DegradedBanner(self, message="", on_dismiss=lambda: self._degraded_banner.hide())
-        self._degraded_banner.grid(row=1, column=0, sticky="ew", **pad_kw)
+        self._degraded_banner.grid(row=2, column=0, sticky="ew", **pad_kw)
         self._degraded_banner.hide()
 
         # ── Scan Target Card (status ribbon) ──────────────────────────
         self._ribbon = StatusRibbon(self)
-        self._ribbon.grid(row=2, column=0, sticky="ew", **pad_kw)
+        self._ribbon.grid(row=3, column=0, sticky="ew", **pad_kw)
 
         # ── Error panel (shown when vm.error_message set; e.g. scan failed) ─
         self._error_panel = ErrorPanel(
             self, message="",
             retry_label="Back", on_retry=self._on_error_panel_dismiss)
-        self._error_panel.grid(row=3, column=0, sticky="ew", **pad_kw)
+        self._error_panel.grid(row=4, column=0, sticky="ew", **pad_kw)
         self._error_panel.hide()
 
         # ── Phase Timeline ────────────────────────────────────────────
         tl_card = SectionCard(self, title=f"{IC.ACTIVE}  Phase Timeline")
-        tl_card.grid(row=4, column=0, sticky="ew", **pad_kw)
+        tl_card.grid(row=5, column=0, sticky="ew", **pad_kw)
         self._timeline = PhaseTimeline(tl_card.body)
         self._timeline.pack(fill="x")
 
         # ── Live Metrics Panel ────────────────────────────────────────
         metrics_card = SectionCard(self, title=f"{IC.SPEED}  Live Metrics Panel")
-        metrics_card.grid(row=5, column=0, sticky="ew", **pad_kw)
+        metrics_card.grid(row=6, column=0, sticky="ew", **pad_kw)
         self._build_live_metrics(metrics_card.body)
 
         # ── Progress/Session · Health/Compatibility · Result Summary ───
         ops_row = ttk.Frame(self)
-        ops_row.grid(row=6, column=0, sticky="ew", **pad_kw)
+        ops_row.grid(row=7, column=0, sticky="ew", **pad_kw)
         ops_row.columnconfigure(0, weight=1)
         ops_row.columnconfigure(1, weight=1)
         ops_row.columnconfigure(2, weight=1)
@@ -453,7 +519,7 @@ class ScanPage(ttk.Frame):
 
         # ── Activity Feed ─────────────────────────────────────────────
         events_card = SectionCard(self, title=f"{IC.INFO}  Activity Feed")
-        events_card.grid(row=7, column=0, sticky="nsew", **pad_kw)
+        events_card.grid(row=8, column=0, sticky="nsew", **pad_kw)
         self._build_events(events_card.body)
 
     def _build_live_metrics(self, body: ttk.Frame):
@@ -545,16 +611,66 @@ class ScanPage(ttk.Frame):
 
     def _build_events(self, body: ttk.Frame):
         body.columnconfigure(0, weight=1)
-        body.rowconfigure(0, weight=1)
-        self._events_list = tk.Listbox(
-            body, height=8, selectmode="browse",
-            font=("Consolas", 8), borderwidth=0, highlightthickness=0,
-            activestyle="none")
-        scroll = ttk.Scrollbar(
-            body, orient="vertical", command=self._events_list.yview)
-        self._events_list.configure(yscrollcommand=scroll.set)
-        self._events_list.grid(row=0, column=0, sticky="nsew")
-        scroll.grid(row=0, column=1, sticky="ns")
+        body.rowconfigure(1, weight=1)
+        body.rowconfigure(3, weight=1)
+        body.rowconfigure(5, weight=1)
+
+        ttk.Label(body, text="Critical events", style="Panel.Warning.TLabel",
+                  font=font_tuple("data_label")).grid(row=0, column=0, sticky="w", pady=(0, 2))
+        crit_wrap = ttk.Frame(body, style="Panel.TFrame")
+        crit_wrap.grid(row=1, column=0, sticky="nsew")
+        crit_wrap.columnconfigure(0, weight=1)
+        crit_wrap.rowconfigure(0, weight=1)
+        self._events_critical = tk.Listbox(
+            crit_wrap, height=3, selectmode="browse", font=("Consolas", 8),
+            borderwidth=0, highlightthickness=0, activestyle="none")
+        crit_scroll = ttk.Scrollbar(crit_wrap, orient="vertical", command=self._events_critical.yview)
+        self._events_critical.configure(yscrollcommand=crit_scroll.set)
+        self._events_critical.grid(row=0, column=0, sticky="nsew")
+        crit_scroll.grid(row=0, column=1, sticky="ns")
+
+        ttk.Label(body, text="Progress events", style="Panel.TLabel",
+                  font=font_tuple("data_label")).grid(row=2, column=0, sticky="w", pady=(8, 2))
+        prog_wrap = ttk.Frame(body, style="Panel.TFrame")
+        prog_wrap.grid(row=3, column=0, sticky="nsew")
+        prog_wrap.columnconfigure(0, weight=1)
+        prog_wrap.rowconfigure(0, weight=1)
+        self._events_progress = tk.Listbox(
+            prog_wrap, height=3, selectmode="browse", font=("Consolas", 8),
+            borderwidth=0, highlightthickness=0, activestyle="none")
+        prog_scroll = ttk.Scrollbar(prog_wrap, orient="vertical", command=self._events_progress.yview)
+        self._events_progress.configure(yscrollcommand=prog_scroll.set)
+        self._events_progress.grid(row=0, column=0, sticky="nsew")
+        prog_scroll.grid(row=0, column=1, sticky="ns")
+
+        ctrl = ttk.Frame(body, style="Panel.TFrame")
+        ctrl.grid(row=4, column=0, sticky="ew", pady=(8, 2))
+        self._details_visible = tk.BooleanVar(value=False)
+        self._details_toggle_var = tk.StringVar(value="Show details (0)")
+        ttk.Button(ctrl, textvariable=self._details_toggle_var, style="Ghost.TButton",
+                   command=self._toggle_details).pack(side="left")
+
+        self._detail_wrap = ttk.Frame(body, style="Panel.TFrame")
+        self._detail_wrap.grid(row=5, column=0, sticky="nsew")
+        self._detail_wrap.columnconfigure(0, weight=1)
+        self._detail_wrap.rowconfigure(0, weight=1)
+        self._events_detail = tk.Listbox(
+            self._detail_wrap, height=4, selectmode="browse", font=("Consolas", 8),
+            borderwidth=0, highlightthickness=0, activestyle="none")
+        detail_scroll = ttk.Scrollbar(self._detail_wrap, orient="vertical", command=self._events_detail.yview)
+        self._events_detail.configure(yscrollcommand=detail_scroll.set)
+        self._events_detail.grid(row=0, column=0, sticky="nsew")
+        detail_scroll.grid(row=0, column=1, sticky="ns")
+        self._detail_wrap.grid_remove()
+
+    def _toggle_details(self) -> None:
+        visible = bool(self._details_visible.get())
+        if visible:
+            self._detail_wrap.grid_remove()
+            self._details_visible.set(False)
+        else:
+            self._detail_wrap.grid()
+            self._details_visible.set(True)
 
     # ------------------------------------------------------------------
     # Public API
@@ -562,7 +678,10 @@ class ScanPage(ttk.Frame):
 
     def start_scan(self, path: Path, options: dict) -> None:
         self._reset_vm()
+        self._last_scan_path = Path(path)
+        self._last_scan_options = dict(options or {})
         self._title_lbl.configure(text=f"{IC.SCAN}  Scanning — {path.name}")
+        self._state_hint.set("Scan running. Activity Feed shows live progress and critical events.")
         self._ribbon.set_state("scanning", detail="Initialising…")
         self._progress_bar.start(12)
         self._schedule_elapsed()
@@ -585,7 +704,9 @@ class ScanPage(ttk.Frame):
 
     def start_resume(self, scan_id: str) -> None:
         self._reset_vm()
+        self._last_resume_id = scan_id
         self._title_lbl.configure(text=f"{IC.RESUME}  Resuming scan…")
+        self._state_hint.set("Resuming interrupted session from checkpoint.")
         self._ribbon.set_state("info", detail="Checking checkpoints…",
                                label_override="Resume in progress")
         self._progress_bar.start(12)
@@ -658,6 +779,8 @@ class ScanPage(ttk.Frame):
             self._result_vars["Duplicate files"].set(fmt_int(fr.duplicate_files_total))
             self._result_vars["Reclaimable"].set(fmt_bytes(fr.reclaimable_bytes_total))
         self._scan_completed = True
+        self._state_hint.set("Scan complete. Continue in Decision Studio.")
+        self._interrupt_banner.grid_remove()
         self._defer(self._update_go_to_review_btn, "go_to_review_btn")
         self.after(0, lambda: self.on_complete(result))
 
@@ -666,6 +789,8 @@ class ScanPage(ttk.Frame):
         self._progress_bar.stop()
         self._cancel_elapsed()
         self.vm.error_message = error[:200]
+        self._state_hint.set("Scan failed. Review the error and retry.")
+        self._show_interruption_banner("Scan interrupted. Resume where you left off?")
         self._ribbon.set_state("failed", detail=error[:60])
         self._error_panel.set_message(self.vm.error_message)
         self._error_panel.show()
@@ -719,7 +844,10 @@ class ScanPage(ttk.Frame):
         self._defer(self._update_go_to_review_btn, "go_to_review_btn")
         self._error_panel.hide()
         self._timeline.reset()
-        self._events_list.delete(0, "end")
+        self._events_critical.delete(0, "end")
+        self._events_progress.delete(0, "end")
+        self._events_detail.delete(0, "end")
+        self._details_toggle_var.set("Show details (0)")
         for c in self._metric_cards.values():
             c.update("0")
         for v in self._work_vars.values():
@@ -728,6 +856,8 @@ class ScanPage(ttk.Frame):
             v.set("—")
         for v in self._result_vars.values():
             v.set("—")
+        self._state_hint.set("Preparing scan session…")
+        self._interrupt_banner.grid_remove()
 
     def _schedule_elapsed(self) -> None:
         self._after_id = self.after(1000, self._tick_elapsed)
@@ -746,3 +876,29 @@ class ScanPage(ttk.Frame):
 
     def on_show(self) -> None:
         pass
+
+    def _show_interruption_banner(self, text: str) -> None:
+        self._interrupt_msg.set(text)
+        self._interrupt_banner.grid()
+
+    def _on_dismiss_interrupt(self) -> None:
+        self._interrupt_banner.grid_remove()
+
+    def _on_resume_interrupted(self) -> None:
+        scan_id = self._last_resume_id
+        if not scan_id and self._scan_controller and hasattr(self._scan_controller, "get_resumable_scan_ids"):
+            ids = self._scan_controller.get_resumable_scan_ids() or []
+            if ids:
+                scan_id = ids[0]
+        if not scan_id:
+            messagebox.showinfo("Resume", "No resumable scan available.")
+            return
+        self.start_resume(scan_id)
+        self._interrupt_banner.grid_remove()
+
+    def _on_restart_interrupted(self) -> None:
+        if self._last_scan_path and self._last_scan_options is not None:
+            self.start_scan(self._last_scan_path, dict(self._last_scan_options))
+            self._interrupt_banner.grid_remove()
+            return
+        messagebox.showinfo("Restart", "No previous scan request available to restart.")

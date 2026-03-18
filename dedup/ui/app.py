@@ -128,6 +128,7 @@ class CerebroApp:
 
         # ── Navigate home ─────────────────────────────────────────────
         self._navigate("mission")
+        self._bind_global_shortcuts()
 
         # ── Window close ─────────────────────────────────────────────
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -207,6 +208,8 @@ class CerebroApp:
         self._review = ReviewPage(
             content,
             on_delete_complete=self._on_delete_complete,
+            on_new_scan=lambda: self._navigate("scan"),
+            on_view_history=lambda: self._navigate("history"),
             store=self.store,
         )
         self._review_controller = ReviewController(
@@ -252,6 +255,37 @@ class CerebroApp:
         self.shell.show_page(page)
         self._update_page_actions(page)
         self._update_drawer_content(page)
+
+    def _bind_global_shortcuts(self) -> None:
+        """Global keyboard layer for studio navigation and shortcut help."""
+        self.root.bind_all("<Control-Key-1>", lambda e: self._navigate("mission"), add="+")
+        self.root.bind_all("<Control-Key-2>", lambda e: self._navigate("scan"), add="+")
+        self.root.bind_all("<Control-Key-3>", lambda e: self._navigate("review"), add="+")
+        self.root.bind_all("<Control-comma>", lambda e: self._navigate("settings"), add="+")
+        self.root.bind_all("?", lambda e: self._show_shortcuts_help(), add="+")
+
+    def _show_shortcuts_help(self) -> None:
+        """Show compact keyboard cheat sheet."""
+        text = (
+            "Global\n"
+            "  Ctrl+1  Mission Control\n"
+            "  Ctrl+2  Live Scan Studio\n"
+            "  Ctrl+3  Decision Studio\n"
+            "  Ctrl+,  Settings\n"
+            "  ?       Show this help\n\n"
+            "Decision Studio\n"
+            "  Ctrl+Left / Ctrl+Right  Previous/Next group\n"
+            "  G / T / C               Gallery/Table/Compare mode\n"
+            "  Space                   Quick look (selected file)\n"
+            "  X                       Quick compare overlay\n"
+            "  [ / ]                   Compare previous/next pair\n"
+            "  K / Shift+K             Keep selected / Clear keep\n"
+            "  A                       Apply Smart Auto Select\n"
+            "  P                       Preview Effects\n"
+            "  U                       Undo guidance\n"
+            "  Ctrl+Enter              Execute deletion\n"
+        )
+        messagebox.showinfo("Keyboard Shortcuts", text)
 
     def _update_page_actions(self, page: str):
         action_map = {
