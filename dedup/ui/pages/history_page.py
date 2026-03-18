@@ -202,7 +202,11 @@ class HistoryPage(ttk.Frame):
         if self._on_request_refresh:
             self._on_request_refresh()
         else:
-            self._refresh()
+            self.refresh()
+
+    def refresh(self):
+        """Public API: refresh session list and table from coordinator."""
+        self._refresh()
 
     def _refresh(self):
         self.vm.refresh(self.coordinator)

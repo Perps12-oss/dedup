@@ -8,12 +8,10 @@ Layout:
     Center(6): Review Workspace (Table | Gallery | Compare)
     Right (3): Plan Drawer (Safety Panel)
 
-Clear Selection:
-  There is no dedicated "Clear Selection" button in the Review UI. To clear a
-  group's keep choice, the user may (a) select a different file as KEEP in that
-  group, or (b) load a new scan result (load_result resets vm.keep_selections).
-  ReviewVM.clear_keep(group_id) exists but is not wired to any UI control.
-  Workspace state and plan state are both driven by vm.keep_selections.
+Clear Selection: The workspace toolbar shows "Clear selection" when the current
+group has a keep choice; it calls clear_keep for the selected group. User can
+also change keep to another file in the group or load a new scan (load_result
+resets vm.keep_selections). Workspace and plan state are driven by vm.keep_selections.
 """
 from __future__ import annotations
 import tkinter as tk

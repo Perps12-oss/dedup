@@ -273,15 +273,15 @@ class CerebroApp:
                 ("Copy Diag",    "Ghost.TButton",  self._copy_diagnostics),
             ],
             "review":      [
-                ("Preview Effects", "Ghost.TButton",  lambda: self._review._on_dry_run()),
-                ("DELETE",          "Danger.TButton", lambda: self._review._on_execute()),
+                ("Preview Effects", "Ghost.TButton",  lambda: self._review_controller.handle_preview_deletion()),
+                ("DELETE",          "Danger.TButton", lambda: self._review_controller.handle_execute_deletion()),
             ],
             "history":     [
-                ("Refresh",      "Ghost.TButton",  lambda: self._history._refresh()),
+                ("Refresh",      "Ghost.TButton",  lambda: self._history.refresh()),
                 ("Export",       "Ghost.TButton",  lambda: None),
             ],
             "diagnostics": [
-                ("Refresh",      "Ghost.TButton",  lambda: self._diagnostics._refresh()),
+                ("Refresh",      "Ghost.TButton",  lambda: self._diagnostics.refresh()),
                 ("Export",       "Ghost.TButton",  lambda: None),
             ],
             "settings":    [],
@@ -520,6 +520,7 @@ class CerebroApp:
 # ---------------------------------------------------------------------------
 # Legacy shim
 # ---------------------------------------------------------------------------
+# Public alias for compatibility; CerebroApp is the canonical class name.
 DedupApp = CerebroApp
 
 

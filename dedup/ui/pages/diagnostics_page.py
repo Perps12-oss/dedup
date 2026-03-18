@@ -278,6 +278,10 @@ class DiagnosticsPage(ttk.Frame):
 
     # ----------------------------------------------------------------
     def on_show(self):
+        self.refresh()
+
+    def refresh(self):
+        """Public API: refresh diagnostics data from coordinator."""
         self._refresh()
 
     def _refresh(self):

@@ -17,7 +17,7 @@ setup(
     long_description_content_type="text/markdown",
     author="DEDUP Project",
     python_requires=">=3.9",
-    packages=find_packages(),
+    packages=find_packages(exclude=["dedup.tests", "dedup.tests.*"]),
     entry_points={
         "console_scripts": [
             "dedup=dedup.main:main",

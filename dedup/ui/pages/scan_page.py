@@ -105,7 +105,8 @@ class ScanPage(ttk.Frame):
     # ------------------------------------------------------------------
 
     def attach_store(self, store: "UIStateStore") -> None:
-        """Subscribe to UIStateStore for scan display. Store is fed by hub adapter."""
+        """Subscribe to UIStateStore for scan display. Store is fed by hub adapter. Single authority: when store is attached, hub is detached."""
+        self.detach_hub()
         self.detach_store()
         self._store = store
 
