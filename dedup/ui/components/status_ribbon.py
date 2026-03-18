@@ -15,6 +15,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Optional
 
+from ..theme.design_system import font_tuple, SPACING
 from ..utils.icons import IC
 
 VARIANT_CFG = {
@@ -35,7 +36,7 @@ class StatusRibbon(ttk.Frame):
     """Compact status ribbon used at top of Scan and Review pages."""
 
     def __init__(self, parent, **kwargs):
-        super().__init__(parent, style="Panel.TFrame", padding=(12, 6), **kwargs)
+        super().__init__(parent, style="Panel.TFrame", padding=(SPACING["lg"], SPACING["md"]), **kwargs)
         self.columnconfigure(1, weight=1)
 
         self._icon_var  = tk.StringVar(value="")
@@ -44,18 +45,18 @@ class StatusRibbon(ttk.Frame):
 
         self._icon_lbl = ttk.Label(self, textvariable=self._icon_var,
                                    style="Panel.Muted.TLabel",
-                                   font=("Segoe UI", 10))
-        self._icon_lbl.grid(row=0, column=0, padx=(0, 6), sticky="w")
+                                   font=font_tuple("card_title"))
+        self._icon_lbl.grid(row=0, column=0, padx=(0, SPACING["md"]), sticky="w")
 
         self._state_lbl = ttk.Label(self, textvariable=self._state_var,
                                     style="Panel.Muted.TLabel",
-                                    font=("Segoe UI", 9, "bold"))
+                                    font=font_tuple("body_bold"))
         self._state_lbl.grid(row=0, column=1, sticky="w")
 
         self._detail_lbl = ttk.Label(self, textvariable=self._detail_var,
                                      style="Panel.Secondary.TLabel",
-                                     font=("Segoe UI", 8))
-        self._detail_lbl.grid(row=0, column=2, sticky="e", padx=(8, 0))
+                                     font=font_tuple("data_label"))
+        self._detail_lbl.grid(row=0, column=2, sticky="e", padx=(SPACING["md"], 0))
 
     def set_state(self, variant: str, detail: str = "", label_override: str = ""):
         style, icon, default_label = VARIANT_CFG.get(variant, VARIANT_CFG["idle"])

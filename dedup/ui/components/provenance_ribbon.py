@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Optional
 
+from ..theme.design_system import font_tuple, SPACING
 from ..utils.formatting import fmt_bytes, fmt_int
 
 
@@ -11,7 +12,7 @@ class ProvenanceRibbon(ttk.Frame):
     """Shows scan provenance: session id, verification level, groups, reclaimable."""
 
     def __init__(self, parent, **kwargs):
-        super().__init__(parent, style="Panel.TFrame", padding=(12, 6), **kwargs)
+        super().__init__(parent, style="Panel.TFrame", padding=(SPACING["lg"], SPACING["md"]), **kwargs)
 
         self._items: list = []
 
@@ -29,13 +30,13 @@ class ProvenanceRibbon(ttk.Frame):
         ]:
             if col > 0:
                 ttk.Separator(self, orient="vertical").grid(
-                    row=0, column=col * 2 - 1, sticky="ns", padx=10)
+                    row=0, column=col * 2 - 1, sticky="ns", padx=SPACING["lg"])
             lf = ttk.Frame(self, style="Panel.TFrame")
             lf.grid(row=0, column=col * 2, sticky="w")
             ttk.Label(lf, text=f"{label}: ", style="Panel.Muted.TLabel",
-                      font=("Segoe UI", 8)).pack(side="left")
+                      font=font_tuple("data_label")).pack(side="left")
             ttk.Label(lf, textvariable=var, style="Panel.TLabel",
-                      font=("Segoe UI", 9, "bold")).pack(side="left")
+                      font=font_tuple("data_value")).pack(side="left")
             col += 1
 
         self.columnconfigure(col * 2 - 1, weight=1)

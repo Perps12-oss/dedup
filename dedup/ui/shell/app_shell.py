@@ -107,7 +107,10 @@ class AppShell(ttk.Frame):
 
     def show_page(self, name: str):
         if self._active_page and self._active_page in self._pages:
-            self._pages[self._active_page].grid_remove()
+            page = self._pages[self._active_page]
+            if hasattr(page, "on_hide"):
+                page.on_hide()
+            page.grid_remove()
         self._active_page = name
         if name in self._pages:
             self._pages[name].grid()

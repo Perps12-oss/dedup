@@ -154,8 +154,11 @@ class CerebroApp:
         except AttributeError:
             _log.debug("StatusStrip.subscribe_to_store not available")
 
-        # Scan page — primary live-update consumer
-        self._scan.attach_hub(self.hub)
+        # Scan page — store-driven display (hub feeds store via adapter)
+        try:
+            self._scan.attach_store(self.store)
+        except AttributeError:
+            self._scan.attach_hub(self.hub)
 
         # Diagnostics page — renders from store (phase, compat, events_log)
         try:
@@ -197,6 +200,7 @@ class CerebroApp:
             coordinator=self.coordinator,
             on_complete=self._on_scan_complete,
             on_cancel=self._on_scan_cancel,
+            on_go_to_review=self._go_to_review_after_scan,
             scan_controller=self._scan_controller,
         )
         self.shell.register_page("scan", self._scan)
@@ -374,6 +378,13 @@ class CerebroApp:
         self.state.scan_phase  = "Results"
         self._review.load_result(result)
         self._navigate("review")
+
+    def _go_to_review_after_scan(self):
+        """Go to Review with last scan result (e.g. when user clicks 'Go to Review' on Scan page)."""
+        result = self.coordinator.get_last_result()
+        if result:
+            self._review.load_result(result)
+            self._navigate("review")
 
     def _on_scan_pause(self):
         """Stop the scan and return to mission so the user can resume later."""

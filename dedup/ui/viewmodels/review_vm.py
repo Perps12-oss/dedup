@@ -33,6 +33,7 @@ class ReviewVM:
     current_group_idx:  int             = 0
     view_mode:          str             = "table"   # "table" | "gallery" | "compare"
     filter_text:        str             = ""
+    filter_state:       str             = "all"  # "all" | "unresolved" | "keep_selected" | "ready" | "warning"
     show_reviewed:      bool            = True
     deletion_mode:      str             = "trash"   # "trash" | "permanent"
     selected_group_id:  Optional[str]   = None
@@ -72,11 +73,20 @@ class ReviewVM:
 
     @property
     def filtered_groups(self) -> List[ReviewGroupProjection]:
-        if not self.filter_text:
-            return self.groups
-        q = self.filter_text.lower()
-        return [g for g in self.groups if q in g.metadata_summary.lower()
-                or q in g.group_id.lower()]
+        from ..components.decision_state import get_group_decision_state, STATE_UNRESOLVED, STATE_READY, STATE_WARNING
+        out = list(self.groups)
+        if self.filter_state and self.filter_state != "all":
+            out = [
+                g for g in out
+                if get_group_decision_state(g.group_id, self.keep_selections, g.has_risk) == self.filter_state
+            ]
+        if self.filter_text:
+            q = self.filter_text.lower()
+            out = [g for g in out if q in g.metadata_summary.lower() or q in g.group_id.lower()]
+        # Sort by decision-making flow: unresolved first, then warning, then ready
+        _order = {STATE_UNRESOLVED: 0, STATE_WARNING: 1, STATE_READY: 2}
+        out.sort(key=lambda g: _order.get(get_group_decision_state(g.group_id, self.keep_selections, g.has_risk), 3))
+        return out
 
     def set_keep(self, group_id: str, path: str) -> None:
         self.keep_selections[group_id] = path

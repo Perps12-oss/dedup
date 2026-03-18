@@ -15,10 +15,11 @@ from typing import Callable, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from ..state.store import UIStateStore
 
-from ..components import DataTable, SectionCard, MetricCard, EmptyState
+from ..components import DataTable, SectionCard, MetricCard, EmptyState, InlineNotice
 from ..viewmodels.history_vm import HistoryVM, SessionEntry
 from ..utils.formatting import fmt_bytes, fmt_int, fmt_duration, fmt_dt
 from ..utils.icons import IC
+from ..theme.design_system import font_tuple, SPACING
 from ...orchestration.coordinator import ScanCoordinator
 from ...infrastructure.trash import list_dedup_trash, empty_dedup_trash
 
@@ -46,29 +47,38 @@ class HistoryPage(ttk.Frame):
         self.rowconfigure(2, weight=1)
 
         # ── Page header ──────────────────────────────────────────────
-        hdr = ttk.Frame(self, padding=(16, 12, 16, 0))
+        pad = SPACING["page"]
+        hdr = ttk.Frame(self, padding=(pad, SPACING["lg"], pad, 0))
         hdr.grid(row=0, column=0, sticky="ew")
         hdr.columnconfigure(1, weight=1)
         ttk.Label(hdr, text=f"{IC.HISTORY}  History",
-                  font=("Segoe UI", 14, "bold")).grid(row=0, column=0, sticky="w")
+                  font=font_tuple("page_title")).grid(row=0, column=0, sticky="w")
+        ttk.Label(hdr, text="Sessions · Resume · Archive",
+                  style="Muted.TLabel",
+                  font=font_tuple("page_subtitle")).grid(row=1, column=0, sticky="w")
         ttk.Button(hdr, text=f"{IC.REFRESH} Refresh",
                    style="Ghost.TButton",
-                   command=self._refresh).grid(row=0, column=2, sticky="e")
+                   command=self._refresh).grid(row=0, column=2, rowspan=2, sticky="e")
 
         # ── Summary stats strip ──────────────────────────────────────
         stats_card = SectionCard(self, title="Summary")
-        stats_card.grid(row=1, column=0, sticky="ew", padx=16, pady=8)
+        stats_card.grid(row=1, column=0, sticky="ew", padx=pad, pady=SPACING["md"])
         self._build_summary(stats_card.body)
 
         # ── Session table ─────────────────────────────────────────────
         table_card = SectionCard(self, title=f"{IC.FILE}  Sessions")
-        table_card.grid(row=2, column=0, sticky="nsew", padx=16, pady=(0, 8))
-        table_card.body.rowconfigure(1, weight=1)
+        table_card.grid(row=2, column=0, sticky="nsew", padx=pad, pady=(0, SPACING["md"]))
+        table_card.body.rowconfigure(2, weight=1)
+        self._load_notice = InlineNotice(
+            table_card.body, message="", variant="warning",
+            action_label="Dismiss", on_action=lambda: self._load_notice.hide())
+        self._load_notice.grid(row=0, column=0, sticky="ew", pady=(0, SPACING["sm"]))
+        self._load_notice.hide()
         self._build_table(table_card.body)
 
         # ── Detail panel ──────────────────────────────────────────────
         detail_card = SectionCard(self, title=f"{IC.INFO}  Session Detail")
-        detail_card.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 12))
+        detail_card.grid(row=3, column=0, sticky="ew", padx=pad, pady=(0, pad))
         self._build_detail(detail_card.body)
 
     def _build_summary(self, body: ttk.Frame):
@@ -90,11 +100,11 @@ class HistoryPage(ttk.Frame):
 
     def _build_table(self, body: ttk.Frame):
         body.columnconfigure(0, weight=1)
-        body.rowconfigure(1, weight=1)
+        body.rowconfigure(2, weight=1)
 
         # Filter toolbar
         toolbar = ttk.Frame(body, style="Panel.TFrame")
-        toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        toolbar.grid(row=1, column=0, sticky="ew", pady=(0, 6))
         self._resumable_var = tk.BooleanVar(value=False)
         self._failed_var    = tk.BooleanVar(value=False)
         ttk.Checkbutton(toolbar, text="Resumable only",
@@ -121,11 +131,11 @@ class HistoryPage(ttk.Frame):
             height=12,
             on_select=self._on_session_select,
         )
-        self._table.grid(row=1, column=0, sticky="nsew")
+        self._table.grid(row=2, column=0, sticky="nsew")
 
         # Action buttons below table
         act = ttk.Frame(body, style="Panel.TFrame")
-        act.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+        act.grid(row=3, column=0, sticky="ew", pady=(6, 0))
         self._load_btn = ttk.Button(act, text=f"{IC.FILE} Load Results",
                                     style="Ghost.TButton",
                                     command=self._on_load,
@@ -160,11 +170,11 @@ class HistoryPage(ttk.Frame):
             fr = ttk.Frame(body, style="Panel.TFrame")
             fr.grid(row=row, column=col, sticky="ew", padx=4, pady=2)
             ttk.Label(fr, text=label + ":", style="Panel.Muted.TLabel",
-                      font=("Segoe UI", 8)).pack(side="left")
+                      font=font_tuple("data_label")).pack(side="left")
             var = tk.StringVar(value=default)
             ttk.Label(fr, textvariable=var, style="Panel.TLabel",
-                      font=("Segoe UI", 8, "bold"),
-                      wraplength=280).pack(side="left", padx=(4, 0))
+                      font=font_tuple("data_value"),
+                      wraplength=280).pack(side="left", padx=(SPACING["sm"], 0))
             self._detail_vars[label] = var
 
     # ----------------------------------------------------------------
@@ -278,11 +288,13 @@ class HistoryPage(ttk.Frame):
     def _on_load(self):
         if not self.vm.selected_id:
             return
+        self._load_notice.hide()
         result = self.coordinator.load_scan(self.vm.selected_id)
         if result:
             self.on_load_scan(self.vm.selected_id)
         else:
-            messagebox.showwarning("Load", "Could not load scan results.")
+            self._load_notice.set_message("Could not load scan results.")
+            self._load_notice.show()
 
     def _on_resume(self):
         if not self.vm.selected_id:

@@ -4,6 +4,8 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Optional, List
 
+from ..theme.design_system import font_tuple, SPACING
+
 
 class FilterBar(ttk.Frame):
     """Compact filter/search bar."""
@@ -11,26 +13,26 @@ class FilterBar(ttk.Frame):
     def __init__(self, parent, on_search: Optional[Callable[[str], None]] = None,
                  filters: Optional[List[tuple]] = None,
                  style: str = "Panel.TFrame", **kwargs):
-        super().__init__(parent, style=style, padding=(8, 4), **kwargs)
+        super().__init__(parent, style=style, padding=(SPACING["md"], SPACING["sm"]), **kwargs)
         self._on_search = on_search
 
         # Search entry
         self._search_var = tk.StringVar()
         self._search_var.trace_add("write", self._on_type)
         search_entry = ttk.Entry(self, textvariable=self._search_var, width=22)
-        search_entry.pack(side="left", padx=(0, 8))
+        search_entry.pack(side="left", padx=(0, SPACING["md"]))
         ttk.Label(self, text="Search", style="Panel.Muted.TLabel",
-                  font=("Segoe UI", 8)).pack(side="left", padx=(0, 8))
+                  font=font_tuple("data_label")).pack(side="left", padx=(0, SPACING["md"]))
 
         # Optional filter dropdowns
         self._filter_vars: List[tk.StringVar] = []
         for label, options in (filters or []):
             ttk.Label(self, text=label + ":", style="Panel.Muted.TLabel",
-                      font=("Segoe UI", 8)).pack(side="left", padx=(8, 2))
+                      font=font_tuple("data_label")).pack(side="left", padx=(SPACING["md"], SPACING["xs"]))
             var = tk.StringVar(value=options[0])
             cb = ttk.Combobox(self, textvariable=var, values=options,
                               state="readonly", width=12)
-            cb.pack(side="left", padx=(0, 4))
+            cb.pack(side="left", padx=(0, SPACING["sm"]))
             self._filter_vars.append(var)
 
     def _on_type(self, *_):

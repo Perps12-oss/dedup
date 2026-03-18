@@ -59,6 +59,20 @@ def get_decision_variant(state: str) -> str:
     return DECISION_STATE_VARIANT.get(state, "muted")
 
 
+def get_group_decision_state(
+    group_id: str,
+    keep_selections: dict,
+    has_risk: bool,
+) -> str:
+    """Derive decision state for a group: unresolved | keep_selected | ready | warning."""
+    has_keep = group_id in keep_selections
+    if has_risk:
+        return STATE_WARNING
+    if has_keep:
+        return STATE_READY  # has keep and no risk = ready to delete
+    return STATE_UNRESOLVED
+
+
 class DecisionStateBadge(ttk.Frame):
     """Reusable badge showing one of: unresolved, keep_selected, ready, warning, skipped."""
 

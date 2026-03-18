@@ -37,6 +37,8 @@ from ...engine.thumbnails import generate_thumbnails_async, get_cache_dir
 from ...engine.media_types import is_image_extension
 
 _THUMB_SIZE = (64, 64)
+# Bounded navigator for scale (Phase 3B): cap visible rows to avoid unbounded Treeview
+REVIEW_NAVIGATOR_MAX_ROWS = 2000
 
 
 class ReviewPage(ttk.Frame):
@@ -115,23 +117,47 @@ class ReviewPage(ttk.Frame):
         )
         self._safety_panel.grid(row=0, column=0, sticky="nsew")
 
+        # Keyboard shortcuts when Review is visible: Ctrl+Right = next group, Ctrl+Left = previous group
+        self._bind_key_next = lambda e: self._on_key_next_group()
+        self._bind_key_prev = lambda e: self._on_key_prev_group()
+
     def _build_group_navigator(self, body: ttk.Frame):
         body.columnconfigure(0, weight=1)
-        body.rowconfigure(1, weight=1)
+        body.rowconfigure(2, weight=1)
 
-        # Filter bar
+        # Filter bar: search + decision-state filter
+        from ..components.decision_state import (
+            DECISION_STATE_LABELS,
+            STATE_UNRESOLVED,
+            STATE_READY,
+            STATE_WARNING,
+        )
         self._filter_bar = FilterBar(
             body,
             on_search=self._on_search,
-            filters=[("Filter", ["All", "Reviewed", "Unreviewed"])],
+            filters=[
+                ("State", ["All", DECISION_STATE_LABELS[STATE_UNRESOLVED], DECISION_STATE_LABELS[STATE_READY], DECISION_STATE_LABELS[STATE_WARNING]]),
+            ],
             style="Panel.TFrame",
         )
         self._filter_bar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        self._filter_bar.get_filter(0)  # ensure filter vars exist
+        # Wire state filter: map display name back to state key
+        self._state_filter_map = {"All": "all", DECISION_STATE_LABELS[STATE_UNRESOLVED]: STATE_UNRESOLVED, DECISION_STATE_LABELS[STATE_READY]: STATE_READY, DECISION_STATE_LABELS[STATE_WARNING]: STATE_WARNING}
+        try:
+            self._filter_bar._filter_vars[0].trace_add("write", self._on_state_filter_change)
+        except Exception:
+            pass
+
+        self._group_count_var = tk.StringVar(value="0 groups")
+        ttk.Label(body, textvariable=self._group_count_var, style="Panel.Muted.TLabel",
+                  font=font_tuple("data_label")).grid(row=1, column=0, sticky="w", pady=(0, 2))
 
         self._group_table = DataTable(
             body,
             columns=[
                 ("idx",      "#",      32, "center"),
+                ("state",    "State",  82, "w"),   # decision-state badge label
                 ("files",    "Files",  40, "center"),
                 ("size",     "Size",   70, "e"),
                 ("conf",     "Conf",   40, "center"),
@@ -139,7 +165,8 @@ class ReviewPage(ttk.Frame):
             height=16,
             on_select=self._on_group_select,
         )
-        self._group_table.grid(row=1, column=0, sticky="nsew")
+        self._group_table.grid(row=2, column=0, sticky="nsew")
+        body.rowconfigure(2, weight=1)
 
     def _build_workspace(self, body: ttk.Frame):
         body.columnconfigure(0, weight=1)
@@ -181,18 +208,34 @@ class ReviewPage(ttk.Frame):
         )
 
     def on_show(self):
-        pass
+        self.bind_all("<Control-Right>", self._bind_key_next, add="+")
+        self.bind_all("<Control-Left>", self._bind_key_prev, add="+")
+
+    def on_hide(self):
+        self.unbind_all("<Control-Right>")
+        self.unbind_all("<Control-Left>")
 
     # ----------------------------------------------------------------
     # Group list
     # ----------------------------------------------------------------
     def _refresh_group_list(self):
+        from ..components.decision_state import get_group_decision_state, get_decision_label
         self._group_table.clear()
-        for i, ge in enumerate(self.vm.filtered_groups):
+        groups = self.vm.filtered_groups
+        total = len(groups)
+        # Scale-out: show at most REVIEW_NAVIGATOR_MAX_ROWS to keep Treeview bounded (Phase 3B)
+        display = groups if total <= REVIEW_NAVIGATOR_MAX_ROWS else groups[:REVIEW_NAVIGATOR_MAX_ROWS]
+        if total > REVIEW_NAVIGATOR_MAX_ROWS:
+            self._group_count_var.set(f"Showing first {REVIEW_NAVIGATOR_MAX_ROWS} of {total} groups")
+        else:
+            self._group_count_var.set(f"{total} group{'s' if total != 1 else ''}")
+        for i, ge in enumerate(display):
+            state = get_group_decision_state(ge.group_id, self.vm.keep_selections, ge.has_risk)
+            state_label = get_decision_label(state)
             tag = "warn" if ge.has_risk else ""
             self._group_table.insert_row(
                 ge.group_id,
-                (str(i + 1), str(ge.file_count), fmt_bytes(ge.reclaimable_bytes),
+                (str(i + 1), state_label, str(ge.file_count), fmt_bytes(ge.reclaimable_bytes),
                  ge.confidence_label),
                 tags=(tag,) if tag else (),
             )
@@ -200,6 +243,32 @@ class ReviewPage(ttk.Frame):
     def _on_search(self, text: str):
         self.vm.filter_text = text
         self._refresh_group_list()
+
+    def _on_state_filter_change(self, *_):
+        try:
+            display = self._filter_bar.get_filter(0)
+            self.vm.filter_state = self._state_filter_map.get(display, "all")
+        except Exception:
+            self.vm.filter_state = "all"
+        self._refresh_group_list()
+
+    def _on_key_next_group(self):
+        groups = self.vm.filtered_groups
+        if not groups or not self.winfo_viewable():
+            return
+        idx = next((i for i, g in enumerate(groups) if g.group_id == self.vm.selected_group_id), 0)
+        if idx + 1 < len(groups):
+            self._on_group_select(groups[idx + 1].group_id)
+            self._group_table.select(groups[idx + 1].group_id)
+
+    def _on_key_prev_group(self):
+        groups = self.vm.filtered_groups
+        if not groups or not self.winfo_viewable():
+            return
+        idx = next((i for i, g in enumerate(groups) if g.group_id == self.vm.selected_group_id), 0)
+        if idx > 0:
+            self._on_group_select(groups[idx - 1].group_id)
+            self._group_table.select(groups[idx - 1].group_id)
 
     def _on_group_select(self, group_id: str):
         self.vm.selected_group_id = group_id
@@ -262,7 +331,6 @@ class ReviewPage(ttk.Frame):
 
     def _on_execute_done(self, result: DeletionResult) -> None:
         """Called by ReviewController after execute_deletion. Re-enable button, notify, refresh result."""
-        self._safety_panel._delete_btn.configure(state="normal", text="DELETE")
         self.on_delete_complete(result)
         if result.deleted_files and self._current_result:
             from ...engine.models import DuplicateGroup
@@ -275,6 +343,13 @@ class ReviewPage(ttk.Frame):
                         group_id=g.group_id, group_hash=g.group_hash, files=remaining))
             self._current_result.duplicate_groups = new_groups
             self.load_result(self._current_result)
+        else:
+            self._safety_panel.update_plan(
+                del_count=self.vm.delete_count,
+                keep_count=self.vm.keep_count,
+                reclaim_bytes=self.vm.reclaimable_bytes,
+                risk_flags=self.vm.risk_flags,
+            )
         if self._store:
             from ..state.store import ReviewSelectionState
             self._store.set_review_selection(
@@ -371,10 +446,10 @@ class ReviewPage(ttk.Frame):
 
         def _label(text: str, val: str):
             nonlocal row
-            ttk.Label(body, text=text + ":", font=("Segoe UI", 9)).grid(
+            ttk.Label(body, text=text + ":", font=font_tuple("body")).grid(
                 row=row, column=0, sticky="w", pady=2
             )
-            ttk.Label(body, text=val, font=("Segoe UI", 9, "bold")).grid(
+            ttk.Label(body, text=val, font=font_tuple("body_bold")).grid(
                 row=row, column=1, sticky="w", padx=(8, 0), pady=2
             )
             row += 1

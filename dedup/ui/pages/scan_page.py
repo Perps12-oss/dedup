@@ -8,20 +8,22 @@ Layout:
   Row 3: Live Metrics | Work Saved  (driven by MetricsProjection + ScanVM.work_saved_info)
   Row 4: Phase Detail | Events log  (driven by PhaseProjection + events_log)
 
-Update flow:
-  ProjectionHub  →  on_session / on_phase / on_metrics / on_events
-    →  ScanVM snapshot update
+Update flow (store-driven):
+  ProjectionHub  →  hub→store adapter  →  UIStateStore
+    →  ScanPage.subscribe(store)  →  selectors  →  ScanVM snapshot update
       →  _render_*()  update individual widgets (no whole-page repaint)
+  When store is attached, display state comes from store only (hub feeds store).
 """
 from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk, messagebox
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, TYPE_CHECKING
 import time
 
 from ..components import (
-    MetricCard, SectionCard, PhaseTimeline, StatusRibbon, EmptyState
+    MetricCard, SectionCard, PhaseTimeline, StatusRibbon, EmptyState,
+    DegradedBanner, ErrorPanel,
 )
 from ..viewmodels.scan_vm import ScanVM
 from ..projections.session_projection import SessionProjection
@@ -33,6 +35,9 @@ from ..utils.icons import IC
 from ..theme.design_system import font_tuple, SPACING
 from ...orchestration.coordinator import ScanCoordinator
 from ...engine.models import ScanProgress, ScanResult
+
+if TYPE_CHECKING:
+    from ..state.store import UIStateStore
 
 
 def _fixed_width_path(path: str, width: int = 40) -> str:
@@ -50,6 +55,7 @@ class ScanPage(ttk.Frame):
         coordinator: ScanCoordinator,
         on_complete: Callable[[ScanResult], None],
         on_cancel: Callable[[], None],
+        on_go_to_review: Optional[Callable[[], None]] = None,
         hub=None,      # ProjectionHub — injected by app.py after creation
         scan_controller=None,
         **kwargs,
@@ -58,14 +64,18 @@ class ScanPage(ttk.Frame):
         self.coordinator  = coordinator
         self.on_complete  = on_complete
         self.on_cancel    = on_cancel
+        self.on_go_to_review = on_go_to_review
         self._hub         = hub
         self._scan_controller = scan_controller
         self._unsubs: List[Callable] = []
+        self._store: Optional["UIStateStore"] = None
+        self._unsub_store: Optional[Callable[[], None]] = None
 
         self.vm           = ScanVM()
         self._after_id: Optional[str] = None
         self._pending_defer: set = set()  # coalesce deferred renders
         self._last_events_snapshot: Optional[tuple] = None  # (len, first, last) to skip no-op refresh
+        self._scan_completed = False  # show "Go to Review" when True
         self._build()
 
     # ------------------------------------------------------------------
@@ -91,7 +101,106 @@ class ScanPage(ttk.Frame):
         self._unsubs.clear()
 
     # ------------------------------------------------------------------
-    # Projection callbacks (always on Tk main thread via hub throttle)
+    # Store wiring — preferred when hub→store adapter is active (2C.2)
+    # ------------------------------------------------------------------
+
+    def attach_store(self, store: "UIStateStore") -> None:
+        """Subscribe to UIStateStore for scan display. Store is fed by hub adapter."""
+        self.detach_store()
+        self._store = store
+
+        def on_state(state) -> None:
+            from ..state.selectors import (
+                scan_session,
+                scan_phases,
+                scan_metrics,
+                scan_compat,
+                scan_events_log,
+                scan_terminal,
+                degraded_state,
+            )
+            deg = degraded_state(state)
+            if deg:
+                self._degraded_banner.set_message(deg)
+                self._degraded_banner.show()
+            else:
+                self._degraded_banner.hide()
+            session = scan_session(state)
+            phases = scan_phases(state)
+            metrics = scan_metrics(state)
+            compat = scan_compat(state)
+            events_log = scan_events_log(state)
+            terminal = scan_terminal(state)
+
+            if session is not None:
+                self.vm.apply_session_projection(session)
+                detail = (session.current_phase or "").replace("_", " ").title()
+                if session.status == "running":
+                    self._ribbon.set_state("scanning", detail=detail)
+                elif session.status == "completed":
+                    self._ribbon.set_state("completed", detail="Scan complete")
+                elif session.status in ("cancelled", "failed"):
+                    self._ribbon.set_state("failed", detail=session.resume_reason or session.status)
+            if phases:
+                self.vm.apply_phase_projection(phases)
+                for pname, proj in phases.items():
+                    state_val = getattr(proj, "timeline_state", None)
+                    if state_val is not None:
+                        self._timeline.set_phase_state(pname, state_val)
+            if metrics is not None:
+                self.vm.apply_metrics_projection(metrics)
+            if compat is not None:
+                self.vm.compat = compat
+                if getattr(compat, "overall_resume_outcome", None) not in ("unknown", ""):
+                    state_map = {
+                        "safe_resume": "safe_resume",
+                        "rebuild_current_phase": "rebuild_phase",
+                        "rebuild_phase": "rebuild_phase",
+                        "restart_required": "restart_required",
+                    }
+                    ribbon_state = state_map.get(compat.overall_resume_outcome, "idle")
+                    reason = getattr(compat, "overall_resume_reason", "") or ""
+                    self._ribbon.set_state(ribbon_state, detail=reason[:60])
+            if events_log is not None:
+                self.vm.events_log = events_log
+
+            if terminal is not None and self.vm.is_scanning:
+                self.vm.is_scanning = False
+                self.vm.session = terminal
+                self._progress_bar.stop()
+                self._cancel_elapsed()
+                if terminal.status == "completed":
+                    self._ribbon.set_state("completed", detail="Scan complete")
+                    for pname in PHASE_ORDER:
+                        self._timeline.set_phase_state(pname, "completed")
+                    self._scan_completed = True
+                    self._defer(self._update_go_to_review_btn, "go_to_review_btn")
+                elif terminal.status == "cancelled":
+                    self._ribbon.set_state("idle", label_override="Cancelled")
+                elif terminal.status == "failed":
+                    err_msg = (terminal.resume_reason or "Scan failed")[:200]
+                    self.vm.error_message = err_msg
+                    self._ribbon.set_state("failed", detail=err_msg[:60])
+                    self._error_panel.set_message(err_msg)
+                    self._error_panel.show()
+            self._defer(self._render_metrics, "metrics")
+            self._defer(self._render_phase_detail, "phase_detail")
+            self._defer(self._render_work_saved, "work_saved")
+            self._defer(self._render_events, "events")
+
+        self._unsub_store = store.subscribe(on_state, fire_immediately=True)
+
+    def detach_store(self) -> None:
+        if self._unsub_store:
+            try:
+                self._unsub_store()
+            except Exception:
+                pass
+            self._unsub_store = None
+        self._store = None
+
+    # ------------------------------------------------------------------
+    # Projection callbacks (hub path — used when store is not attached)
     # ------------------------------------------------------------------
 
     def _defer(self, fn, key: Optional[str] = None) -> None:
@@ -168,6 +277,8 @@ class ScanPage(ttk.Frame):
             self._ribbon.set_state("completed", detail="Scan complete")
             for pname in PHASE_ORDER:
                 self._timeline.set_phase_state(pname, "completed")
+            self._scan_completed = True
+            self._defer(self._update_go_to_review_btn, "go_to_review_btn")
         elif proj.status == "cancelled":
             self._ribbon.set_state("idle", label_override="Cancelled")
         elif proj.status == "failed":
@@ -268,7 +379,7 @@ class ScanPage(ttk.Frame):
 
     def _build(self):
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(6, weight=1)  # Activity Feed row stretches
+        self.rowconfigure(7, weight=1)  # Activity Feed row stretches
         pad = SPACING["page"]
         pad_kw = {"padx": pad, "pady": (0, SPACING["md"])}
 
@@ -287,25 +398,42 @@ class ScanPage(ttk.Frame):
             hdr, text=f"{IC.STOPPED}  Cancel",
             style="Ghost.TButton", command=self._on_cancel)
         self._cancel_btn.grid(row=0, column=2, rowspan=2, sticky="e")
+        self._go_to_review_btn = ttk.Button(
+            hdr, text=f"{IC.REVIEW}  Go to Review",
+            style="Accent.TButton", command=self._on_go_to_review)
+        self._go_to_review_btn.grid(row=0, column=3, rowspan=2, sticky="e", padx=(SPACING["md"], 0))
+        self._go_to_review_btn.grid_remove()
+
+        # ── Degraded banner (store-driven; hidden when no degraded state) ─
+        self._degraded_banner = DegradedBanner(self, message="", on_dismiss=lambda: self._degraded_banner.hide())
+        self._degraded_banner.grid(row=1, column=0, sticky="ew", **pad_kw)
+        self._degraded_banner.hide()
 
         # ── Scan Target Card (status ribbon) ──────────────────────────
         self._ribbon = StatusRibbon(self)
         self._ribbon.grid(row=2, column=0, sticky="ew", **pad_kw)
 
+        # ── Error panel (shown when vm.error_message set; e.g. scan failed) ─
+        self._error_panel = ErrorPanel(
+            self, message="",
+            retry_label="Back", on_retry=self._on_error_panel_dismiss)
+        self._error_panel.grid(row=3, column=0, sticky="ew", **pad_kw)
+        self._error_panel.hide()
+
         # ── Phase Timeline ────────────────────────────────────────────
         tl_card = SectionCard(self, title=f"{IC.ACTIVE}  Phase Timeline")
-        tl_card.grid(row=3, column=0, sticky="ew", **pad_kw)
+        tl_card.grid(row=4, column=0, sticky="ew", **pad_kw)
         self._timeline = PhaseTimeline(tl_card.body)
         self._timeline.pack(fill="x")
 
         # ── Live Metrics Panel ────────────────────────────────────────
         metrics_card = SectionCard(self, title=f"{IC.SPEED}  Live Metrics Panel")
-        metrics_card.grid(row=4, column=0, sticky="ew", **pad_kw)
+        metrics_card.grid(row=5, column=0, sticky="ew", **pad_kw)
         self._build_live_metrics(metrics_card.body)
 
         # ── Progress/Session · Health/Compatibility · Result Summary ───
         ops_row = ttk.Frame(self)
-        ops_row.grid(row=5, column=0, sticky="ew", **pad_kw)
+        ops_row.grid(row=6, column=0, sticky="ew", **pad_kw)
         ops_row.columnconfigure(0, weight=1)
         ops_row.columnconfigure(1, weight=1)
         ops_row.columnconfigure(2, weight=1)
@@ -324,7 +452,7 @@ class ScanPage(ttk.Frame):
 
         # ── Activity Feed ─────────────────────────────────────────────
         events_card = SectionCard(self, title=f"{IC.INFO}  Activity Feed")
-        events_card.grid(row=6, column=0, sticky="nsew", **pad_kw)
+        events_card.grid(row=7, column=0, sticky="nsew", **pad_kw)
         self._build_events(events_card.body)
 
     def _build_live_metrics(self, body: ttk.Frame):
@@ -528,16 +656,23 @@ class ScanPage(ttk.Frame):
             self._result_vars["Duplicate groups"].set(fmt_int(fr.duplicate_groups_total))
             self._result_vars["Duplicate files"].set(fmt_int(fr.duplicate_files_total))
             self._result_vars["Reclaimable"].set(fmt_bytes(fr.reclaimable_bytes_total))
+        self._scan_completed = True
+        self._defer(self._update_go_to_review_btn, "go_to_review_btn")
         self.after(0, lambda: self.on_complete(result))
 
     def _on_error_fallback(self, error: str) -> None:
         self.vm.is_scanning = False
         self._progress_bar.stop()
         self._cancel_elapsed()
-        if not self._hub:
-            self._ribbon.set_state("failed", detail=error[:60])
-        self.after(0, lambda: messagebox.showerror("Scan Error", f"Scan failed:\n{error}"))
-        self.after(0, self.on_cancel)
+        self.vm.error_message = error[:200]
+        self._ribbon.set_state("failed", detail=error[:60])
+        self._error_panel.set_message(self.vm.error_message)
+        self._error_panel.show()
+
+    def _on_error_panel_dismiss(self) -> None:
+        self.vm.error_message = ""
+        self._error_panel.hide()
+        self.on_cancel()
 
     # ------------------------------------------------------------------
     # Cancel
@@ -563,10 +698,25 @@ class ScanPage(ttk.Frame):
     # Reset + elapsed ticker
     # ------------------------------------------------------------------
 
+    def _update_go_to_review_btn(self) -> None:
+        if self._scan_completed and self.on_go_to_review:
+            self._cancel_btn.grid_remove()
+            self._go_to_review_btn.grid()
+        else:
+            self._go_to_review_btn.grid_remove()
+            self._cancel_btn.grid()
+
+    def _on_go_to_review(self) -> None:
+        if self.on_go_to_review:
+            self.on_go_to_review()
+
     def _reset_vm(self) -> None:
         from ..projections.phase_projection import initial_phase_map
         self.vm.reset()
         self.vm.is_scanning = True
+        self._scan_completed = False
+        self._defer(self._update_go_to_review_btn, "go_to_review_btn")
+        self._error_panel.hide()
         self._timeline.reset()
         self._events_list.delete(0, "end")
         for c in self._metric_cards.values():

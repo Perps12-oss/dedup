@@ -5,6 +5,7 @@ from tkinter import ttk
 from typing import Optional
 
 from ..theme.theme_manager import get_theme_manager
+from ..theme.design_system import font_tuple
 
 BADGE_STYLES = {
     "success": "Panel.Success.TLabel",
@@ -29,7 +30,7 @@ class Badge(ttk.Label):
     def __init__(self, parent, text: str = "", variant: str = "default", **kwargs):
         style = BADGE_STYLES.get(variant, BADGE_STYLES["default"])
         super().__init__(parent, text=text, style=style,
-                         font=("Segoe UI", 8, "bold"), **kwargs)
+                         font=font_tuple("data_value"), **kwargs)
         self._var = None
 
     def set_text(self, text: str):
@@ -50,7 +51,7 @@ class StatusBadge(ttk.Frame):
         label_style = BADGE_STYLES.get(variant, "Panel.Secondary.TLabel")
         ttk.Label(self, textvariable=self._text_var,
                   style=label_style,
-                  font=("Segoe UI", 8, "bold")).pack(side="left")
+                  font=font_tuple("data_value")).pack(side="left")
         self.set(text, variant)
 
     def _get_bg(self) -> str:
