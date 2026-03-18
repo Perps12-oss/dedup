@@ -16,26 +16,26 @@ FONT_FAMILY = "Segoe UI"
 
 TYPOGRAPHY: Dict[str, Any] = {
     # Page-level: hero and primary headings
-    "page_title": {"size": 18, "weight": "bold"},
-    "page_subtitle": {"size": 10, "weight": "normal"},
+    "page_title": {"size": 32, "weight": "bold"},
+    "page_subtitle": {"size": 15, "weight": "normal"},
     # Section and card titles
-    "section_title": {"size": 12, "weight": "bold"},
-    "card_title": {"size": 10, "weight": "bold"},
+    "section_title": {"size": 20, "weight": "bold"},
+    "card_title": {"size": 20, "weight": "bold"},
     # Data: compact labels and values (consistent numeric typography)
-    "data_label": {"size": 8, "weight": "normal"},
-    "data_value": {"size": 9, "weight": "bold"},
-    "metric_value": {"size": 18, "weight": "bold"},  # large stat (e.g. MetricCard)
-    "numeric": {"size": 9, "weight": "normal"},  # tabular where applicable
+    "data_label": {"size": 13, "weight": "normal"},
+    "data_value": {"size": 15, "weight": "bold"},
+    "metric_value": {"size": 26, "weight": "bold"},  # large stat (e.g. MetricCard)
+    "numeric": {"size": 13, "weight": "normal"},  # tabular where applicable
     # Body and UI default
-    "body": {"size": 9, "weight": "normal"},
-    "body_bold": {"size": 9, "weight": "bold"},
+    "body": {"size": 15, "weight": "normal"},
+    "body_bold": {"size": 15, "weight": "bold"},
     # Small/caption and strip
-    "caption": {"size": 8, "weight": "normal"},
-    "strip": {"size": 7, "weight": "normal"},
+    "caption": {"size": 13, "weight": "normal"},
+    "strip": {"size": 11, "weight": "normal"},
     # Shell/nav
-    "nav_icon": {"size": 14, "weight": "normal"},
+    "nav_icon": {"size": 18, "weight": "normal"},
     # Empty state / large placeholder
-    "empty_icon": {"size": 32, "weight": "normal"},
+    "empty_icon": {"size": 40, "weight": "normal"},
 }
 
 
@@ -49,13 +49,13 @@ def font_tuple(style_name: str) -> tuple:
 # Spacing (padding/margin scale in pixels)
 # ---------------------------------------------------------------------------
 SPACING = {
-    "xs": 2,
-    "sm": 4,
-    "md": 8,
-    "lg": 12,
-    "xl": 16,
-    "page": 16,   # page edge padding
-    "card": 12,   # card internal padding
+    "xs": 4,
+    "sm": 8,
+    "md": 16,
+    "lg": 24,
+    "xl": 32,
+    "page": 32,   # page edge padding
+    "card": 24,   # card internal padding
 }
 
 

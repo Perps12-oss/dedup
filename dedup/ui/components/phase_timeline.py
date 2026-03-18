@@ -16,6 +16,7 @@ from tkinter import ttk
 from typing import List, Dict, Optional, Callable
 
 from ..theme.theme_manager import get_theme_manager
+from ..theme.design_system import font_tuple
 from ..utils.icons import IC
 
 PHASE_LABELS = [
@@ -80,12 +81,12 @@ class PhaseTimeline(ttk.Frame):
 
             icon_lbl = ttk.Label(cell, textvariable=icon_var,
                                  style="Panel.Muted.TLabel",
-                                 font=("Segoe UI", 11))
+                                 font=font_tuple("body_bold"))
             icon_lbl.pack(side="left", padx=(0, 4))
 
             name_lbl = ttk.Label(cell, textvariable=lbl_var,
                                  style="Panel.Muted.TLabel",
-                                 font=("Segoe UI", 9))
+                                 font=font_tuple("caption"))
             name_lbl.pack(side="left")
 
             self._cells[key] = {
@@ -99,7 +100,7 @@ class PhaseTimeline(ttk.Frame):
             # Arrow between phases
             if col < len(self._phases) - 1:
                 ttk.Label(self, text="→", style="Panel.Muted.TLabel",
-                          font=("Segoe UI", 9)).grid(row=0, column=col * 2 + 1, padx=2)
+                          font=font_tuple("caption")).grid(row=0, column=col * 2 + 1, padx=2)
 
     def set_phase_state(self, phase_key: str, state: str, label_override: str = ""):
         phase_key = _KEY_ALIASES.get(phase_key, phase_key)

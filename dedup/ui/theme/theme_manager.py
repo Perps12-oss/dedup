@@ -113,10 +113,10 @@ class ThemeManager:
                   bordercolor=[("focus", acc)])
 
         # ---- Panel frames ----
-        style.configure("Panel.TFrame",   background=panel)
+        style.configure("Panel.TFrame",   background=panel, relief="solid", borderwidth=1, bordercolor=bsoft)
         style.configure("Sidebar.TFrame", background=sidebar)
-        style.configure("Elevated.TFrame",background=elev)
-        style.configure("Card.TFrame",    background=panel, relief="flat")
+        style.configure("Elevated.TFrame",background=elev, relief="solid", borderwidth=1, bordercolor=bstrong)
+        style.configure("Card.TFrame",    background=panel, relief="solid", borderwidth=1, bordercolor=bsoft)
         style.configure("Strip.TFrame",   background=sidebar)
 
         # ---- Labels on panels ----
@@ -147,25 +147,28 @@ class ThemeManager:
         # ---- Buttons ----
         style.configure("TButton", background=elev, foreground=fg,
                         bordercolor=bstrong, lightcolor=bsoft, darkcolor=bsoft,
-                        relief="flat", padding=[10, 4])
+                        relief="flat", padding=[14, 10],
+                        font=font_tuple("body_bold"))
         style.map("TButton",
                   background=[("active", bstrong), ("pressed", acc)],
                   foreground=[("pressed", fg)])
 
         style.configure("Accent.TButton", background=acc, foreground=bg,
-                        bordercolor=acc, relief="flat", padding=[12, 5],
+                        bordercolor=acc, relief="flat", padding=[16, 10],
                         font=font_tuple("body_bold"))
         style.map("Accent.TButton",
                   background=[("active", t["gradient_end"]), ("pressed", t["gradient_start"])],
                   foreground=[("active", bg)])
 
         style.configure("Danger.TButton", background=danger, foreground=bg,
-                        bordercolor=danger, relief="flat", padding=[12, 5])
+                        bordercolor=danger, relief="flat", padding=[16, 10],
+                        font=font_tuple("body_bold"))
         style.map("Danger.TButton",
                   background=[("active", t.get("danger_hover", danger))])
 
         style.configure("Ghost.TButton", background=bg, foreground=fg2,
-                        bordercolor=bsoft, relief="flat", padding=[8, 3])
+                        bordercolor=bsoft, relief="flat", padding=[14, 10],
+                        font=font_tuple("body"))
         style.map("Ghost.TButton",
                   background=[("active", panel)],
                   foreground=[("active", fg)])
@@ -181,7 +184,7 @@ class ThemeManager:
         style.configure("Treeview",
                         background=panel, foreground=fg,
                         fieldbackground=panel, bordercolor=bsoft,
-                        rowheight=28, font=font_tuple("body"))
+                        rowheight=36, font=font_tuple("body"))
         style.configure("Treeview.Heading",
                         background=sidebar, foreground=fg2,
                         bordercolor=bsoft, relief="flat",
@@ -211,6 +214,7 @@ class ThemeManager:
         root.option_add("*Listbox*Foreground", fg)
         root.option_add("*Listbox*SelectBackground", sel)
         root.option_add("*Listbox*SelectForeground", fg)
+        root.option_add("*Listbox*Font", font_tuple("caption"))
         root.option_add("*Canvas*Background", panel)
         root.option_add("*Canvas*HighlightBackground", panel)
 

@@ -34,6 +34,7 @@ class ReviewVM:
     view_mode:          str             = "table"   # "table" | "gallery" | "compare"
     filter_text:        str             = ""
     filter_state:       str             = "all"  # "all" | "unresolved" | "keep_selected" | "ready" | "warning"
+    sort_by:            str             = "priority"  # "priority" | "reclaimable" | "files" | "confidence"
     show_reviewed:      bool            = True
     deletion_mode:      str             = "trash"   # "trash" | "permanent"
     selected_group_id:  Optional[str]   = None
@@ -83,9 +84,17 @@ class ReviewVM:
         if self.filter_text:
             q = self.filter_text.lower()
             out = [g for g in out if q in g.metadata_summary.lower() or q in g.group_id.lower()]
-        # Sort by decision-making flow: unresolved first, then warning, then ready
+        # Sort by decision-making flow by default; support operator-focused sort modes.
         _order = {STATE_UNRESOLVED: 0, STATE_WARNING: 1, STATE_READY: 2}
-        out.sort(key=lambda g: _order.get(get_group_decision_state(g.group_id, self.keep_selections, g.has_risk), 3))
+        if self.sort_by == "reclaimable":
+            out.sort(key=lambda g: int(getattr(g, "reclaimable_bytes", 0) or 0), reverse=True)
+        elif self.sort_by == "files":
+            out.sort(key=lambda g: int(getattr(g, "file_count", 0) or 0), reverse=True)
+        elif self.sort_by == "confidence":
+            rank = {"high": 0, "medium": 1, "low": 2}
+            out.sort(key=lambda g: rank.get((getattr(g, "confidence_label", "") or "").lower(), 3))
+        else:
+            out.sort(key=lambda g: _order.get(get_group_decision_state(g.group_id, self.keep_selections, g.has_risk), 3))
         return out
 
     def set_keep(self, group_id: str, path: str) -> None:

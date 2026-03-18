@@ -16,7 +16,7 @@ from ..theme.theme_registry import DEFAULT_THEME
 class AppSettings:
     """Persisted UI preferences."""
     theme_key: str = DEFAULT_THEME
-    density: str = "cozy"           # "compact" | "cozy"
+    density: str = "comfortable"    # "comfortable" | "cozy" | "compact"
     advanced_mode: bool = False
     reduced_motion: bool = False
     reduced_gradients: bool = False

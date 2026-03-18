@@ -101,7 +101,7 @@ class ReviewPage(ttk.Frame):
             value="No review data yet. Run a scan, then return here to make decisions."
         )
         ttk.Label(hdr, textvariable=self._state_hint, style="Muted.TLabel",
-                  font=font_tuple("data_label")).grid(row=2, column=0, sticky="w", pady=(SPACING["xs"], 0))
+                  font=font_tuple("caption")).grid(row=2, column=0, sticky="w", pady=(SPACING["xs"], 0))
 
         # View mode: Table | Gallery | Compare
         mode_frame = ttk.Frame(hdr, style="Panel.TFrame")
@@ -153,9 +153,9 @@ class ReviewPage(ttk.Frame):
         body = ttk.Frame(self)
         body.grid(row=2, column=0, sticky="nsew", padx=pad, pady=(0, pad))
         body.rowconfigure(0, weight=1)
-        body.columnconfigure(0, minsize=200)
-        body.columnconfigure(1, weight=1)
-        body.columnconfigure(2, minsize=200)
+        body.columnconfigure(0, weight=1)
+        body.columnconfigure(1, weight=2)
+        body.columnconfigure(2, weight=1)
 
         # Left: Group Navigator (decision-state per group in decision-state todo)
         left = SectionCard(body, title=f"{IC.GROUPS}  Group Navigator")
@@ -223,7 +223,7 @@ class ReviewPage(ttk.Frame):
 
     def _build_group_navigator(self, body: ttk.Frame):
         body.columnconfigure(0, weight=1)
-        body.rowconfigure(2, weight=1)
+        body.rowconfigure(4, weight=1)
 
         # Filter bar: search + decision-state filter
         from ..components.decision_state import (
@@ -249,15 +249,55 @@ class ReviewPage(ttk.Frame):
         except Exception:
             pass
 
+        # Blueprint chips: unresolved/ready/warning/skipped/all with counts
+        chips = ttk.Frame(body, style="Panel.TFrame")
+        chips.grid(row=1, column=0, sticky="ew", pady=(0, SPACING["sm"]))
+        self._chip_vars: dict[str, tk.StringVar] = {}
+        self._chip_buttons: dict[str, ttk.Button] = {}
+        chip_specs = [
+            ("unresolved", "Unresolved"),
+            ("ready", "Ready"),
+            ("warning", "Warning"),
+            ("skipped", "Skipped"),
+            ("all", "All"),
+        ]
+        for i, (state_key, label) in enumerate(chip_specs):
+            chips.columnconfigure(i, weight=1)
+            var = tk.StringVar(value=label)
+            btn = ttk.Button(
+                chips, textvariable=var, style="Ghost.TButton",
+                command=lambda s=state_key: self._set_state_filter(s),
+            )
+            btn.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else SPACING["xs"], 0))
+            self._chip_vars[state_key] = var
+            self._chip_buttons[state_key] = btn
+
+        sort_row = ttk.Frame(body, style="Panel.TFrame")
+        sort_row.grid(row=2, column=0, sticky="ew", pady=(0, SPACING["xs"]))
+        ttk.Label(sort_row, text="Sort by:", style="Panel.Muted.TLabel",
+                  font=font_tuple("caption")).pack(side="left")
+        self._sort_var = tk.StringVar(value="priority")
+        sort = ttk.Combobox(
+            sort_row, state="readonly", width=20, textvariable=self._sort_var,
+            values=[
+                "priority",
+                "reclaimable size",
+                "file count",
+                "confidence",
+            ],
+        )
+        sort.pack(side="left", padx=(SPACING["sm"], 0))
+        sort.bind("<<ComboboxSelected>>", self._on_sort_change)
+
         self._group_count_var = tk.StringVar(value="0 groups")
         ttk.Label(body, textvariable=self._group_count_var, style="Panel.Muted.TLabel",
-                  font=font_tuple("data_label")).grid(row=1, column=0, sticky="w", pady=(0, 2))
+                  font=font_tuple("caption")).grid(row=3, column=0, sticky="w", pady=(0, 2))
 
         self._group_table = DataTable(
             body,
             columns=[
                 ("idx",      "#",      32, "center"),
-                ("state",    "State",  82, "w"),   # decision-state badge label
+                ("state",    "State",  120, "w"),   # decision-state badge label
                 ("files",    "Files",  40, "center"),
                 ("size",     "Size",   70, "e"),
                 ("conf",     "Conf",   40, "center"),
@@ -265,19 +305,39 @@ class ReviewPage(ttk.Frame):
             height=16,
             on_select=self._on_group_select,
         )
-        self._group_table.grid(row=2, column=0, sticky="nsew")
-        body.rowconfigure(2, weight=1)
+        self._group_table.grid(row=4, column=0, sticky="nsew")
+        body.rowconfigure(4, weight=1)
 
     def _build_workspace(self, body: ttk.Frame):
         body.columnconfigure(0, weight=1)
-        body.rowconfigure(0, weight=1)
+        body.rowconfigure(1, weight=1)
+
+        # Summary band: active group context and smart-rule state
+        band = ttk.Frame(body, style="Panel.TFrame", padding=(SPACING["sm"], SPACING["xs"]))
+        band.grid(row=0, column=0, sticky="ew", pady=(0, SPACING["sm"]))
+        band.columnconfigure(0, weight=1)
+        self._group_summary_var = tk.StringVar(value="No group selected")
+        self._group_reason_var = tk.StringVar(value="Reason: —")
+        self._group_keep_var = tk.StringVar(value="Keep: not selected")
+        self._group_reclaim_var = tk.StringVar(value="Reclaimable: —")
+        self._group_rule_var = tk.StringVar(value="Rule: off")
+        ttk.Label(band, textvariable=self._group_summary_var, style="Panel.Secondary.TLabel",
+                  font=font_tuple("body_bold")).grid(row=0, column=0, sticky="w")
+        ttk.Label(band, textvariable=self._group_reason_var, style="Panel.Muted.TLabel",
+                  font=font_tuple("caption")).grid(row=1, column=0, sticky="w")
+        ttk.Label(band, textvariable=self._group_keep_var, style="Panel.TLabel",
+                  font=font_tuple("caption")).grid(row=0, column=1, sticky="e", padx=(SPACING["sm"], 0))
+        ttk.Label(band, textvariable=self._group_reclaim_var, style="Panel.Success.TLabel",
+                  font=font_tuple("caption")).grid(row=1, column=1, sticky="e", padx=(SPACING["sm"], 0))
+        ttk.Label(band, textvariable=self._group_rule_var, style="Panel.Accent.TLabel",
+                  font=font_tuple("caption")).grid(row=1, column=2, sticky="e", padx=(SPACING["sm"], 0))
 
         self._workspace = ReviewWorkspaceStack(
             body,
             on_keep=self._on_set_keep,
             on_clear_keep=self._on_clear_keep,
         )
-        self._workspace.grid(row=0, column=0, sticky="nsew")
+        self._workspace.grid(row=1, column=0, sticky="nsew")
 
     # ----------------------------------------------------------------
     # Public
@@ -306,6 +366,7 @@ class ReviewPage(ttk.Frame):
             reclaimable_bytes=self.vm.reclaimable_bytes,
         )
         self._refresh_group_list()
+        self._update_filter_chip_labels()
         self._safety_panel.update_plan(
             del_count=self.vm.delete_count,
             keep_count=self.vm.keep_count,
@@ -363,14 +424,15 @@ class ReviewPage(ttk.Frame):
             self._group_count_var.set(f"{total} group{'s' if total != 1 else ''}")
         for i, ge in enumerate(display):
             state = get_group_decision_state(ge.group_id, self.vm.keep_selections, ge.has_risk)
-            state_label = get_decision_label(state)
-            tag = "warn" if ge.has_risk else ""
+            state_label = self._decision_badge_text(state)
+            tag = "warn" if ge.has_risk else ("danger" if state == "unresolved" else "safe" if state == "ready" else "")
             self._group_table.insert_row(
                 ge.group_id,
                 (str(i + 1), state_label, str(ge.file_count), fmt_bytes(ge.reclaimable_bytes),
                  ge.confidence_label),
                 tags=(tag,) if tag else (),
             )
+        self._update_filter_chip_labels()
 
     def _on_search(self, text: str):
         self.vm.filter_text = text
@@ -383,6 +445,54 @@ class ReviewPage(ttk.Frame):
         except Exception:
             self.vm.filter_state = "all"
         self._refresh_group_list()
+
+    def _set_state_filter(self, state_key: str) -> None:
+        self.vm.filter_state = state_key
+        try:
+            rev_map = {v: k for k, v in self._state_filter_map.items()}
+            display = rev_map.get(state_key, "All")
+            self._filter_bar._filter_vars[0].set(display)
+        except Exception:
+            pass
+        self._refresh_group_list()
+
+    def _on_sort_change(self, *_):
+        label = (self._sort_var.get() or "priority").strip().lower()
+        mapping = {
+            "priority": "priority",
+            "reclaimable size": "reclaimable",
+            "file count": "files",
+            "confidence": "confidence",
+        }
+        self.vm.sort_by = mapping.get(label, "priority")
+        self._refresh_group_list()
+
+    def _decision_badge_text(self, state: str) -> str:
+        icons = {
+            "unresolved": "●",
+            "ready": "✓",
+            "warning": "⚠",
+            "skipped": "—",
+            "keep_selected": "◉",
+        }
+        from ..components.decision_state import get_decision_label
+        return f"{icons.get(state, '•')} {get_decision_label(state)}"
+
+    def _update_filter_chip_labels(self) -> None:
+        from ..components.decision_state import get_group_decision_state
+        counts = {"all": len(self.vm.groups), "unresolved": 0, "ready": 0, "warning": 0, "skipped": 0}
+        for g in self.vm.groups:
+            state = get_group_decision_state(g.group_id, self.vm.keep_selections, g.has_risk)
+            counts[state] = counts.get(state, 0) + 1
+        labels = {
+            "unresolved": "Unresolved",
+            "ready": "Ready",
+            "warning": "Warning",
+            "skipped": "Skipped",
+            "all": "All",
+        }
+        for key, var in getattr(self, "_chip_vars", {}).items():
+            var.set(f"{labels[key]} ({counts.get(key, 0)})")
 
     def _on_key_next_group(self):
         groups = self.vm.filtered_groups
@@ -422,6 +532,14 @@ class ReviewPage(ttk.Frame):
         keep_path = self.vm.keep_selections.get(group_id, "")
         mode = self.vm.view_mode
         self._workspace.load_group(group, keep_path=keep_path, mode=mode)
+        if group:
+            file_count = len(getattr(group, "files", []) or [])
+            self._group_summary_var.set(f"Group {group.group_id} · {file_count} files")
+            self._group_reason_var.set(f"Reason: hash-based duplicate group")
+            self._group_keep_var.set(f"Keep: {Path(keep_path).name if keep_path else 'not selected'}")
+            reclaim = sum(getattr(f, "size", 0) for f in group.files) - (next((f.size for f in group.files if f.path == keep_path), 0) if keep_path else 0)
+            self._group_reclaim_var.set(f"Reclaimable: {fmt_bytes(max(0, reclaim))}")
+            self._group_rule_var.set(f"Rule: {self._smart_rule_var.get() if keep_path else 'off'}")
 
     def _on_preview_intent(self) -> None:
         """Emit PreviewDeletion intent; controller handles dry-run if present."""
@@ -576,13 +694,36 @@ class ReviewPage(ttk.Frame):
             target = group.files[0]
         if target is None:
             return
+        dlg = tk.Toplevel(self)
+        dlg.title("Quick Look")
+        dlg.transient(self.winfo_toplevel())
+        dlg.geometry("760x380")
+        dlg.grab_set()
+        wrap = ttk.Frame(dlg, padding=SPACING["md"])
+        wrap.pack(fill="both", expand=True)
+        wrap.columnconfigure(0, weight=1)
+        wrap.rowconfigure(1, weight=1)
+        ttk.Label(wrap, text=target.filename, style="Panel.Secondary.TLabel",
+                  font=font_tuple("section_title")).grid(row=0, column=0, sticky="w")
         details = (
-            f"Name: {target.filename}\n"
             f"Path: {target.path}\n"
             f"Size: {fmt_bytes(target.size)}\n"
-            f"Hash: {(target.file_hash or '—')[:16]}..."
+            f"Modified: {getattr(target, 'mtime_ns', 0)}\n"
+            f"Hash: {(target.file_hash or '—')[:32]}"
         )
-        messagebox.showinfo("Quick Look", details)
+        info = tk.Text(wrap, height=10, wrap="word")
+        info.insert("1.0", details)
+        info.configure(state="disabled")
+        info.grid(row=1, column=0, sticky="nsew", pady=(SPACING["sm"], SPACING["sm"]))
+        btns = ttk.Frame(wrap)
+        btns.grid(row=2, column=0, sticky="e")
+        ttk.Button(btns, text="Mark Keep", style="Accent.TButton",
+                   command=lambda p=target.path: [self._on_set_keep(p), dlg.destroy()]).pack(side="left", padx=(0, SPACING["sm"]))
+        ttk.Button(btns, text="Mark Delete", style="Ghost.TButton",
+                   command=dlg.destroy).pack(side="left", padx=(0, SPACING["sm"]))
+        ttk.Button(btns, text="Close", style="Ghost.TButton",
+                   command=dlg.destroy).pack(side="left")
+        dlg.wait_window(dlg)
 
     def _set_keep_selected(self) -> None:
         """Keyboard keep action for currently selected file in table view."""

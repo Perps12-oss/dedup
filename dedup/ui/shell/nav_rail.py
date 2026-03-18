@@ -25,7 +25,7 @@ SECONDARY_NAV: List[Tuple[str, str, str]] = [
 ]
 NAV_ITEMS: List[Tuple[str, str, str]] = PRIMARY_NAV + SECONDARY_NAV
 
-RAIL_WIDTH = 72
+RAIL_WIDTH = 56
 
 
 class NavRail(tk.Frame):

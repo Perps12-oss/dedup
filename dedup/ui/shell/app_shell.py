@@ -28,6 +28,8 @@ ActionSpec = Tuple[str, str, Callable]
 
 
 class AppShell(ttk.Frame):
+    MAX_CONTENT_WIDTH = 1560
+
     """
     Root layout container wired to theme, nav, status, and drawer.
     Pages are placed in `self.content` and shown/hidden via `show_page()`.
@@ -73,12 +75,13 @@ class AppShell(ttk.Frame):
         middle = ttk.Frame(self)
         middle.grid(row=1, column=0, sticky="nsew")
         middle.grid_rowconfigure(0, weight=1)
-        middle.grid_columnconfigure(1, weight=1)
+        middle.grid_columnconfigure(1, minsize=1)  # 1px separator only
+        middle.grid_columnconfigure(2, weight=1)
 
         self.nav_rail = NavRail(middle, on_navigate=self._handle_navigate)
         self.nav_rail.grid(row=0, column=0, sticky="ns")
 
-        # Thin separator after nav rail
+        # Thin separator after nav rail (no extra gap)
         sep = ttk.Separator(middle, orient="vertical")
         sep.grid(row=0, column=1, sticky="ns", padx=0)
 
@@ -87,7 +90,12 @@ class AppShell(ttk.Frame):
         self.content.grid(row=0, column=2, sticky="nsew")
         self.content.grid_rowconfigure(0, weight=1)
         self.content.grid_columnconfigure(0, weight=1)
-        middle.grid_columnconfigure(2, weight=1)
+        # Center page content with a max width so ultra-wide windows stay readable.
+        self._content_host = ttk.Frame(self.content, style="TFrame")
+        self._content_host.place(x=0, y=0, relheight=1)
+        self._content_host.grid_rowconfigure(0, weight=1)
+        self._content_host.grid_columnconfigure(0, weight=1)
+        self.content.bind("<Configure>", self._on_content_resize, add="+")
 
         # Insight drawer
         self.insight_drawer = InsightDrawer(middle)
@@ -102,7 +110,7 @@ class AppShell(ttk.Frame):
 
     def register_page(self, name: str, page: ttk.Frame):
         self._pages[name] = page
-        page.grid(row=0, column=0, sticky="nsew", in_=self.content)
+        page.grid(row=0, column=0, sticky="nsew", in_=self._content_host)
         page.grid_remove()
 
     def show_page(self, name: str):
@@ -153,7 +161,8 @@ class AppShell(ttk.Frame):
 
     def _do_density_toggle(self):
         s = self._state.settings
-        s.density = "compact" if s.density == "cozy" else "cozy"
+        cycle = {"comfortable": "cozy", "cozy": "compact", "compact": "comfortable"}
+        s.density = cycle.get(s.density, "cozy")
         self.top_bar.set_density_label(s.density)
 
     def _do_advanced_toggle(self):
@@ -166,6 +175,12 @@ class AppShell(ttk.Frame):
         self._grad_bar.update_colors(tokens["gradient_start"], tokens["gradient_end"])
         # Re-set theme combo
         self.top_bar.set_current_theme(self._state.settings.theme_key)
+
+    def _on_content_resize(self, event) -> None:
+        avail = max(1, int(event.width))
+        target = min(avail, self.MAX_CONTENT_WIDTH)
+        x = max((avail - target) // 2, 0)
+        self._content_host.place_configure(x=x, width=target, relheight=1)
 
     def apply_preferences(self) -> None:
         """Apply persisted UI preferences to shell widgets (density, drawer, advanced)."""

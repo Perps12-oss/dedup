@@ -132,7 +132,7 @@ class SafetyPanel(ttk.Frame):
         ttk.Label(hist, text="Action history", style="Panel.TLabel",
                   font=font_tuple("data_label")).grid(row=0, column=0, sticky="w")
         self._history_list = tk.Listbox(
-            hist, height=4, selectmode="browse", font=("Consolas", 8),
+            hist, height=4, selectmode="browse", font=font_tuple("caption"),
             borderwidth=0, highlightthickness=0, activestyle="none")
         hscroll = ttk.Scrollbar(hist, orient="vertical", command=self._history_list.yview)
         self._history_list.configure(yscrollcommand=hscroll.set)
@@ -160,6 +160,9 @@ class SafetyPanel(ttk.Frame):
         self._undo_btn = ttk.Button(btn_frame, text="Undo hint", style="Ghost.TButton",
                                     command=self._do_undo_hint)
         self._undo_btn.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(SPACING["sm"], 0))
+        self._revert_btn = ttk.Button(btn_frame, text="Revert selected action", style="Ghost.TButton",
+                                      command=self._do_undo_hint)
+        self._revert_btn.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(SPACING["sm"], 0))
 
     def update_plan(self, del_count: int, keep_count: int, reclaim_bytes: int,
                     risk_flags: int = 0, mode: str = "Trash"):

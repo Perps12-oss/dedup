@@ -66,8 +66,8 @@ class CerebroApp:
 
     APP_NAME    = "CEREBRO"
     APP_VERSION = "2.1.0"
-    MIN_WIDTH   = 1100
-    MIN_HEIGHT  = 700
+    MIN_WIDTH   = 900
+    MIN_HEIGHT  = 560
 
     def __init__(self):
         # ── Root window ──────────────────────────────────────────────
@@ -79,12 +79,27 @@ class CerebroApp:
         self.root.title(f"{self.APP_NAME} Dedup Engine v{self.APP_VERSION}")
         self.root.minsize(self.MIN_WIDTH, self.MIN_HEIGHT)
 
+        # Hint Tk about DPI scaling to reduce blurry fonts on Windows.
+        try:
+            self.root.call("tk", "scaling", 1.0)
+        except Exception:
+            pass
+
         # ── State & config ───────────────────────────────────────────
         self.state    = UIState()
         self.config   = load_config()
-        w = getattr(self.state.settings, "window_width",  self.MIN_WIDTH)
-        h = getattr(self.state.settings, "window_height", self.MIN_HEIGHT)
-        self.root.geometry(f"{max(w, self.MIN_WIDTH)}x{max(h, self.MIN_HEIGHT)}")
+        sw = max(1, int(self.root.winfo_screenwidth()))
+        sh = max(1, int(self.root.winfo_screenheight()))
+        default_w = max(self.MIN_WIDTH, sw // 2)   # ~1/4 screen area
+        default_h = max(self.MIN_HEIGHT, sh // 2)
+        w = getattr(self.state.settings, "window_width",  0) or 0
+        h = getattr(self.state.settings, "window_height", 0) or 0
+        if w <= 0 or h <= 0:
+            w, h = default_w, default_h
+        # If persisted value is legacy large default, prefer the new compact default.
+        if (w, h) == (1280, 820):
+            w, h = default_w, default_h
+        self.root.geometry(f"{max(int(w), self.MIN_WIDTH)}x{max(int(h), self.MIN_HEIGHT)}")
 
         # ── Coordinator ───────────────────────────────────────────────
         self.coordinator = ScanCoordinator()
