@@ -15,16 +15,17 @@ Controllers receive callbacks from the app so they can trigger UI updates withou
 
 ## ReviewController
 
-- **Constructor:** `ReviewController(coordinator, store, get_current_result, on_preview_result, on_refresh_review_ui, on_confirm_deletion, on_execute_start, on_execute_done)`
-- **Callbacks (injected by app at construction):**
-  - `get_current_result() -> Any` — returns the current ScanResult or None; used to build deletion plan.
-  - `on_preview_result(message: str) -> None` — show dry-run/preview result in SafetyPanel.
-  - `on_refresh_review_ui() -> None` — refresh workspace and safety panel from store.
-  - `on_confirm_deletion(plan, prev) -> str` — show confirmation dialog; return "ok" to proceed, else cancel.
-  - `on_execute_start() -> None` — disable execute button, show “Executing…” (or similar).
+- **Constructor:** `ReviewController(coordinator, store, callbacks)` where `callbacks` implements `IReviewCallbacks` (single interface; no lambdas).
+- **IReviewCallbacks (Protocol):**
+  - `get_current_result() -> Any` — current ScanResult or None.
+  - `set_preview_result(msg: str) -> None` — show dry-run result in SafetyPanel.
+  - `refresh_review_ui() -> None` — refresh workspace and safety panel from store.
+  - `confirm_deletion(plan, prev) -> str` — show confirmation dialog; return "cancel", "preview", or "delete".
+  - `on_execute_start() -> None` — disable execute button, show “Executing…”.
   - `on_execute_done(result) -> None` — re-enable button, update UI, notify app.
-- **Store:** Controller reads `review_selection(state)` and calls `store.set_review_selection(...)` for SetKeep/ClearKeep. Plan and execute use coordinator; UI updates go through callbacks.
-- **No page reference.** ReviewController does not hold a reference to ReviewPage or SafetyPanel; all UI updates are via the callbacks above.
+- **App wiring:** App passes `callbacks=self._review`; ReviewPage implements IReviewCallbacks (public methods). No lambdas closing over page internals.
+- **Store:** Controller reads `review_selection(state)` and calls `store.set_review_selection(...)` for SetKeep/ClearKeep. Plan and execute use coordinator.
+- **No page reference.** Controller holds only the callbacks interface; UI updates are via that contract.
 
 ## Review: intents and store access (Phase 3A.2)
 

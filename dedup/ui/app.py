@@ -197,7 +197,6 @@ class CerebroApp:
         self._scan_controller = ScanController(self.coordinator, self.store)
         self._scan = ScanPage(
             content,
-            coordinator=self.coordinator,
             on_complete=self._on_scan_complete,
             on_cancel=self._on_scan_cancel,
             on_go_to_review=self._go_to_review_after_scan,
@@ -207,20 +206,13 @@ class CerebroApp:
 
         self._review = ReviewPage(
             content,
-            coordinator=self.coordinator,
             on_delete_complete=self._on_delete_complete,
-            review_controller=None,
             store=self.store,
         )
         self._review_controller = ReviewController(
             self.coordinator,
             self.store,
-            get_current_result=lambda: self._review._current_result,
-            on_preview_result=lambda msg: self._review._safety_panel.set_dry_run_result(msg),
-            on_refresh_review_ui=lambda: self._review._sync_review_from_store_and_refresh(),
-            on_confirm_deletion=lambda plan, prev: self._review._show_delete_confirmation(plan, prev),
-            on_execute_start=lambda: self._review._safety_panel._delete_btn.configure(state="disabled", text="Executing…") or self._review.update(),
-            on_execute_done=lambda result: self._review._on_execute_done(result),
+            callbacks=self._review,
         )
         self._review._review_controller = self._review_controller
         self.shell.register_page("review", self._review)

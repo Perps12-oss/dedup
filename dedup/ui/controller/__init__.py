@@ -5,7 +5,7 @@ ScanController: handles StartScan, StartResume, CancelScan; drives scan intent l
 ReviewController: handles SetKeep, ClearKeep, PreviewDeletion, ExecuteDeletion.
 """
 
-from .review_controller import ReviewController
+from .review_controller import IReviewCallbacks, ReviewController
 from .scan_controller import ScanController
 
-__all__ = ["ReviewController", "ScanController"]
+__all__ = ["IReviewCallbacks", "ReviewController", "ScanController"]

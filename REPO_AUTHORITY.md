@@ -31,3 +31,24 @@ One place that states **who is the authority** for reads and commands. Avoid dup
 - **ScanPage**: When store is attached, only store drives display; hub is detached.
 - **Review**: All review state reads via selectors; writes via store.set_review_selection. Commands via ReviewController only.
 - **Packaging**: Tests excluded from distribution. Optional deps in setup.py extras_require and requirements.txt.
+
+---
+
+## Current state and remaining coupling
+
+Accurate picture of what is done vs what is still coupled (for future cleanup).
+
+**1. The store path exists and is live.**  
+CerebroApp creates UIStateStore, creates ProjectionHubStoreAdapter, starts it, and wires ScanPage and DiagnosticsPage through `attach_store(...)`. The intended path **hub → store → page** is real in app wiring.
+
+**2. Remaining coordinator injection (Mission, History, Diagnostics).**  
+app.py still passes `coordinator=self.coordinator` into MissionPage, HistoryPage, and DiagnosticsPage. Those pages need it for get_resumable_scan_ids, load_scan, get_history, etc. Scan and Review no longer receive coordinator from app; they use controller only (and optional coordinator for test fallback).
+
+**3. Review controller boundary is now pure.**  
+The review action bar calls the controller. ReviewController takes a single `callbacks` object implementing `IReviewCallbacks` (get_current_result, set_preview_result, refresh_review_ui, confirm_deletion, on_execute_start, on_execute_done). ReviewPage implements that interface as public methods. App passes `callbacks=self._review`; no lambdas closing over page internals.
+
+**4. History and Diagnostics public refresh hooks exist.**  
+app.py routes History and Diagnostics actions to `self._history.refresh()` and `self._diagnostics.refresh()`. Shell no longer calls underscore methods directly for those actions.
+
+**5. Scan page is decoupled from coordinator at app level.**  
+app.py passes only `scan_controller` to ScanPage (no coordinator). Display is store-driven via `attach_store`. Commands go through ScanController. Coordinator is optional on ScanPage for fallback (e.g. tests) only.

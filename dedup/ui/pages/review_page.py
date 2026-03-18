@@ -43,13 +43,13 @@ class ReviewPage(ttk.Frame):
     """Review & deletion planning page."""
 
     def __init__(self, parent,
-                 coordinator: ScanCoordinator,
                  on_delete_complete: Callable[[DeletionResult], None],
                  review_controller: Optional[ReviewController] = None,
                  store=None,
+                 coordinator: Optional[ScanCoordinator] = None,
                  **kwargs):
         super().__init__(parent, **kwargs)
-        self.coordinator = coordinator
+        self.coordinator = coordinator  # Optional: only for fallback when no controller
         self.on_delete_complete = on_delete_complete
         self._review_controller = review_controller
         self._store = store
@@ -57,6 +57,26 @@ class ReviewPage(ttk.Frame):
         self._current_result: Optional[ScanResult] = None
         self._thumbnail_refs: list = []
         self._build()
+
+    # --- IReviewCallbacks: public contract for ReviewController (no page reference in app) ---
+    def get_current_result(self):
+        return self._current_result
+
+    def set_preview_result(self, msg: str) -> None:
+        self._safety_panel.set_dry_run_result(msg)
+
+    def refresh_review_ui(self) -> None:
+        self._sync_review_from_store_and_refresh()
+
+    def confirm_deletion(self, plan, prev: dict) -> str:
+        return self._show_delete_confirmation(plan, prev)
+
+    def on_execute_start(self) -> None:
+        self._safety_panel._delete_btn.configure(state="disabled", text="Executing…")
+        self.update()
+
+    def on_execute_done(self, result) -> None:
+        self._on_execute_done(result)
 
     def _build(self):
         self.columnconfigure(0, weight=1)
@@ -403,7 +423,7 @@ class ReviewPage(ttk.Frame):
     # Deletion
     # ----------------------------------------------------------------
     def _create_plan(self) -> Optional[DeletionPlan]:
-        if not self._current_result:
+        if not self._current_result or not self.coordinator:
             return None
         return self.coordinator.create_deletion_plan(
             self._current_result,
@@ -412,6 +432,9 @@ class ReviewPage(ttk.Frame):
         )
 
     def _on_dry_run(self):
+        if self._review_controller:
+            self._review_controller.handle_preview_deletion()
+            return
         plan = self._create_plan()
         if not plan or not plan.groups:
             self._safety_panel.set_dry_run_result("No files selected.")
@@ -487,6 +510,9 @@ class ReviewPage(ttk.Frame):
         return result["choice"]
 
     def _on_execute(self):
+        if self._review_controller:
+            self._review_controller.handle_execute_deletion()
+            return
         plan = self._create_plan()
         if not plan or not plan.groups:
             messagebox.showinfo("Delete", "No files selected for deletion.")

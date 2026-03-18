@@ -52,16 +52,16 @@ class ScanPage(ttk.Frame):
     def __init__(
         self,
         parent,
-        coordinator: ScanCoordinator,
         on_complete: Callable[[ScanResult], None],
         on_cancel: Callable[[], None],
         on_go_to_review: Optional[Callable[[], None]] = None,
-        hub=None,      # ProjectionHub — injected by app.py after creation
         scan_controller=None,
+        coordinator: Optional[ScanCoordinator] = None,
+        hub=None,      # ProjectionHub — injected by app.py after creation
         **kwargs,
     ):
         super().__init__(parent, **kwargs)
-        self.coordinator  = coordinator
+        self.coordinator  = coordinator  # Optional: fallback when scan_controller not set
         self.on_complete  = on_complete
         self.on_cancel    = on_cancel
         self.on_go_to_review = on_go_to_review
@@ -574,7 +574,7 @@ class ScanPage(ttk.Frame):
                 on_complete=self._on_complete_fallback,
                 on_error=self._on_error_fallback,
             )
-        else:
+        elif self.coordinator:
             self.coordinator.start_scan(
                 roots=[path],
                 on_progress=self._on_progress_fallback,
@@ -597,7 +597,7 @@ class ScanPage(ttk.Frame):
                 on_complete=self._on_complete_fallback,
                 on_error=self._on_error_fallback,
             )
-        else:
+        elif self.coordinator:
             self.coordinator.start_scan(
                 roots=[],
                 resume_scan_id=scan_id,
@@ -686,7 +686,7 @@ class ScanPage(ttk.Frame):
         if messagebox.askyesno("Cancel Scan", "Cancel the current scan?"):
             if self._scan_controller:
                 self._scan_controller.handle_cancel()
-            else:
+            elif self.coordinator:
                 self.coordinator.cancel_scan()
             self.vm.is_scanning = False
             self._progress_bar.stop()
