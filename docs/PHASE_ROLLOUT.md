@@ -115,6 +115,7 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 ### Done
 
 - Documented stub buttons and deferral in `button_functionality_audit.md` + this file.
+- **Triage pass:** `docs/UI_CONSISTENCY_AUDIT.md` — Phase 6 table (Simple vs Advanced scope, deferred typography/decision-state/empty-state work). `BACKLOG.md` items are closed or tracked in-repo.
 
 ### Skipped / why
 
@@ -122,7 +123,7 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 
 ### Sub-phase
 
-- Review `UI_CONSISTENCY_AUDIT.md` + `BACKLOG.md`; move low-value items to Advanced-only or remove.
+- ~~Review `UI_CONSISTENCY_AUDIT.md` + `BACKLOG.md`~~ **Done** (2026-03); remaining rows are explicit **deferred** backlog, not scheduled.
 
 ---
 
@@ -132,15 +133,16 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 
 - `docs/CONTRIBUTING.md` (this repo).
 - Pointers in `THEME_SYSTEM.md`, `MODE_TOGGLE.md`, `PHASE_ROLLOUT.md`.
+- Root `README.md` stub linking into `docs/`.
 
 ### Skipped / why
 
-- Full WCAG AA verification across all themes.
-- Root `README.md` (repo currently uses `docs/README.md`); add symlink or root stub if publishing to GitHub.
+- Full WCAG AA verification across all themes (manual / per-theme pass still open).
 
 ### Sub-phase
 
-- Contrast fixes for any preset failing AA for body text.
+- ~~Root `README.md`~~ **Done:** repo root stub links to `docs/README.md`, `CONTRIBUTING`, `ENGINEERING_STATUS`.
+- Contrast fixes for any preset failing AA for body text (see Themes page snapshot + `contrast.py`).
 - Expand type hints on `ui/` after mypy clean on `engine/`.
 
 ---
@@ -152,4 +154,4 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 3. Phase 3 follow-up: Toast wiring + remove/hide Export stubs.  
 4. ~~Phase 4 follow-up~~ **Done (spike):** Virtual windowed navigator + `BENCHMARK_BASELINE` snapshot row. *Remaining:* broader VirtualTree, incremental bench rows.  
 5. ~~Phase 5 follow-up~~ **Done:** `ui_mode` gates + Mission/Scan layout (`sync_chrome`, Settings toggles for mission/scan panels).  
-6. Phase 7: contrast remediation for failing presets.
+6. ~~Phase 6 documentation triage~~ **Done.** Phase 7: contrast remediation for failing presets (optional).

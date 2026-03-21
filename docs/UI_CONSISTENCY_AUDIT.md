@@ -2,6 +2,20 @@
 
 Audit scope: **Mission**, **Scan**, **Review**, **TopBar**, **NavRail**, **StatusStrip**, **SafetyPanel** (and shared components they use). Purpose: answer the board’s questions and list concrete inconsistencies for a design-system rollout pass.
 
+**Status (2026-03):** History, Diagnostics, and Settings **page headers** use `font_tuple("page_title")` / `page_subtitle` like Mission/Scan/Review. Remaining gaps below (SectionCard, Review workspace gallery fonts, etc.) are **backlog**, not blockers.
+
+---
+
+## Phase 6 triage (feature evaluation)
+
+| Area | Decision |
+|------|----------|
+| **Simple `ui_mode`** | Dense flows (Export, full Diagnostics, Compare, compact Mission/Scan) are **Advanced-only** or hidden — see `docs/MODE_TOGGLE.md`. |
+| **Typography sweep** | **Deferred:** SectionCard, MetricCard, FilterBar, gallery/compare labels in `review_workspace.py`, etc. — track here for a future consistency PR. |
+| **Decision-state badges in Group Navigator** | **Deferred:** Review chips/filters exist; per-row badges remain a Phase 2C–style enhancement. |
+| **Empty / loading / degraded spec** | **Deferred:** `DegradedBanner` / `EmptyState` in use; full spec doc optional. |
+| **Telemetry / pruning** | **N/A** in-app; product backlog only. |
+
 ---
 
 ## 1. Board questions — answers
@@ -10,7 +24,7 @@ Audit scope: **Mission**, **Scan**, **Review**, **TopBar**, **NavRail**, **Statu
 
 **Partially.**  
 - **Consistent:** Mission, Scan, Review use `font_tuple("page_title")` and `font_tuple("page_subtitle")` for headers; SafetyPanel, Scan panels use `font_tuple("data_label")` / `font_tuple("data_value")`; TopBar uses `font_tuple("section_title")`, `font_tuple("caption")`, `font_tuple("strip")`, `font_tuple("body")`; NavRail and StatusStrip use design-system fonts.  
-- **Inconsistent:** History, Settings, Diagnostics use hardcoded `("Segoe UI", 14, "bold")` and `("Segoe UI", 8)` for page titles and labels. SectionCard uses `("Segoe UI", 9, "bold")` and `("Segoe UI", 8)` for title/badge. MetricCard, FilterBar, ProvenanceRibbon, StatusRibbon, InsightDrawer, Badge/StatusBadge, EmptyState, review_workspace, and ReviewPage group-detail rows use hardcoded fonts. So: **core pages and shell are on the design system; cards, secondary pages, and many shared components are not.**
+- **Inconsistent:** SectionCard uses `("Segoe UI", 9, "bold")` and `("Segoe UI", 8)` for title/badge. MetricCard, FilterBar, ProvenanceRibbon, StatusRibbon, InsightDrawer, Badge/StatusBadge, EmptyState, review_workspace, and ReviewPage group-detail rows use hardcoded fonts. **History / Diagnostics / Settings page titles** now use `font_tuple` like Mission/Scan/Review. So: **shell + all page headers are on the design system; many cards and gallery/compare labels are not.**
 
 ### Are action priorities visually obvious?
 
@@ -49,11 +63,11 @@ Audit scope: **Mission**, **Scan**, **Review**, **TopBar**, **NavRail**, **Statu
 | Mission         | `font_tuple("page_title")` | `font_tuple("page_subtitle")` | OK            |
 | Scan            | `font_tuple("page_title")` | `font_tuple("page_subtitle")` | OK            |
 | Review          | `font_tuple("page_title")` | `font_tuple("page_subtitle")` | OK            |
-| History         | `("Segoe UI", 14, "bold")` | —                         | **Align**     |
-| Diagnostics     | `("Segoe UI", 14, "bold")` | —                         | **Align**     |
-| Settings        | `("Segoe UI", 14, "bold")` | —                         | **Align**     |
+| History         | `font_tuple("page_title")` | `font_tuple("page_subtitle")` | OK (aligned)  |
+| Diagnostics     | `font_tuple("page_title")` | `font_tuple("page_subtitle")` | OK (aligned)  |
+| Settings        | `font_tuple("page_title")` | `font_tuple("page_subtitle")` | OK (aligned)  |
 
-**Action:** Use `font_tuple("page_title")` (and optional `page_subtitle`) for History, Diagnostics, Settings.
+**Follow-up:** SectionCard and secondary components still mix hardcoded sizes — see Phase 6 triage table above.
 
 ### Card titles
 

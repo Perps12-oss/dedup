@@ -26,10 +26,16 @@
 | **Phase 4 spike** | Opt-in | `CEREBRO_VIRTUAL_NAV=1` → Review Group Navigator uses windowed Treeview rows; `BENCHMARK_BASELINE.md` snapshot table |
 | **Simple `ui_mode` gates** | Wired | Export / Copy Diag hidden; Diagnostics Phases-only + drawer; Review Compare hidden + shortcuts gated |
 | **Mission / Scan simple layout** | Wired | Simple: last-scan–only Mission, Scan left column only; Advanced honors `mission_show_*` / `scan_show_*` + Settings checkboxes |
+| **Root README** | Present | `README.md` → `docs/README.md` + contributing + engineering status |
+| **Phase 6 triage** | Documented | `UI_CONSISTENCY_AUDIT.md` Phase 6 table; rollout Phase 6 sub-phase closed |
 
 ---
 
 ## Changelog (append newest first)
+
+### 2026-03-21 — Phase 6–7 docs: consistency triage + root README
+
+- `README.md` at repo root; `UI_CONSISTENCY_AUDIT.md` status banner + Phase 6 triage + corrected page header table; `PHASE_ROLLOUT.md` Phase 6/7 updates.
 
 ### 2026-03-21 — Phase 5: Mission & Scan `ui_mode` + settings-driven panels
 
