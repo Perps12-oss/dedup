@@ -86,7 +86,7 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 ### Sub-phase
 
 - Extend virtualization to other heavy Treeviews (e.g. workspace file table) if profiling warrants.
-- Profile discovery/hashing with `engine/bench.py` / `bench_incremental_scan`; keep appending rows to `BENCHMARK_BASELINE.md`.
+- ~~Profile discovery/hashing with `bench_incremental_scan`; append rows to `BENCHMARK_BASELINE.md`.~~ **Done (sample):** `unchanged` scenario row logged 2026-03-21.
 
 ---
 
@@ -134,15 +134,17 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 - `docs/CONTRIBUTING.md` (this repo).
 - Pointers in `THEME_SYSTEM.md`, `MODE_TOGGLE.md`, `PHASE_ROLLOUT.md`.
 - Root `README.md` stub linking into `docs/`.
+- **`dedup/scripts/audit_theme_contrast.py`:** programmatic WCAG AA (4.5:1) check for preset text/accent vs base/panel/sidebar; `--strict` for CI; **`docs/THEME_CONTRAST_REPORT.md`** generated via `--md-out`.
+- **Token remediation:** `theme_tokens.py` tuned `text_muted` / accent (and related UI tokens where needed) so strict audit passes for all registered presets.
 
 ### Skipped / why
 
-- Full WCAG AA verification across all themes (manual / per-theme pass still open).
+- Full manual WCAG pass (focus order, non-text contrast, every widget state) — not automated here.
 
 ### Sub-phase
 
 - ~~Root `README.md`~~ **Done:** repo root stub links to `docs/README.md`, `CONTRIBUTING`, `ENGINEERING_STATUS`.
-- Contrast fixes for any preset failing AA for body text (see Themes page snapshot + `contrast.py`).
+- ~~Contrast fixes for presets failing AA on audited pairs~~ **Done** (see `THEME_CONTRAST_REPORT.md`).
 - Expand type hints on `ui/` after mypy clean on `engine/`.
 
 ---
@@ -152,6 +154,6 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 1. ~~Phase 1 follow-up~~ **Done:** Ruff clean, format, pre-commit, pip-audit JSON, vulture, button audit doc, runtime notes. *Remaining optional:* pylint, pydeps, GUI soak, mypy green.  
 2. Phase 2 follow-up: JSON theme export/import (no draggable editor yet).  
 3. Phase 3 follow-up: Toast wiring + remove/hide Export stubs.  
-4. ~~Phase 4 follow-up~~ **Done (spike):** Virtual windowed navigator + `BENCHMARK_BASELINE` snapshot row. *Remaining:* broader VirtualTree, incremental bench rows.  
+4. ~~Phase 4 follow-up~~ **Done (spike):** Virtual windowed navigator + `BENCHMARK_BASELINE` discovery + incremental `unchanged` rows. *Remaining:* broader VirtualTree, more scenario rows as needed.  
 5. ~~Phase 5 follow-up~~ **Done:** `ui_mode` gates + Mission/Scan layout (`sync_chrome`, Settings toggles for mission/scan panels).  
-6. ~~Phase 6 documentation triage~~ **Done.** Phase 7: contrast remediation for failing presets (optional).
+6. ~~Phase 6 documentation triage~~ **Done.** ~~Phase 7: contrast audit + token remediation~~ **Done** (2026-03-21).

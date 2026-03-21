@@ -76,6 +76,7 @@ No production behavior change is required to run benchmarks; they use the same p
 | Date (UTC) | Host context | Command (abbrev.) | Result (notes) |
 |------------|--------------|-------------------|----------------|
 | 2026-03-21 | Windows, repo root `dedup`, Python 3.14 | `python -m dedup.scripts.bench_discovery "<repo>" --files 400 --runs 2` | 190 files discovered (tree smaller than cap); mean **~1253 files/sec**, stdev high between runs (cold vs warm / AV). |
+| 2026-03-21 | Windows, repo root `dedup`, Python 3.14 | `python -m dedup.scripts.bench_incremental_scan "<repo>" --scenario unchanged --runs 2 --workers 2` | **193 files**; first-scan total **~130–135 ms**; second (subtree_skip, compatible session) **~118–130 ms**; speedup **~1.0–1.14×** between runs (noisy on small tree). |
 
 Re-run on the same path after performance work and add a row; compare mean files/sec and wall time.
 

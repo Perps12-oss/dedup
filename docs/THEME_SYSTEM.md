@@ -18,6 +18,8 @@
 
 `dedup/ui/theme/contrast.py` implements WCAG relative luminance and contrast ratio for `#RRGGBB` colours. The Themes page shows an informative snapshot for `text_primary` and `accent_primary` against `bg_base`.
 
+**Batch audit (presets):** run `python -m dedup.scripts.audit_theme_contrast` (optional `--strict` to exit non-zero on failure; `--md-out docs/THEME_CONTRAST_REPORT.md` to refresh the committed report). Checks align with WCAG AA for **normal** body text (4.5:1) on key semantic pairs; see the script docstring for scope.
+
 ## Programmatic API
 
 ```python

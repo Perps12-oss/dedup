@@ -23,7 +23,8 @@
 | **Button audit** | Living | `docs/button_functionality_audit.md` |
 | **History / Diagnostics Export** | Implemented | Top bar **Export** → JSON save-as (`export_sessions_json`, `export_report_json`) |
 | **Theme JSON + toasts** | Implemented | Themes page `cerebro_theme_config_v1` import/export; `ToastManager` for scan complete, theme change, export |
-| **Phase 4 spike** | Opt-in | `CEREBRO_VIRTUAL_NAV=1` → Review Group Navigator uses windowed Treeview rows; `BENCHMARK_BASELINE.md` snapshot table |
+| **Phase 4 spike** | Opt-in | `CEREBRO_VIRTUAL_NAV=1` → Review Group Navigator uses windowed Treeview rows; `BENCHMARK_BASELINE.md` discovery + incremental `unchanged` rows |
+| **Theme contrast audit** | CI-ready | `python -m dedup.scripts.audit_theme_contrast --strict`; report at `docs/THEME_CONTRAST_REPORT.md` |
 | **Simple `ui_mode` gates** | Wired | Export / Copy Diag hidden; Diagnostics Phases-only + drawer; Review Compare hidden + shortcuts gated |
 | **Mission / Scan simple layout** | Wired | Simple: last-scan–only Mission, Scan left column only; Advanced honors `mission_show_*` / `scan_show_*` + Settings checkboxes |
 | **Root README** | Present | `README.md` → `docs/README.md` + contributing + engineering status |
@@ -32,6 +33,14 @@
 ---
 
 ## Changelog (append newest first)
+
+### 2026-03-21 — Phase 7: theme contrast audit + AA token fixes
+
+- `audit_theme_contrast.py` (`--strict`, `--md-out`); `THEME_CONTRAST_REPORT.md`; `theme_tokens.py` updates for muted text and accent contrast on failing presets; `THEME_SYSTEM.md` + `PHASE_ROLLOUT.md` Phase 7 updated.
+
+### 2026-03-21 — Phase 4: incremental benchmark baseline row
+
+- `BENCHMARK_BASELINE.md`: `bench_incremental_scan` `unchanged` scenario (193 files, ~1.0–1.14× speedup sample).
 
 ### 2026-03-21 — Phase 6–7 docs: consistency triage + root README
 
