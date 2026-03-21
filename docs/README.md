@@ -14,7 +14,7 @@ A production-grade duplicate file finder with a seven-destination CEREBRO operat
 - **Streaming discovery**: Memory-efficient file discovery using generators.
 - **Layered hashing**: Fast partial hash first, full hash when needed.
 - **Safe deletion**: Trash/recycle bin by default; permanent only with confirmation.
-- **Shell pages**: Mission (home), Scan (live), Review (decision studio), History, Diagnostics, Themes (presets + contrast), Settings.
+- **Shell pages**: Mission (home), Scan (live), Review (decision studio), History, Diagnostics, Themes (presets, contrast snapshot, **custom top-bar accent gradient** editor, JSON import/export), Settings.
 - **Store + controllers**: UIStateStore is the read authority; ScanController and ReviewController handle commands; no direct page/backend coupling in action paths.
 - **Cross-platform**: Windows, macOS, Linux.
 

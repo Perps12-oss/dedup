@@ -19,10 +19,13 @@
 | **Mypy** | Not clean | `docs/mypy_issues.txt` — backlog |
 | **UI shell** | 7 nav destinations | Mission, Scan, Review, History, Diagnostics, **Themes**, Settings |
 | **Store `ui_mode`** | Wired | `simple` / `advanced` synced with `AppSettings.advanced_mode` |
-| **Shortcuts** | Registry | `dedup/ui/shell/shortcut_registry.py`; Ctrl+7 → Themes |
+| **Shortcuts** | Registry | `dedup/ui/shell/shortcut_registry.py`; Ctrl+1–3 nav; Ctrl+4 History; Ctrl+5 Diagnostics; Ctrl+7 Themes; Ctrl+, Settings; Ctrl+\\ Insights drawer; `?` help |
 | **Button audit** | Living | `docs/button_functionality_audit.md` |
 | **History / Diagnostics Export** | Implemented | Top bar **Export** → JSON save-as (`export_sessions_json`, `export_report_json`) |
-| **Theme JSON + toasts** | Implemented | Themes page `cerebro_theme_config_v1` import/export; `ToastManager` for scan complete, theme change, export |
+| **Theme JSON + toasts** | Implemented | Themes page `cerebro_theme_config_v1` import/export (incl. `custom_gradient_stops`); `ToastManager` for scan complete, theme change, export |
+| **Accent gradient** | Implemented | `AppSettings.custom_gradient_stops`; `ThemeManager` merge + multi-stop `GradientBar`; Themes page editor |
+| **Shell polish** | Implemented | Nav **⇔** density cycle; top-bar Insights toggle; drawer close persists; **Stop for later** on Scan |
+| **Window position** | Implemented | `window_x` / `window_y` in `AppSettings` with size (non-maximized exit) |
 | **Phase 4 spike** | Opt-in | `CEREBRO_VIRTUAL_NAV=1` → Review Group Navigator uses windowed Treeview rows; `BENCHMARK_BASELINE.md` discovery + incremental `unchanged` rows |
 | **Theme contrast audit** | CI-ready | `python -m dedup.scripts.audit_theme_contrast --strict`; report at `docs/THEME_CONTRAST_REPORT.md` |
 | **Simple `ui_mode` gates** | Wired | Export / Copy Diag hidden; Diagnostics Phases-only + drawer; Review Compare hidden + shortcuts gated |
@@ -33,6 +36,12 @@
 ---
 
 ## Changelog (append newest first)
+
+### 2026-03-21 — Shell alignment + accent gradient tooling + docs
+
+- Nav rail **⇔** → density cycle; top bar Insights toggle; insight drawer **×** / toggle persist `show_insight_drawer` with save; global shortcuts (Ctrl+4/5, Ctrl+\\ drawer, etc.); window **x/y** persistence; Scan **Stop for later** label.
+- **`custom_gradient_stops`** in `AppSettings`; `ThemeManager.apply(..., gradient_stops=...)`; `gradients.py` multi-stop strip; Themes page gradient editor; JSON import/export includes stops; `ToastManager` module docstring.
+- Docs: `THEME_SYSTEM.md`, `PHASE_ROLLOUT.md` Phase 2/3, this file.
 
 ### 2026-03-21 — Phase 7: theme contrast audit + AA token fixes
 

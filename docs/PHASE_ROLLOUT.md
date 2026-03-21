@@ -31,20 +31,19 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 - `dedup/ui/theme/contrast.py` (WCAG luminance / ratio).
 - `dedup/ui/theme/theme_config.py` (`ThemeConfig` dataclass; `from_dict` normalizes JSON gradient stops and clamps `appearance_mode`).
 - `dedup/ui/pages/theme_page.py` — preset swatches + contrast snapshot; subscribes to `ThemeManager`; **JSON import/export** (`cerebro_theme_config_v1` bundle: `theme_key`, `theme_config`, `ui` flags).
+- **Accent bar gradient tooling:** `AppSettings.custom_gradient_stops` persisted in `ui_settings.json`; `ThemeManager.apply(..., gradient_stops=...)` merges stops into token copy; `gradients.py` multi-stop drawing; **Themes** page editor (stops, preview, Apply / Reset); export/import includes `ThemeConfig.custom_gradient_stops`.
 - **Nav + app:** `themes` route, `ThemePage` registered, **Ctrl+7** global shortcut.
 - Doc: `docs/THEME_SYSTEM.md`.
 
 ### Skipped / why
 
-- **Gradient editor** (multi-stop, draggable): large Canvas UX project.
-- **ThemeConfig persistence** in app settings beyond export bundle / system light-dark auto-detect: depends on editor + product decision.
-- **Real-time colour interpolation** (`lerp_color` transitions): optional polish; respect `reduced_motion` first.
+- **Draggable** gradient stops (Canvas drag UX): not implemented; numeric positions + color picker only.
+- **Real-time colour interpolation** (`lerp_color` transitions) between theme switches: optional polish; respect `reduced_motion` first.
 - **Token usage audit** (every key in `theme_tokens.py`): defer to avoid churn during UI refactors.
 
 ### Sub-phase before Phase 3 deep UX
 
 - “Recent 5 customs” list (still open).
-- Add minimal gradient preview (read-only multi-stop from preset tokens only).
 
 ---
 
@@ -53,6 +52,9 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 ### Done
 
 - `dedup/ui/shell/shortcut_registry.py` + `CerebroApp` refactored to use it; help dialog lists registered shortcuts.
+- **Global shortcuts (shell):** Ctrl+1–3 Mission / Scan / Review; **Ctrl+4** History; **Ctrl+5** Diagnostics; **Ctrl+7** Themes; **Ctrl+,** Settings; **Ctrl+\\** toggle Insights drawer; **?** shortcut help.
+- **Shell alignment:** Nav rail **⇔** cycles density (same as top bar); top bar **Insights** control + drawer **×** call `toggle_drawer` with persisted `show_insight_drawer`; scan bar **Stop for later** vs **Cancel** semantics.
+- **Window geometry:** `AppSettings.window_x` / `window_y` (with width/height) persisted on exit when not maximized; restored on launch when set.
 - `dedup/ui/components/toast_manager.py` — wired in `CerebroApp`: scan complete (once per `scan_id`), theme change (human-readable name), Themes page export toast.
 - Button audit doc (`button_functionality_audit.md`) maintained with shell + page actions.
 - **History / Diagnostics Export:** `HistoryPage.export_sessions_json`, `DiagnosticsPage.export_report_json` wired from TopBar (JSON save-as).

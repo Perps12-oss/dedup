@@ -7,3 +7,5 @@ Duplicate-aware scanning and the **CEREBRO** Tk operations shell (Mission, Scan,
 **Contributing & tooling:** [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)
 
 **Implementation status:** [docs/ENGINEERING_STATUS.md](docs/ENGINEERING_STATUS.md)
+
+**Theme tokens & accent gradient:** [docs/THEME_SYSTEM.md](docs/THEME_SYSTEM.md)
