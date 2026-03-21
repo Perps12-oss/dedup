@@ -30,4 +30,17 @@ class ThemeConfig:
     def from_dict(cls, d: Dict[str, Any]) -> "ThemeConfig":
         valid = {f for f in cls.__dataclass_fields__}
         kw = {k: v for k, v in d.items() if k in valid}
+        raw_stops = kw.get("custom_gradient_stops")
+        if raw_stops is not None:
+            stops: List[Tuple[float, str]] = []
+            for item in raw_stops:
+                if isinstance(item, (list, tuple)) and len(item) >= 2:
+                    try:
+                        stops.append((float(item[0]), str(item[1])))
+                    except (TypeError, ValueError):
+                        continue
+            kw["custom_gradient_stops"] = stops if stops else None
+        mode = kw.get("appearance_mode", "dark")
+        if mode not in ("light", "dark"):
+            kw["appearance_mode"] = "dark"
         return cls(**kw)

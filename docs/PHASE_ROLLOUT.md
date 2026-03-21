@@ -29,21 +29,21 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 ### Done
 
 - `dedup/ui/theme/contrast.py` (WCAG luminance / ratio).
-- `dedup/ui/theme/theme_config.py` (`ThemeConfig` dataclass).
-- `dedup/ui/pages/theme_page.py` — preset swatches + contrast snapshot; subscribes to `ThemeManager`.
+- `dedup/ui/theme/theme_config.py` (`ThemeConfig` dataclass; `from_dict` normalizes JSON gradient stops and clamps `appearance_mode`).
+- `dedup/ui/pages/theme_page.py` — preset swatches + contrast snapshot; subscribes to `ThemeManager`; **JSON import/export** (`cerebro_theme_config_v1` bundle: `theme_key`, `theme_config`, `ui` flags).
 - **Nav + app:** `themes` route, `ThemePage` registered, **Ctrl+7** global shortcut.
 - Doc: `docs/THEME_SYSTEM.md`.
 
 ### Skipped / why
 
 - **Gradient editor** (multi-stop, draggable): large Canvas UX project.
-- **ThemeConfig persistence** / system light-dark auto-detect: depends on editor + product decision.
+- **ThemeConfig persistence** in app settings beyond export bundle / system light-dark auto-detect: depends on editor + product decision.
 - **Real-time colour interpolation** (`lerp_color` transitions): optional polish; respect `reduced_motion` first.
 - **Token usage audit** (every key in `theme_tokens.py`): defer to avoid churn during UI refactors.
 
 ### Sub-phase before Phase 3 deep UX
 
-- Implement JSON import/export for `ThemeConfig` + “recent 5 customs” list.
+- “Recent 5 customs” list (still open).
 - Add minimal gradient preview (read-only multi-stop from preset tokens only).
 
 ---
@@ -53,18 +53,17 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 ### Done
 
 - `dedup/ui/shell/shortcut_registry.py` + `CerebroApp` refactored to use it; help dialog lists registered shortcuts.
-- `dedup/ui/components/toast_manager.py` (stub API; no call sites yet).
+- `dedup/ui/components/toast_manager.py` — wired in `CerebroApp`: scan complete (once per `scan_id`), theme change (human-readable name), Themes page export toast.
 - Button audit doc (`button_functionality_audit.md`) maintained with shell + page actions.
 - **History / Diagnostics Export:** `HistoryPage.export_sessions_json`, `DiagnosticsPage.export_report_json` wired from TopBar (JSON save-as).
 
 ### Skipped / why
 
-- **Breadcrumbs**, **validators.py**, full **ToastManager** wiring, **hover style maps** for every ttk style: scope too large for one pass.
+- **Breadcrumbs**, **validators.py**, **hover style maps** for every ttk style: scope too large for one pass.
 - **Micro-interactions / Canvas ripple:** optional.
 
 ### Sub-phase
 
-- Wire `ToastManager` after scan complete / theme apply.
 - Optionally hide Export in **Simple** `ui_mode` if product wants a leaner bar.
 - Finish deeper per-widget button inventory if needed.
 

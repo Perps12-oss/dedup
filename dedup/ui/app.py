@@ -24,6 +24,7 @@ except Exception:
 from ..engine.models import DeletionResult, ScanResult
 from ..infrastructure.config import load_config, save_config
 from ..orchestration.coordinator import ScanCoordinator
+from .components.toast_manager import ToastManager
 from .controller.review_controller import ReviewController
 from .controller.scan_controller import ScanController
 from .pages.diagnostics_page import DiagnosticsPage
@@ -40,6 +41,7 @@ from .shell.shortcut_registry import ShortcutRegistry
 from .state.hub_adapter import ProjectionHubStoreAdapter
 from .state.store import LastScanSummaryState, MissionState, UIStateStore
 from .theme.theme_manager import get_theme_manager
+from .theme.theme_registry import get_theme
 from .utils.formatting import fmt_bytes
 from .utils.ui_state import UIState
 
@@ -99,6 +101,9 @@ class CerebroApp:
         if (w, h) == (1280, 820):
             w, h = default_w, default_h
         self.root.geometry(f"{max(int(w), self.MIN_WIDTH)}x{max(int(h), self.MIN_HEIGHT)}")
+
+        self._toast = ToastManager(self.root)
+        self._last_scan_toast_id: str | None = None
 
         # ── Coordinator ───────────────────────────────────────────────
         self.coordinator = ScanCoordinator()
@@ -265,6 +270,8 @@ class CerebroApp:
             content,
             state=self.state,
             on_theme_change=self._on_theme_change,
+            on_preference_changed=self._apply_preferences,
+            on_toast=lambda msg: self._toast.show(msg, ms=2600),
         )
         self.shell.register_page("themes", self._theme_page)
 
@@ -418,6 +425,7 @@ class CerebroApp:
     # ------------------------------------------------------------------
 
     def _on_start_scan(self, path: Path, options: dict):
+        self._last_scan_toast_id = None
         self._navigate("scan")
         self._scan.start_scan(path, options)
         self.state.scan_status = "Scanning"
@@ -448,6 +456,13 @@ class CerebroApp:
         self.state.scan_phase = "Results"
         self._review.load_result(result)
         self._navigate("review")
+        if result.scan_id != self._last_scan_toast_id:
+            self._last_scan_toast_id = result.scan_id
+            try:
+                n = len(result.duplicate_groups)
+                self._toast.show(f"Scan complete — {n:,} duplicate group(s). Review opened.", ms=4500)
+            except Exception:
+                pass
 
     def _go_to_review_after_scan(self):
         """Go to Review with last scan result (e.g. when user clicks 'Go to Review' on Scan page)."""
@@ -543,6 +558,11 @@ class CerebroApp:
         tm = get_theme_manager()
         tm.apply(key, self.root)
         self.shell.top_bar.set_current_theme(key)
+        try:
+            label = get_theme(key).get("name", key)
+            self._toast.show(f"Theme: {label}", ms=2800)
+        except Exception:
+            pass
 
     def _on_advanced_mode(self, active: bool):
         self.store.set_ui_mode("advanced" if active else "simple")

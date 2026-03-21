@@ -22,10 +22,17 @@
 | **Shortcuts** | Registry | `dedup/ui/shell/shortcut_registry.py`; Ctrl+7 → Themes |
 | **Button audit** | Living | `docs/button_functionality_audit.md` |
 | **History / Diagnostics Export** | Implemented | Top bar **Export** → JSON save-as (`export_sessions_json`, `export_report_json`) |
+| **Theme JSON + toasts** | Implemented | Themes page `cerebro_theme_config_v1` import/export; `ToastManager` for scan complete, theme change, export |
 
 ---
 
 ## Changelog (append newest first)
+
+### 2026-03-21 — Theme JSON bundle + ToastManager wiring (Phase 2/3 follow-up)
+
+- Themes page: export/import `cerebro_theme_config_v1` (theme key, `ThemeConfig`, UI accessibility flags); `ThemeConfig.from_dict` hardened for JSON lists.
+- `CerebroApp`: toasts on scan complete (deduped per `scan_id`), theme apply (readable name), Themes export; import uses messagebox + theme toast only (no duplicate “imported” toast).
+- Docs: `THEME_SYSTEM.md`, `PHASE_ROLLOUT.md`, this file.
 
 ### 2026-03-21 — History & Diagnostics export (Phase 3 follow-up)
 

@@ -6,7 +6,7 @@
 - **Registry:** `theme_registry.py` maps keys → token dicts (15 multigradient presets + CEREBRO Noir).
 - **Application:** `ThemeManager.apply(key, root)` configures `ttk.Style` (`clam`) and root background; observers receive updated tokens (e.g. `GradientBar`, `ThemePage` contrast panel).
 - **Persistence:** `AppSettings.theme_key` in `ui_settings.json` (via `load_settings` / `save_settings`).
-- **Extended model:** `dedup/ui/theme/theme_config.py` — `ThemeConfig` dataclass for future custom gradients, history, import/export (not yet wired to persistence).
+- **Extended model:** `dedup/ui/theme/theme_config.py` — `ThemeConfig` dataclass; round-trips through JSON on the Themes page (see below).
 
 ## Adding a preset
 
@@ -25,7 +25,19 @@ from dedup.ui.theme import get_theme_manager
 get_theme_manager().apply("aurora_slate", root_window)
 ```
 
+## JSON bundle (`cerebro_theme_config_v1`)
+
+The Themes page **Export** / **Import** buttons read and write a single JSON object:
+
+| Field | Meaning |
+|--------|---------|
+| `format` | Always `"cerebro_theme_config_v1"`. |
+| `exported_at` | ISO-8601 UTC timestamp. |
+| `theme_key` | Must exist in `THEMES`. |
+| `theme_config` | Dict deserialized by `ThemeConfig.from_dict` (`appearance_mode`, `custom_gradient_stops`, etc.). Stop lists from JSON are normalized to `(position, #hex)` pairs. |
+| `ui` | Optional: `reduced_motion`, `reduced_gradients`, `high_contrast` — applied to app settings on import. |
+
 ## Skipped / planned
 
-- Multi-stop gradient editor UI, draggable stops, JSON import/export → see `docs/PHASE_ROLLOUT.md`.
-- `ThemeConfig` persisted in SQLite — deferred until editor lands.
+- Multi-stop gradient editor UI and draggable stops → see `docs/PHASE_ROLLOUT.md`.
+- `ThemeConfig` / custom presets persisted in SQLite — deferred until editor lands.
