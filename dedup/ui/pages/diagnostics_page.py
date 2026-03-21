@@ -89,6 +89,11 @@ class DiagnosticsPage(ttk.Frame):
         if events_log is not None:
             self.vm.events_log = events_log
 
+        um = getattr(state, "ui_mode", "simple")
+        if getattr(self, "_last_ui_mode", None) != um:
+            self._last_ui_mode = um
+            self.apply_ui_mode(um)
+
     def _build(self):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(3, weight=1)
@@ -150,6 +155,14 @@ class DiagnosticsPage(ttk.Frame):
         self._build_compat_tab()
         self._build_events_tab()
         self._build_integrity_tab()
+
+        self._diag_advanced_tabs: list[tuple[ttk.Frame, str]] = [
+            (self._tab_arts, "  Artifacts  "),
+            (self._tab_compat, "  Compatibility  "),
+            (self._tab_events, "  Events  "),
+            (self._tab_integ, "  Integrity  "),
+        ]
+        self._last_ui_mode: str | None = None
 
     def _build_overview(self, body: ttk.Frame):
         # Two-column key/value grid — right-aligned keys, _GAP_MD indent
@@ -222,6 +235,28 @@ class DiagnosticsPage(ttk.Frame):
             height=5,
         )
         self._warn_table.grid(row=1, column=0, sticky="nsew")
+
+    def apply_ui_mode(self, mode: str) -> None:
+        """Simple mode: Phases tab only. Advanced: all notebook tabs."""
+        if not hasattr(self, "_diag_advanced_tabs"):
+            return
+        adv = mode == "advanced"
+        prev = getattr(self, "_diag_advanced_applied", None)
+        if prev is not None and prev == adv:
+            return
+        self._diag_advanced_applied = adv
+        if adv:
+            for tab, text in self._diag_advanced_tabs:
+                try:
+                    self._notebook.index(tab)
+                except tk.TclError:
+                    self._notebook.add(tab, text=text)
+        else:
+            for tab, _ in self._diag_advanced_tabs:
+                try:
+                    self._notebook.hide(tab)
+                except tk.TclError:
+                    pass
 
     def _populate_warnings(self):
         rec = get_diagnostics_recorder()

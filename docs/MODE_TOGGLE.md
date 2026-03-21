@@ -12,14 +12,20 @@
 
 ## App wiring
 
-- On startup, after `ProjectionHubStoreAdapter.start()`, `CerebroApp` calls `store.set_ui_mode(...)` from `advanced_mode`.
-- On toggle, `_on_advanced_mode` updates the store then `shell.apply_preferences()`.
+- On startup, after `ProjectionHubStoreAdapter.start()`, `CerebroApp` calls `store.set_ui_mode(...)` from `advanced_mode` (before diagnostics attaches to the store).
+- **Top bar Advanced** and **Settings → Advanced** both end up in `_apply_preferences()`, which: `shell.apply_preferences()`, `store.set_ui_mode(...)`, `ReviewPage.set_ui_mode(...)`, and refreshes top-bar page actions + insight drawer for the active page.
 
-## What changes visually today
+## What changes visually in Simple mode
 
-- Top bar shows advanced state; per-page section visibility is **not** fully gated yet on `store.state.ui_mode` (many toggles already exist as `AppSettings` flags like `scan_show_phase_metrics`).
+- **Top bar (contextual):** no **Export** on History / Diagnostics; no **Copy Diag** on Scan.
+- **Insight drawer:** on Diagnostics, **Compat** section hidden (Live Phase only).
+- **Diagnostics page:** notebook shows **Phases** only; Artifacts, Compatibility, Events, Integrity tabs hidden (`apply_ui_mode` via store subscription).
+- **Review page:** **Compare** view radiobutton hidden; if the user was in Compare, mode falls back to Table; compare shortcuts (`C`, `[` / `]`, `X`) no-op.
 
-## Planned (Phase 5 sub-pass)
+## Advanced mode
 
-- Hide dense diagnostics / compare / export stubs behind `ui_mode == "simple"` or dedicated `AppSettings` flags.
-- Subscribe Mission / Scan / Review pages to `UIStateStore` for `ui_mode` and reflow sections without restart.
+- Full tabs, Export / Copy Diag actions, Compare UI, and drawer Compat block.
+
+## Optional later
+
+- Further gates (Mission / Scan density) driven by `AppSettings` flags such as `scan_show_phase_metrics`.

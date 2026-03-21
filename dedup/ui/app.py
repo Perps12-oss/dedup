@@ -143,11 +143,9 @@ class CerebroApp:
         # ── Register app-level state listeners ───────────────────────
         self.state.on("advanced_mode_changed", self._on_advanced_mode)
 
-        # ── Apply persisted UI preferences (drawer, density, etc) ────
-        self.shell.apply_preferences()
-
         # ── Navigate home ─────────────────────────────────────────────
         self._navigate("mission")
+        self._apply_preferences()
         self._bind_global_shortcuts()
 
         # ── Window close ─────────────────────────────────────────────
@@ -344,7 +342,13 @@ class CerebroApp:
             "settings": [],
             "themes": [],
         }
-        self.shell.set_page_actions(action_map.get(page, []))
+        actions = list(action_map.get(page, []))
+        if self.store.state.ui_mode == "simple":
+            if page == "scan":
+                actions = [a for a in actions if a[0] != "Copy Diag"]
+            elif page in ("history", "diagnostics"):
+                actions = [a for a in actions if a[0] != "Export"]
+        self.shell.set_page_actions(actions)
 
     def _update_drawer_content(self, page: str):
         sections = []
@@ -411,13 +415,16 @@ class CerebroApp:
                         ("Status", running.status if running else "—"),
                     ],
                 ),
-                (
-                    "Compat",
-                    [
-                        ("Outcome", self.hub.compat.overall_resume_outcome or "—"),
-                    ],
-                ),
             ]
+            if self.store.state.ui_mode == "advanced":
+                sections.append(
+                    (
+                        "Compat",
+                        [
+                            ("Outcome", self.hub.compat.overall_resume_outcome or "—"),
+                        ],
+                    )
+                )
         self.shell.set_drawer_content(sections)
 
     # ------------------------------------------------------------------
@@ -565,12 +572,19 @@ class CerebroApp:
             pass
 
     def _on_advanced_mode(self, active: bool):
-        self.store.set_ui_mode("advanced" if active else "simple")
-        self.shell.apply_preferences()
+        _ = active  # AppSettings.advanced_mode already updated by TopBar toggle
+        self._apply_preferences()
 
     def _apply_preferences(self) -> None:
-        """Apply UI preferences from state.settings to shell and pages."""
+        """Apply UI preferences from state.settings to shell, store ui_mode, and gated chrome."""
         self.shell.apply_preferences()
+        m = "advanced" if self.state.settings.advanced_mode else "simple"
+        self.store.set_ui_mode(m)
+        self._review.set_ui_mode(m)
+        ap = self.shell.active_page
+        if ap:
+            self._update_page_actions(ap)
+            self._update_drawer_content(ap)
 
     def _copy_diagnostics(self):
         try:

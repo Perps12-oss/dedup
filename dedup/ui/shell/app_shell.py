@@ -132,6 +132,11 @@ class AppShell(ttk.Frame):
                 self._pages[name].on_show()
         self.nav_rail.set_active(name)
 
+    @property
+    def active_page(self) -> Optional[str]:
+        """Current nav page name, or None before first navigation."""
+        return self._active_page
+
     def set_page_actions(self, actions: List[ActionSpec]):
         self.top_bar.set_page_actions(actions)
 

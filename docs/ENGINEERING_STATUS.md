@@ -24,10 +24,17 @@
 | **History / Diagnostics Export** | Implemented | Top bar **Export** → JSON save-as (`export_sessions_json`, `export_report_json`) |
 | **Theme JSON + toasts** | Implemented | Themes page `cerebro_theme_config_v1` import/export; `ToastManager` for scan complete, theme change, export |
 | **Phase 4 spike** | Opt-in | `CEREBRO_VIRTUAL_NAV=1` → Review Group Navigator uses windowed Treeview rows; `BENCHMARK_BASELINE.md` snapshot table |
+| **Simple `ui_mode` gates** | Wired | Export / Copy Diag hidden; Diagnostics Phases-only + drawer; Review Compare hidden + shortcuts gated |
 
 ---
 
 ## Changelog (append newest first)
+
+### 2026-03-21 — Phase 5 follow-up: simple-mode UI gates
+
+- `store.state.ui_mode` drives TopBar actions (no Export on History/Diagnostics, no Copy Diag on Scan in simple), Diagnostics notebook tabs + `apply_ui_mode`, insight drawer Compat section; Review `set_ui_mode` for Compare.
+- `_apply_preferences()` syncs shell + `ui_mode` + Review + contextual actions (Settings Advanced checkbox stays consistent).
+- `AppShell.active_page`; docs: `MODE_TOGGLE.md`, `PHASE_ROLLOUT.md`.
 
 ### 2026-03-21 — Phase 4 follow-up: virtual navigator + benchmark snapshot
 

@@ -97,14 +97,15 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 - `UIAppState.ui_mode` + `UIStateStore.set_ui_mode`.
 - Startup sync from `AppSettings.advanced_mode`.
 - `_on_advanced_mode` updates store; advanced toggle **persists** via `UIState.save()` in `AppShell`.
+- **Simple-mode gates:** contextual **Export** / **Copy Diag**; Diagnostics notebook (Phases-only) + drawer **Compat** row; Review **Compare** control + shortcuts; `_apply_preferences()` keeps Settings ↔ TopBar ↔ store in sync.
 
 ### Skipped / why
 
-- **Per-page conditional layouts** driven only by `ui_mode` (vs existing granular `AppSettings` flags): requires coordinated page edits.
+- **Per-page conditional layouts** driven only by `ui_mode` (vs existing granular `AppSettings` flags): broader reflow (Mission / Scan sections) still optional.
 
 ### Sub-phase
 
-- Gate **Export** (optional), diagnostics tiles, and compare mode entry points when `ui_mode == "simple"`.
+- ~~Gate **Export**, diagnostics notebook tabs, insight-drawer Compat, **Copy Diag**, and Review **Compare** when `ui_mode == "simple"`.~~ **Done** — see `docs/MODE_TOGGLE.md`.
 
 ---
 
@@ -149,5 +150,5 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 2. Phase 2 follow-up: JSON theme export/import (no draggable editor yet).  
 3. Phase 3 follow-up: Toast wiring + remove/hide Export stubs.  
 4. ~~Phase 4 follow-up~~ **Done (spike):** Virtual windowed navigator + `BENCHMARK_BASELINE` snapshot row. *Remaining:* broader VirtualTree, incremental bench rows.  
-5. Phase 5 follow-up: page-level `ui_mode` gates.  
+5. ~~Phase 5 follow-up~~ **Done:** `ui_mode` gates for Export, Copy Diag, diagnostics tabs/drawer, Review Compare. *Remaining:* optional Mission/Scan section gates.  
 6. Phase 7: contrast remediation for failing presets.

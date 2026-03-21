@@ -100,6 +100,7 @@ class ReviewPage(ttk.Frame):
         self._thumbnail_refs: list = []
         # Track which state-filter chip is active so we can style it
         self._active_chip_key: str = "all"
+        self._ui_mode: str = "simple"
         self._nav_top = 0
         self._nav_slot_group_ids: list[str] = []
         self._nav_scroll_virtual: bool | None = None
@@ -169,6 +170,7 @@ class ReviewPage(ttk.Frame):
         self._mode_var = tk.StringVar(value="table")
         mode_frame = ttk.Frame(hdr, style="Card.TFrame", padding=(_GAP_XS, _GAP_XS, _GAP_XS, _GAP_XS))
         mode_frame.grid(row=0, column=2, rowspan=2, sticky="e", padx=(_GAP_MD, 0))
+        self._compare_mode_rb: Optional[ttk.Radiobutton] = None
         for label, val in [("⊞ Table", "table"), ("⊟ Gallery", "gallery"), ("⧉ Compare", "compare")]:
             rb = ttk.Radiobutton(
                 mode_frame,
@@ -179,6 +181,8 @@ class ReviewPage(ttk.Frame):
                 width=10,
             )
             rb.pack(side="left", padx=(_GAP_XS, _GAP_XS), ipady=_GAP_XS)
+            if val == "compare":
+                self._compare_mode_rb = rb
 
         # ── Provenance ribbon ─────────────────────────────────────────
         # Added top gap to lift it off the header.
@@ -291,9 +295,11 @@ class ReviewPage(ttk.Frame):
         self._bind_preview = lambda e: self._on_preview_intent()
         self._bind_undo_hint = lambda e: self._on_undo_hint()
         self._bind_apply_smart = lambda e: self._on_apply_smart_rule_intent()
-        self._bind_compare_prev = lambda e: self._workspace.compare_prev()
-        self._bind_compare_next = lambda e: self._workspace.compare_next()
-        self._bind_quick_compare = lambda e: self._workspace.open_quick_compare_overlay()
+        self._bind_compare_prev = lambda e: self._run_if_compare_allowed(self._workspace.compare_prev)
+        self._bind_compare_next = lambda e: self._run_if_compare_allowed(self._workspace.compare_next)
+        self._bind_quick_compare = lambda e: self._run_if_compare_allowed(
+            self._workspace.open_quick_compare_overlay
+        )
 
     # ----------------------------------------------------------------
     # Sub-builders
@@ -514,6 +520,25 @@ class ReviewPage(ttk.Frame):
     # ----------------------------------------------------------------
     # Public
     # ----------------------------------------------------------------
+
+    def set_ui_mode(self, mode: str) -> None:
+        """Simple mode hides Compare and blocks compare shortcuts."""
+        self._ui_mode = mode if mode in ("simple", "advanced") else "simple"
+        adv = self._ui_mode == "advanced"
+        if self._compare_mode_rb is not None:
+            if adv:
+                self._compare_mode_rb.pack(side="left", padx=(_GAP_XS, _GAP_XS), ipady=_GAP_XS)
+            else:
+                self._compare_mode_rb.pack_forget()
+        if not adv and (self._mode_var.get() or "") == "compare":
+            self._mode_var.set("table")
+            self._on_mode_change()
+
+    def _run_if_compare_allowed(self, fn: Callable[[], None]) -> None:
+        if self._ui_mode != "advanced" or not self.winfo_viewable():
+            return
+        fn()
+
     def load_result(self, result: ScanResult):
         self._current_result = result
         self.vm.load_result(result)
@@ -1023,6 +1048,8 @@ class ReviewPage(ttk.Frame):
 
     def _set_mode_shortcut(self, mode: str) -> None:
         if not self.winfo_viewable():
+            return
+        if mode == "compare" and self._ui_mode != "advanced":
             return
         self._mode_var.set(mode)
         self._on_mode_change()
