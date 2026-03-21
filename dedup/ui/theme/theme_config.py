@@ -4,9 +4,10 @@ Serializable theme preferences beyond a single preset key.
 `AppSettings.theme_key` remains the persisted source of truth for the active preset;
 this model supports future custom gradients, history, and import/export (Phase 2+).
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 AppearanceMode = Literal["light", "dark"]

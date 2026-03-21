@@ -5,6 +5,7 @@ Used by pipeline, coordinator, event bus, and hub to record
 checkpoint failures, callback delivery failures, and repository issues
 so they can be surfaced in the diagnostics UI instead of being swallowed.
 """
+
 from __future__ import annotations
 
 import logging
@@ -12,7 +13,7 @@ import threading
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 _log = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ CATEGORY_DELETION = "deletion"
 @dataclass
 class DiagnosticEntry:
     """Single recorded warning/error for diagnostics display."""
+
     category: str
     message: str
     detail: str = ""
@@ -63,9 +65,7 @@ class DiagnosticsRecorder:
         )
         with self._lock:
             self._counts[category] += 1
-            self._entries.append(
-                DiagnosticEntry(category=category, message=message, detail=detail)
-            )
+            self._entries.append(DiagnosticEntry(category=category, message=message, detail=detail))
             if len(self._entries) > self._max_entries:
                 self._entries.pop(0)
 

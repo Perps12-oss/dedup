@@ -6,14 +6,18 @@ Owns:
   - Coordinator-sourced summaries (last scan, capabilities, recent folders)
   - Engine status and last_scan / recent_sessions for the Mission page UI.
 """
+
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from ..projections.session_projection import SessionProjection, EMPTY_SESSION
 from ..projections.history_projection import (
-    HistoryProjection, EMPTY_HISTORY, build_history_from_coordinator,
+    EMPTY_HISTORY,
+    HistoryProjection,
+    build_history_from_coordinator,
 )
+from ..projections.session_projection import EMPTY_SESSION, SessionProjection
 
 
 @dataclass
@@ -26,6 +30,7 @@ class CapabilityInfo:
 @dataclass
 class EngineStatus:
     """Engine status summary for the Mission page engine card."""
+
     hash_backend: str
     resume_available: bool
     schema_version: Any  # int or "—"
@@ -34,6 +39,7 @@ class EngineStatus:
 @dataclass
 class LastScanSummary:
     """Last scan summary for the Mission page last-scan card."""
+
     files_scanned: int
     duplicate_groups: int
     reclaimable_bytes: int
@@ -46,22 +52,23 @@ class MissionVM:
     View-model for the Mission page.
     Refreshed on demand (page focus, post-scan) rather than tick-driven.
     """
+
     # --- Projection snapshots ---
-    session:  SessionProjection = field(default_factory=lambda: EMPTY_SESSION)
-    history:  HistoryProjection = field(default_factory=lambda: EMPTY_HISTORY)
+    session: SessionProjection = field(default_factory=lambda: EMPTY_SESSION)
+    history: HistoryProjection = field(default_factory=lambda: EMPTY_HISTORY)
 
     # --- Coordinator-sourced data ---
-    recent_folders:  List[str]           = field(default_factory=list)
-    capabilities:    List[CapabilityInfo] = field(default_factory=list)
-    last_scan_root:  str                 = ""
-    last_scan_date:  str                 = ""
-    engine_warnings: List[str]           = field(default_factory=list)
+    recent_folders: List[str] = field(default_factory=list)
+    capabilities: List[CapabilityInfo] = field(default_factory=list)
+    last_scan_root: str = ""
+    last_scan_date: str = ""
+    engine_warnings: List[str] = field(default_factory=list)
 
     # --- Mission page UI contract (populated by refresh_from_coordinator or refresh_from_mission_state) ---
-    engine_status:   EngineStatus        = field(default_factory=lambda: EngineStatus("—", False, "—"))
-    last_scan:       Optional[LastScanSummary] = None
+    engine_status: EngineStatus = field(default_factory=lambda: EngineStatus("—", False, "—"))
+    last_scan: Optional[LastScanSummary] = None
     recent_sessions: List[Dict[str, Any]] = field(default_factory=list)
-    resumable_scan_ids: List[str]         = field(default_factory=list)
+    resumable_scan_ids: List[str] = field(default_factory=list)
 
     def refresh_from_mission_state(self, state: Any) -> None:
         """Update VM from UIStateStore (mission slice). Use when page is fed from store."""
@@ -71,12 +78,16 @@ class MissionVM:
             return
         # last_scan
         ls = getattr(mission, "last_scan", None)
-        self.last_scan = LastScanSummary(
-            files_scanned=getattr(ls, "files_scanned", 0),
-            duplicate_groups=getattr(ls, "duplicate_groups", 0),
-            reclaimable_bytes=getattr(ls, "reclaimable_bytes", 0),
-            duration_s=getattr(ls, "duration_s", 0.0),
-        ) if ls else None
+        self.last_scan = (
+            LastScanSummary(
+                files_scanned=getattr(ls, "files_scanned", 0),
+                duplicate_groups=getattr(ls, "duplicate_groups", 0),
+                reclaimable_bytes=getattr(ls, "reclaimable_bytes", 0),
+                duration_s=getattr(ls, "duration_s", 0.0),
+            )
+            if ls
+            else None
+        )
         self.recent_sessions = list(getattr(mission, "recent_sessions", ()))
         self.recent_folders = list(getattr(mission, "recent_folders", ()))
         self.resumable_scan_ids = list(getattr(mission, "resumable_scan_ids", ()))
@@ -125,19 +136,21 @@ class MissionVM:
             self.last_scan = None
 
         # Recent sessions as list of dicts for the table
-        resumable_ids = set(coordinator.get_resumable_scan_ids() or [])
+        set(coordinator.get_resumable_scan_ids() or [])
         self.recent_sessions = []
         for s in self.history.sessions:
-            self.recent_sessions.append({
-                "scan_id": s.scan_id,
-                "started_at": s.started_at,
-                "roots": list(s.roots),
-                "files_scanned": s.files_scanned,
-                "duplicates_found": s.duplicates_found,
-                "reclaimable_bytes": s.reclaimable_bytes,
-                "status": s.status,
-                "duration_s": s.duration_s,
-            })
+            self.recent_sessions.append(
+                {
+                    "scan_id": s.scan_id,
+                    "started_at": s.started_at,
+                    "roots": list(s.roots),
+                    "files_scanned": s.files_scanned,
+                    "duplicates_found": s.duplicates_found,
+                    "reclaimable_bytes": s.reclaimable_bytes,
+                    "status": s.status,
+                    "duration_s": s.duration_s,
+                }
+            )
 
         # Capabilities
         self.capabilities = _detect_capabilities()
@@ -187,12 +200,14 @@ def _detect_capabilities() -> List[CapabilityInfo]:
     # Hash backend
     try:
         import xxhash  # noqa: F401
+
         caps.append(CapabilityInfo("xxhash", True, "Fast non-cryptographic hashing"))
     except ImportError:
         caps.append(CapabilityInfo("xxhash", False, "pip install xxhash"))
 
     try:
         import blake3  # noqa: F401
+
         caps.append(CapabilityInfo("blake3", True, "High-security hashing"))
     except ImportError:
         caps.append(CapabilityInfo("blake3", False, "Optional"))
@@ -200,6 +215,7 @@ def _detect_capabilities() -> List[CapabilityInfo]:
     # Trash support — key must match page's _cap_vars key "send2trash"
     try:
         import send2trash  # noqa: F401
+
         caps.append(CapabilityInfo("send2trash", True, "System trash supported"))
     except ImportError:
         caps.append(CapabilityInfo("send2trash", False, "pip install send2trash"))
@@ -207,6 +223,7 @@ def _detect_capabilities() -> List[CapabilityInfo]:
     # Thumbnails — key must match page's _cap_vars key "pillow"
     try:
         from PIL import Image  # noqa: F401
+
         caps.append(CapabilityInfo("pillow", True, "Image preview enabled"))
     except ImportError:
         caps.append(CapabilityInfo("pillow", False, "pip install Pillow"))
@@ -214,6 +231,7 @@ def _detect_capabilities() -> List[CapabilityInfo]:
     # DnD
     try:
         import tkinterdnd2  # noqa: F401
+
         caps.append(CapabilityInfo("tkdnd", True, "Folder drop enabled"))
     except ImportError:
         caps.append(CapabilityInfo("tkdnd", False, "Optional"))

@@ -2,6 +2,7 @@
 WCAG-style contrast helpers for hex colours (sRGB).
 Used for theme QA and the Themes page summary.
 """
+
 from __future__ import annotations
 
 import re

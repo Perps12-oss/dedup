@@ -8,10 +8,9 @@ Hashing tests: partial hash is for candidates only; confirmation requires full h
 from __future__ import annotations
 
 import pytest
-from pathlib import Path
 
-from dedup.engine.models import FileMetadata, ScanConfig
-from dedup.engine.hashing import HashEngine, HashStrategy, group_by_partial_hash, confirm_duplicates
+from dedup.engine.hashing import HashEngine, HashStrategy, confirm_duplicates, group_by_partial_hash
+from dedup.engine.models import FileMetadata
 
 
 @pytest.fixture

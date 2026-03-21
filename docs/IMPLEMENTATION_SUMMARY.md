@@ -43,6 +43,8 @@ dedup/
 └── README.md                 # Documentation
 ```
 
+**Current snapshot (living):** `docs/ENGINEERING_STATUS.md` — update that file as implementation evolves; the tree above is structural, not a status dashboard.
+
 ## Repository Audit Summary
 
 ### Cerebro Modules Analyzed
@@ -183,13 +185,16 @@ python -m dedup
 
 ## Multi-phase engineering rollout (2026)
 
-Structured audit, theme tooling, shortcuts, store `ui_mode`, and documentation are tracked in:
+**Living status:** `docs/ENGINEERING_STATUS.md` — what is implemented *now* and a short changelog (update as work continues).
+
+Structured history and deferrals:
 
 - `docs/PHASE_ROLLOUT.md` — per-phase done / skipped / sub-phase plan
-- `docs/AUDIT_REPORT_PHASE1.md`, `THEME_SYSTEM.md`, `MODE_TOGGLE.md`
-- Repository root `CONTRIBUTING.md` and `requirements-dev.txt`
+- `docs/AUDIT_REPORT_PHASE1.md` — Phase 1 audit (**complete**: Ruff clean, pre-commit, pip-audit artifact, vulture clean, button audit doc, refreshed reports)
+- `docs/THEME_SYSTEM.md`, `docs/MODE_TOGGLE.md`
+- Repository root `CONTRIBUTING.md`, `requirements-dev.txt`, `.pre-commit-config.yaml`
 
-The UI shell now includes a **Themes** page (nav + Ctrl+7) in addition to the six original destinations.
+The UI shell has **seven** NavRail destinations: Mission, Scan, Review, History, Diagnostics, **Themes** (Ctrl+7), Settings.
 
 ## Conclusion
 

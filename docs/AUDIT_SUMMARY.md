@@ -1,5 +1,7 @@
 # DEDUP Stress-Test & Hardening Audit Summary
 
+> **Current tooling / phase status:** `docs/ENGINEERING_STATUS.md` (living doc — update as work continues). This file remains the stress-test and hardening risk narrative.
+
 ## 1. Audit scope
 
 - **Target scale:** ~1,000,000 files.

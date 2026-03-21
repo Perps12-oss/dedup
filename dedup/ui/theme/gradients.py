@@ -1,5 +1,7 @@
 """Canvas-based gradient helpers for CEREBRO UI."""
+
 from __future__ import annotations
+
 import tkinter as tk
 from typing import Tuple
 
@@ -61,10 +63,7 @@ def draw_vertical_gradient(
 class GradientBar(tk.Canvas):
     """A thin horizontal gradient bar — used in top bar hero strip."""
 
-    def __init__(self, parent, height: int = 3,
-                 color_start: str = "#1f6feb",
-                 color_end: str = "#58a6ff",
-                 **kwargs):
+    def __init__(self, parent, height: int = 3, color_start: str = "#1f6feb", color_end: str = "#58a6ff", **kwargs):
         super().__init__(parent, height=height, highlightthickness=0, borderwidth=0, **kwargs)
         self._c_start = color_start
         self._c_end = color_end

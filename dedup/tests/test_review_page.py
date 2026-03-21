@@ -8,6 +8,7 @@ Covers:
   - Confirmation dialog intent (cancel/preview/delete branching)
   - Gallery/Compare edge cases
 """
+
 from __future__ import annotations
 
 import pytest
@@ -16,9 +17,11 @@ import pytest
 # Module-level helpers (no tk required)
 # ---------------------------------------------------------------------------
 
+
 def test_thumb_size_for_group_adaptive_sizing():
     """Gallery uses adaptive thumb size: 2→220, 3-4→160, 5+→110."""
     from dedup.ui.components.review_workspace import _thumb_size_for_group
+
     assert _thumb_size_for_group(1) == (220, 220)
     assert _thumb_size_for_group(2) == (220, 220)
     assert _thumb_size_for_group(3) == (160, 160)
@@ -30,6 +33,7 @@ def test_thumb_size_for_group_adaptive_sizing():
 def test_thumb_size_large_group_sane():
     """Large groups (20+) still get consistent small thumb size."""
     from dedup.ui.components.review_workspace import _thumb_size_for_group
+
     assert _thumb_size_for_group(50) == (110, 110)
     assert _thumb_size_for_group(100) == (110, 110)
 
@@ -38,14 +42,17 @@ def test_thumb_size_large_group_sane():
 # ReviewVM view_mode
 # ---------------------------------------------------------------------------
 
+
 def test_review_vm_view_mode_default():
     from dedup.ui.viewmodels.review_vm import ReviewVM
+
     vm = ReviewVM()
     assert vm.view_mode == "table"
 
 
 def test_review_vm_view_mode_mutable():
     from dedup.ui.viewmodels.review_vm import ReviewVM
+
     vm = ReviewVM()
     vm.view_mode = "gallery"
     assert vm.view_mode == "gallery"
@@ -54,16 +61,24 @@ def test_review_vm_view_mode_mutable():
 
 
 def test_review_vm_clear_keep_removes_selection():
-    from dedup.ui.viewmodels.review_vm import ReviewVM
     from dedup.ui.projections.review_projection import ReviewGroupProjection
+    from dedup.ui.viewmodels.review_vm import ReviewVM
 
-    def _g(): return ReviewGroupProjection(
-        group_id="g1", group_size=512, file_count=2,
-        verification_level="full_hash", confidence_label="Exact",
-        reclaimable_bytes=1024, review_status="unreviewed",
-        risk_flags=(), keeper_candidate="/a/f1.txt",
-        thumbnail_capable=False, metadata_summary="g1",
-    )
+    def _g():
+        return ReviewGroupProjection(
+            group_id="g1",
+            group_size=512,
+            file_count=2,
+            verification_level="full_hash",
+            confidence_label="Exact",
+            reclaimable_bytes=1024,
+            review_status="unreviewed",
+            risk_flags=(),
+            keeper_candidate="/a/f1.txt",
+            thumbnail_capable=False,
+            metadata_summary="g1",
+        )
+
     vm = ReviewVM()
     vm.groups = [_g()]
     vm.set_keep("g1", "/a/f1.txt")
@@ -75,13 +90,14 @@ def test_review_vm_clear_keep_removes_selection():
 
 def test_workspace_stack_clear_selection_button_shown_when_keep(tk_root):
     """Clear selection toolbar is visible when group has a keep choice."""
-    from dedup.ui.components.review_workspace import ReviewWorkspaceStack
     from dedup.engine.models import DuplicateGroup, FileMetadata
+    from dedup.ui.components.review_workspace import ReviewWorkspaceStack
 
     called = []
     stack = ReviewWorkspaceStack(tk_root, on_keep=lambda _: None, on_clear_keep=lambda: called.append(1))
     group = DuplicateGroup(
-        group_id="g1", group_hash="xx",
+        group_id="g1",
+        group_hash="xx",
         files=[
             FileMetadata(path="/a.jpg", size=100, mtime_ns=0, inode=1),
             FileMetadata(path="/b.jpg", size=100, mtime_ns=0, inode=2),
@@ -104,10 +120,12 @@ def test_workspace_stack_clear_selection_button_shown_when_keep(tk_root):
 # Workspace mode selection
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def tk_root():
     """Tk root for widget tests. Skips if Tk unavailable (e.g. headless CI)."""
     import tkinter as tk
+
     try:
         root = tk.Tk()
     except (tk.TclError, OSError, Exception) as e:
@@ -124,7 +142,9 @@ def test_workspace_stack_set_mode_changes_index(tk_root):
     """set_mode maps table/gallery/compare to correct view index."""
     from dedup.ui.components.review_workspace import ReviewWorkspaceStack
 
-    def noop(_: str): pass
+    def noop(_: str):
+        pass
+
     stack = ReviewWorkspaceStack(tk_root, on_keep=noop)
     assert stack._current == 0
 
@@ -140,13 +160,16 @@ def test_workspace_stack_set_mode_changes_index(tk_root):
 
 def test_workspace_stack_load_group_passes_mode(tk_root):
     """load_group with mode parameter shows correct view."""
-    from dedup.ui.components.review_workspace import ReviewWorkspaceStack
     from dedup.engine.models import DuplicateGroup, FileMetadata
+    from dedup.ui.components.review_workspace import ReviewWorkspaceStack
 
-    def noop(_: str): pass
+    def noop(_: str):
+        pass
+
     stack = ReviewWorkspaceStack(tk_root, on_keep=noop)
     group = DuplicateGroup(
-        group_id="g1", group_hash="xx",
+        group_id="g1",
+        group_hash="xx",
         files=[
             FileMetadata(path="/a.jpg", size=100, mtime_ns=0, inode=1),
             FileMetadata(path="/b.jpg", size=100, mtime_ns=0, inode=2),
@@ -160,10 +183,12 @@ def test_workspace_stack_load_group_passes_mode(tk_root):
 
 def test_clear_selection_button_shown_when_keep_set(tk_root):
     """Clear selection toolbar is shown when group has a keep choice."""
-    from dedup.ui.components.review_workspace import ReviewWorkspaceStack
     from dedup.engine.models import DuplicateGroup, FileMetadata
+    from dedup.ui.components.review_workspace import ReviewWorkspaceStack
 
-    def noop(_: str): pass
+    def noop(_: str):
+        pass
+
     cleared = []
 
     def on_clear():
@@ -171,7 +196,8 @@ def test_clear_selection_button_shown_when_keep_set(tk_root):
 
     stack = ReviewWorkspaceStack(tk_root, on_keep=noop, on_clear_keep=on_clear)
     group = DuplicateGroup(
-        group_id="g1", group_hash="xx",
+        group_id="g1",
+        group_hash="xx",
         files=[
             FileMetadata(path="/a.jpg", size=100, mtime_ns=0, inode=1),
             FileMetadata(path="/b.jpg", size=100, mtime_ns=0, inode=2),
@@ -189,10 +215,12 @@ def test_clear_selection_button_shown_when_keep_set(tk_root):
 
 def test_workspace_stack_clear_selection_button(tk_root):
     """Clear selection toolbar appears when group has keep_path; button invokes callback."""
-    from dedup.ui.components.review_workspace import ReviewWorkspaceStack
     from dedup.engine.models import DuplicateGroup, FileMetadata
+    from dedup.ui.components.review_workspace import ReviewWorkspaceStack
 
-    def noop(_: str): pass
+    def noop(_: str):
+        pass
+
     cleared = []
 
     def on_clear():
@@ -200,7 +228,8 @@ def test_workspace_stack_clear_selection_button(tk_root):
 
     stack = ReviewWorkspaceStack(tk_root, on_keep=noop, on_clear_keep=on_clear)
     group = DuplicateGroup(
-        group_id="g1", group_hash="xx",
+        group_id="g1",
+        group_hash="xx",
         files=[
             FileMetadata(path="/a.jpg", size=100, mtime_ns=0, inode=1),
             FileMetadata(path="/b.jpg", size=100, mtime_ns=0, inode=2),
@@ -219,40 +248,15 @@ def test_workspace_stack_clear_selection_button(tk_root):
     assert len(cleared) == 1
 
 
-def test_clear_selection_button_shown_when_keep_set(tk_root):
-    """Clear selection toolbar appears when group has a keep choice."""
-    from dedup.ui.components.review_workspace import ReviewWorkspaceStack
-    from dedup.engine.models import DuplicateGroup, FileMetadata
-
-    def noop(_: str): pass
-    cleared = []
-    stack = ReviewWorkspaceStack(tk_root, on_keep=noop, on_clear_keep=lambda: cleared.append(1))
-    group = DuplicateGroup(
-        group_id="g1", group_hash="xx",
-        files=[
-            FileMetadata(path="/a.jpg", size=100, mtime_ns=0, inode=1),
-            FileMetadata(path="/b.jpg", size=100, mtime_ns=0, inode=2),
-        ],
-    )
-    # No keep → toolbar hidden
-    stack.load_group(group, keep_path="", mode="table")
-    assert stack._clear_toolbar_visible is False  # hidden when no keep
-    # With keep → toolbar shown
-    stack.load_group(group, keep_path="/a.jpg", mode="table")
-    assert stack._clear_toolbar_visible is True
-    # Click Clear selection → callback invoked
-    stack._clear_btn.invoke()
-    assert len(cleared) == 1
-
-
 # ---------------------------------------------------------------------------
 # Compare mode keep state for >2 files
 # ---------------------------------------------------------------------------
 
+
 def test_keep_compare_pair_index_mapping(tk_root):
     """For groups with >2 files, Keep Left/Right map to correct file path."""
-    from dedup.ui.components.review_workspace import ReviewWorkspaceStack
     from dedup.engine.models import DuplicateGroup, FileMetadata
+    from dedup.ui.components.review_workspace import ReviewWorkspaceStack
 
     received = []
 
@@ -261,7 +265,8 @@ def test_keep_compare_pair_index_mapping(tk_root):
 
     stack = ReviewWorkspaceStack(tk_root, on_keep=capture)
     group = DuplicateGroup(
-        group_id="g1", group_hash="xx",
+        group_id="g1",
+        group_hash="xx",
         files=[
             FileMetadata(path="/f0.jpg", size=100, mtime_ns=0, inode=1),
             FileMetadata(path="/f1.jpg", size=100, mtime_ns=0, inode=2),
@@ -288,6 +293,7 @@ def test_keep_compare_pair_index_mapping(tk_root):
 # ---------------------------------------------------------------------------
 # SafetyPanel action routing
 # ---------------------------------------------------------------------------
+
 
 def test_safety_panel_execute_calls_callback(tk_root):
     """DELETE button invokes on_execute callback."""
@@ -331,11 +337,13 @@ def test_safety_panel_update_plan_enable_delete_when_positive(tk_root):
 # Confirmation dialog intent
 # ---------------------------------------------------------------------------
 
+
 def test_on_execute_cancel_returns_without_executing(tk_root):
     """When confirmation returns 'cancel', no deletion is performed."""
     from unittest.mock import MagicMock, patch
-    from dedup.ui.pages.review_page import ReviewPage
+
     from dedup.engine.models import DeletionPlan
+    from dedup.ui.pages.review_page import ReviewPage
 
     grp = dict(keep=["/a/file.jpg"], delete=["/b/file.jpg"])
     plan = DeletionPlan(scan_id="t", groups=[grp])
@@ -360,6 +368,7 @@ def test_on_execute_cancel_returns_without_executing(tk_root):
 def test_on_execute_preview_calls_dry_run_not_execute(tk_root):
     """When confirmation returns 'preview', dry run runs, execute does not."""
     from unittest.mock import MagicMock, patch
+
     from dedup.ui.pages.review_page import ReviewPage
 
     coordinator = MagicMock()
@@ -375,8 +384,10 @@ def test_on_execute_preview_calls_dry_run_not_execute(tk_root):
     coordinator.create_deletion_plan.return_value.groups = [grp]
 
     dry_run_called = []
+
     def track_dry_run():
         dry_run_called.append(1)
+
     page._on_dry_run = track_dry_run
 
     with patch.object(page, "_show_delete_confirmation") as mock_conf:
@@ -390,18 +401,19 @@ def test_on_execute_preview_calls_dry_run_not_execute(tk_root):
 def test_on_execute_delete_calls_executor(tk_root):
     """When confirmation returns 'delete', execute_deletion is called."""
     from unittest.mock import MagicMock, patch
-    from dedup.ui.pages.review_page import ReviewPage
-    from dedup.engine.models import DeletionResult, DeletionPlan
 
-    from dedup.engine.models import DeletionPolicy
+    from dedup.engine.models import DeletionPlan, DeletionPolicy, DeletionResult
+    from dedup.ui.pages.review_page import ReviewPage
 
     grp = dict(keep=["/a/file.jpg"], delete=["/b/file.jpg"])
     plan = DeletionPlan(scan_id="t", groups=[grp])
     coordinator = MagicMock()
     coordinator.create_deletion_plan.return_value = plan
     coordinator.execute_deletion.return_value = DeletionResult(
-        scan_id="t", policy=DeletionPolicy.TRASH,
-        deleted_files=["/b/file.jpg"], failed_files=[],
+        scan_id="t",
+        policy=DeletionPolicy.TRASH,
+        deleted_files=["/b/file.jpg"],
+        failed_files=[],
     )
 
     page = ReviewPage(tk_root, coordinator=coordinator, on_delete_complete=lambda _: None)
@@ -428,15 +440,19 @@ def test_on_execute_delete_calls_executor(tk_root):
 # Non-previewable files (Gallery)
 # ---------------------------------------------------------------------------
 
+
 def test_gallery_non_image_gets_placeholder(tk_root):
     """Non-previewable files show 📄 placeholder and metadata in Gallery."""
-    from dedup.ui.components.review_workspace import ReviewGalleryView
     from dedup.engine.models import DuplicateGroup, FileMetadata
+    from dedup.ui.components.review_workspace import ReviewGalleryView
 
-    def noop(_: str): pass
+    def noop(_: str):
+        pass
+
     view = ReviewGalleryView(tk_root, on_keep=noop)
     group = DuplicateGroup(
-        group_id="g1", group_hash="xx",
+        group_id="g1",
+        group_hash="xx",
         files=[
             FileMetadata(path="/doc.pdf", size=2048, mtime_ns=0, inode=1),
             FileMetadata(path="/other.docx", size=4096, mtime_ns=0, inode=2),

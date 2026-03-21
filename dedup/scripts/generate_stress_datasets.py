@@ -20,9 +20,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import os
 import random
-import string
 import sys
 from pathlib import Path
 
@@ -100,6 +98,7 @@ def profile_deep_tree(root: Path, depth: int = 10, files_per_dir: int = 5) -> No
     """Deep directory tree with few files per dir."""
     d = root / "deep_tree"
     ensure_dir(d)
+
     def make_level(path: Path, level: int):
         if level <= 0:
             return
@@ -109,6 +108,7 @@ def profile_deep_tree(root: Path, depth: int = 10, files_per_dir: int = 5) -> No
             for j in range(files_per_dir):
                 (sub / f"f_{j}.bin").write_bytes(random_bytes(100 + level * 10))
             make_level(sub, level - 1)
+
     make_level(d, depth)
     print(f"  Wrote deep tree (depth {depth}, ~{files_per_dir} files per dir) under {d}")
 
@@ -126,19 +126,41 @@ def profile_unicode_paths(root: Path, count: int = 50) -> None:
 def main():
     ap = argparse.ArgumentParser(description="Generate DEDUP stress test datasets")
     ap.add_argument("output_dir", type=Path, help="Output directory")
-    ap.add_argument("--profile", choices=[
-        "many_small", "many_large", "mixed", "same_size_non_dupes",
-        "true_duplicates", "near_collision", "deep_tree", "unicode", "all",
-    ], default="all", help="Dataset profile")
+    ap.add_argument(
+        "--profile",
+        choices=[
+            "many_small",
+            "many_large",
+            "mixed",
+            "same_size_non_dupes",
+            "true_duplicates",
+            "near_collision",
+            "deep_tree",
+            "unicode",
+            "all",
+        ],
+        default="all",
+        help="Dataset profile",
+    )
     ap.add_argument("--count", type=int, default=0, help="Override count for small/mixed profiles")
     args = ap.parse_args()
     out = args.output_dir.resolve()
     out.mkdir(parents=True, exist_ok=True)
     count = args.count or 5000
-    profiles = [
-        "many_small", "many_large", "mixed", "same_size_non_dupes",
-        "true_duplicates", "near_collision", "deep_tree", "unicode",
-    ] if args.profile == "all" else [args.profile]
+    profiles = (
+        [
+            "many_small",
+            "many_large",
+            "mixed",
+            "same_size_non_dupes",
+            "true_duplicates",
+            "near_collision",
+            "deep_tree",
+            "unicode",
+        ]
+        if args.profile == "all"
+        else [args.profile]
+    )
     for name in profiles:
         print(f"Profile: {name}")
         if name == "many_small":

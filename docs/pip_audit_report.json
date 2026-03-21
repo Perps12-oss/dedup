@@ -1,8 +1,9 @@
-python : No known vulnerabilities found
-At C:\Users\S8633\AppData\Local\Temp\ps-script-817128bf-cab9-4075-808e-fca50df6be78.ps1:81 char:55
-+ ... top\dedup"; python -m pip_audit -r docs/requirements.txt -f json 2>&1 ...
-+                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (No known vulnerabilities found:String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
-{"dependencies": [{"name": "xxhash", "version": "3.6.0", "vulns": []}, {"name": "send2trash", "version": "2.1.0", "vulns": []}, {"name": "tkinterdnd2", "version": "0.4.3", "vulns": []}, {"name": "pillow", "version": "12.1.1", "vulns": []}], "fixes": []}
+{
+  "dependencies": [
+    {"name": "xxhash", "version": "3.6.0", "vulns": []},
+    {"name": "send2trash", "version": "2.1.0", "vulns": []},
+    {"name": "tkinterdnd2", "version": "0.4.3", "vulns": []},
+    {"name": "pillow", "version": "12.1.1", "vulns": []}
+  ],
+  "fixes": []
+}

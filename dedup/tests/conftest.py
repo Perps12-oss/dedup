@@ -5,13 +5,13 @@ Provides temporary directories and minimal scan configs.
 
 from __future__ import annotations
 
+# Ensure dedup package is importable (project root = parent of dedup folder)
+import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 
-# Ensure dedup package is importable (project root = parent of dedup folder)
-import sys
 _dedup_root = Path(__file__).resolve().parent.parent
 _project_root = _dedup_root.parent
 if str(_project_root) not in sys.path:

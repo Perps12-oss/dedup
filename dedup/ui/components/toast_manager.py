@@ -3,6 +3,7 @@ Lightweight non-modal toast using a borderless Toplevel.
 
 Phase 3 stub: call sites can be added incrementally (scan complete, theme applied, etc.).
 """
+
 from __future__ import annotations
 
 import tkinter as tk

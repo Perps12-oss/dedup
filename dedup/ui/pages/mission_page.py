@@ -14,31 +14,39 @@ UI Refactor (v2): Aligned to shared 8px design system.
   - Quick-start drop zone: taller hit target (ipady), _GAP_MD below each section.
   - Button rows: _GAP_SM gap, consistent Accent / Ghost pairing.
 """
+
 from __future__ import annotations
+
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
-from typing import Callable, Optional, TYPE_CHECKING
+from tkinter import filedialog, messagebox, ttk
+from typing import TYPE_CHECKING, Callable, Optional
 
 if TYPE_CHECKING:
     from ..state.store import UIStateStore
 
-from ..components import MetricCard, SectionCard, EmptyState, Badge
-from ..viewmodels.mission_vm import MissionVM
-from ..utils.formatting import fmt_bytes, fmt_int, fmt_duration, fmt_dt
+from ..components import MetricCard, SectionCard
+from ..theme.design_system import font_tuple
+from ..utils.formatting import fmt_bytes, fmt_dt, fmt_duration, fmt_int
 from ..utils.icons import IC
-from ..theme.design_system import font_tuple, SPACING
+from ..viewmodels.mission_vm import MissionVM
 
 try:
-    from ...engine.media_types import list_categories, get_category_label
+    from ...engine.media_types import get_category_label, list_categories
 except Exception:
-    def list_categories(): return ["all"]
-    def get_category_label(c): return c.title()
+
+    def list_categories():
+        return ["all"]
+
+    def get_category_label(c):
+        return c.title()
+
 
 try:
     from tkinterdnd2 import DND_FILES  # type: ignore
 except Exception:
     DND_FILES = None
+
 
 # ---------------------------------------------------------------------------
 # Spacing helpers — 8-pt grid (shared across all pages)
@@ -46,24 +54,28 @@ except Exception:
 def _S(n: int) -> int:
     return n * 4
 
-_PAD_PAGE  = _S(6)   # 24px
-_GAP_XS    = _S(1)   # 4px
-_GAP_SM    = _S(2)   # 8px
-_GAP_MD    = _S(4)   # 16px
-_GAP_LG    = _S(6)   # 24px
-_GAP_XL    = _S(8)   # 32px
+
+_PAD_PAGE = _S(6)  # 24px
+_GAP_XS = _S(1)  # 4px
+_GAP_SM = _S(2)  # 8px
+_GAP_MD = _S(4)  # 16px
+_GAP_LG = _S(6)  # 24px
+_GAP_XL = _S(8)  # 32px
 
 
 class MissionPage(ttk.Frame):
     """Mission / home page."""
 
-    def __init__(self, parent,
-                 on_start_scan: Callable[[Path, dict], None],
-                 on_resume_scan: Callable[[str], None],
-                 coordinator,
-                 on_request_refresh: Optional[Callable[[], None]] = None,
-                 on_open_last_review: Optional[Callable[[], None]] = None,
-                 **kwargs):
+    def __init__(
+        self,
+        parent,
+        on_start_scan: Callable[[Path, dict], None],
+        on_resume_scan: Callable[[str], None],
+        coordinator,
+        on_request_refresh: Optional[Callable[[], None]] = None,
+        on_open_last_review: Optional[Callable[[], None]] = None,
+        **kwargs,
+    ):
         super().__init__(parent, **kwargs)
         self.on_start_scan = on_start_scan
         self.on_resume_scan = on_resume_scan
@@ -108,28 +120,38 @@ class MissionPage(ttk.Frame):
         cta = ttk.Frame(hero)
         cta.grid(row=1, column=0, sticky="w", pady=(_GAP_MD, 0))
         ttk.Button(
-            cta, text=f"{IC.SCAN}  Start New Scan",
-            style="Accent.TButton", command=self._on_start,
+            cta,
+            text=f"{IC.SCAN}  Start New Scan",
+            style="Accent.TButton",
+            command=self._on_start,
         ).grid(row=0, column=0, sticky="w", padx=(0, _GAP_SM))
         ttk.Button(
-            cta, text=f"{IC.RESUME}  Resume Interrupted",
-            style="Ghost.TButton", command=self._on_resume,
+            cta,
+            text=f"{IC.RESUME}  Resume Interrupted",
+            style="Ghost.TButton",
+            command=self._on_resume,
         ).grid(row=0, column=1, sticky="w", padx=(0, _GAP_SM))
         self._open_review_btn = ttk.Button(
-            cta, text=f"{IC.REVIEW}  Open Last Review",
-            style="Ghost.TButton", command=self._on_open_last_review,
+            cta,
+            text=f"{IC.REVIEW}  Open Last Review",
+            style="Ghost.TButton",
+            command=self._on_open_last_review,
         )
         self._open_review_btn.grid(row=0, column=2, sticky="w", padx=(0, _GAP_SM))
         self._tour_btn = ttk.Button(
-            cta, text="Watch Tour",
-            style="Ghost.TButton", command=self._show_quick_tour,
+            cta,
+            text="Watch Tour",
+            style="Ghost.TButton",
+            command=self._show_quick_tour,
         )
         self._tour_btn.grid(row=0, column=3, sticky="w")
 
         self._welcome_var = tk.StringVar(value="")
         self._welcome_lbl = ttk.Label(
-            hero, textvariable=self._welcome_var,
-            style="Muted.TLabel", font=font_tuple("caption"),
+            hero,
+            textvariable=self._welcome_var,
+            style="Muted.TLabel",
+            font=font_tuple("caption"),
         )
         self._welcome_lbl.grid(row=2, column=0, sticky="w", pady=(_GAP_SM, 0))
 
@@ -172,24 +194,25 @@ class MissionPage(ttk.Frame):
         b.columnconfigure(1, weight=1)
         self._eng_rows: dict[str, tk.StringVar] = {}
         fields = [
-            ("Health",       f"{IC.OK} Healthy"),
-            ("Pipeline",     "Durable"),
+            ("Health", f"{IC.OK} Healthy"),
+            ("Pipeline", "Durable"),
             ("Hash backend", "—"),
-            ("Resume",       "—"),
-            ("Schema",       "—"),
+            ("Resume", "—"),
+            ("Schema", "—"),
         ]
         for i, (label, default) in enumerate(fields):
             ttk.Label(
-                b, text=label,
+                b,
+                text=label,
                 style="Panel.Muted.TLabel",
                 font=font_tuple("body"),
                 anchor="e",
                 width=14,
-            ).grid(row=i, column=0, sticky="e",
-                   padx=(0, _GAP_MD), pady=(_GAP_XS, 0))
+            ).grid(row=i, column=0, sticky="e", padx=(0, _GAP_MD), pady=(_GAP_XS, 0))
             var = tk.StringVar(value=default)
             ttk.Label(
-                b, textvariable=var,
+                b,
+                textvariable=var,
                 style="Panel.TLabel",
                 font=font_tuple("body_bold"),
             ).grid(row=i, column=1, sticky="w", pady=(_GAP_XS, 0))
@@ -207,15 +230,14 @@ class MissionPage(ttk.Frame):
         ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, _GAP_SM))
         self._last_metrics: dict[str, MetricCard] = {}
         specs = [
-            ("files",   f"{IC.FILE}  Files Scanned",  "—", "neutral"),
-            ("groups",  f"{IC.GROUPS} Groups",         "—", "neutral"),
-            ("reclaim", f"{IC.RECLAIM} Reclaimable",   "—", "positive"),
-            ("dur",     f"{IC.SPEED}  Duration",       "—", "neutral"),
+            ("files", f"{IC.FILE}  Files Scanned", "—", "neutral"),
+            ("groups", f"{IC.GROUPS} Groups", "—", "neutral"),
+            ("reclaim", f"{IC.RECLAIM} Reclaimable", "—", "positive"),
+            ("dur", f"{IC.SPEED}  Duration", "—", "neutral"),
         ]
         for i, (key, label, val, variant) in enumerate(specs):
             c = MetricCard(b, label=label, value=val, variant=variant, width=0)
-            c.grid(row=(i // 2) + 1, column=i % 2, sticky="nsew",
-                   padx=(_GAP_XS, _GAP_XS), pady=(_GAP_XS, _GAP_XS))
+            c.grid(row=(i // 2) + 1, column=i % 2, sticky="nsew", padx=(_GAP_XS, _GAP_XS), pady=(_GAP_XS, _GAP_XS))
             self._last_metrics[key] = c
 
     def _build_safety_card(self):
@@ -224,21 +246,22 @@ class MissionPage(ttk.Frame):
         b.columnconfigure(1, weight=1)
         self._safety_vars: dict[str, tk.StringVar] = {}
         rows = [
-            ("Status",                 f"{IC.OK} Active"),
+            ("Status", f"{IC.OK} Active"),
             ("Pre-delete revalidation", f"{IC.OK} Enabled"),
-            ("Audit logging",           f"{IC.OK} Enabled"),
+            ("Audit logging", f"{IC.OK} Enabled"),
         ]
         for i, (label, default) in enumerate(rows):
             ttk.Label(
-                b, text=label,
+                b,
+                text=label,
                 style="Panel.Muted.TLabel",
                 font=font_tuple("body"),
                 anchor="e",
-            ).grid(row=i, column=0, sticky="e",
-                   padx=(0, _GAP_MD), pady=(_GAP_XS, 0))
+            ).grid(row=i, column=0, sticky="e", padx=(0, _GAP_MD), pady=(_GAP_XS, 0))
             var = tk.StringVar(value=default)
             ttk.Label(
-                b, textvariable=var,
+                b,
+                textvariable=var,
                 style="Panel.Success.TLabel",
                 font=font_tuple("body_bold"),
             ).grid(row=i, column=1, sticky="w", pady=(_GAP_XS, 0))
@@ -257,13 +280,17 @@ class MissionPage(ttk.Frame):
         # Shortcut buttons
         shortcut = ttk.Frame(body, style="Panel.TFrame")
         shortcut.grid(row=1, column=0, sticky="ew", pady=(0, _GAP_MD))
-        for idx, (label, candidate) in enumerate([
-            ("Documents", Path.home() / "Documents"),
-            ("Pictures",  Path.home() / "Pictures"),
-            ("Downloads", Path.home() / "Downloads"),
-        ]):
+        for idx, (label, candidate) in enumerate(
+            [
+                ("Documents", Path.home() / "Documents"),
+                ("Pictures", Path.home() / "Pictures"),
+                ("Downloads", Path.home() / "Downloads"),
+            ]
+        ):
             ttk.Button(
-                shortcut, text=label, style="Ghost.TButton",
+                shortcut,
+                text=label,
+                style="Ghost.TButton",
                 command=lambda p=candidate: self._set_path(str(p)),
             ).grid(row=0, column=idx, sticky="w", padx=(0, _GAP_SM))
 
@@ -287,23 +314,20 @@ class MissionPage(ttk.Frame):
         pf.grid(row=3, column=0, sticky="ew", pady=(0, _GAP_SM))
         pf.columnconfigure(0, weight=1)
         self._path_var = tk.StringVar()
-        ttk.Entry(pf, textvariable=self._path_var).grid(
-            row=0, column=0, sticky="ew", padx=(0, _GAP_SM), ipady=_GAP_XS)
-        ttk.Button(pf, text="Browse…", style="Ghost.TButton",
-                   command=self._on_browse).grid(row=0, column=1)
+        ttk.Entry(pf, textvariable=self._path_var).grid(row=0, column=0, sticky="ew", padx=(0, _GAP_SM), ipady=_GAP_XS)
+        ttk.Button(pf, text="Browse…", style="Ghost.TButton", command=self._on_browse).grid(row=0, column=1)
 
         # Hidden option vars (advanced surface kept off Mission)
-        self._recurse_var  = tk.BooleanVar(value=True)
-        self._hidden_var   = tk.BooleanVar(value=False)
+        self._recurse_var = tk.BooleanVar(value=True)
+        self._hidden_var = tk.BooleanVar(value=False)
         self._min_size_var = tk.IntVar(value=1024)
         cats = list_categories()
-        self._media_var  = tk.StringVar(value=get_category_label(cats[0]))
-        self._media_map  = {get_category_label(c): c for c in cats}
+        self._media_var = tk.StringVar(value=get_category_label(cats[0]))
+        self._media_map = {get_category_label(c): c for c in cats}
 
         # Recent folders strip
         self._recent_frame = ttk.Frame(body, style="Panel.TFrame")
-        self._recent_frame.grid(row=4, column=0, sticky="ew",
-                                pady=(0, _GAP_SM))
+        self._recent_frame.grid(row=4, column=0, sticky="ew", pady=(0, _GAP_SM))
 
         # Action buttons — full-width pair
         btn_f = ttk.Frame(body, style="Panel.TFrame")
@@ -311,38 +335,45 @@ class MissionPage(ttk.Frame):
         btn_f.columnconfigure(0, weight=1)
         btn_f.columnconfigure(1, weight=1)
         ttk.Button(
-            btn_f, text=f"{IC.SCAN}  Start Scan", style="Accent.TButton",
+            btn_f,
+            text=f"{IC.SCAN}  Start Scan",
+            style="Accent.TButton",
             command=self._on_start,
         ).grid(row=0, column=0, sticky="ew", padx=(0, _GAP_SM), ipady=_GAP_XS)
         self._resume_btn = ttk.Button(
-            btn_f, text=f"{IC.RESUME}  Resume", style="Ghost.TButton",
-            command=self._on_resume, state="disabled",
+            btn_f,
+            text=f"{IC.RESUME}  Resume",
+            style="Ghost.TButton",
+            command=self._on_resume,
+            state="disabled",
         )
         self._resume_btn.grid(row=0, column=1, sticky="ew", ipady=_GAP_XS)
 
     def _build_capabilities(self, body: ttk.Frame):
         self._cap_vars: dict[str, tk.StringVar] = {}
         caps = [
-            ("xxhash",       "xxhash64 backend"),
-            ("blake3",       "blake3 backend"),
-            ("pillow",       "Thumbnail preview"),
-            ("send2trash",   "Trash protection"),
-            ("durable",      "Durable pipeline"),
+            ("xxhash", "xxhash64 backend"),
+            ("blake3", "blake3 backend"),
+            ("pillow", "Thumbnail preview"),
+            ("send2trash", "Trash protection"),
+            ("durable", "Durable pipeline"),
             ("revalidation", "Pre-delete revalidation"),
-            ("audit",        "Audit logging"),
+            ("audit", "Audit logging"),
         ]
         for i, (key, label) in enumerate(caps):
             row_f = ttk.Frame(body, style="Panel.TFrame")
             row_f.grid(row=i, column=0, sticky="ew", pady=(_GAP_XS, 0))
             var = tk.StringVar(value="—")
             ttk.Label(
-                row_f, textvariable=var,
+                row_f,
+                textvariable=var,
                 style="Panel.Success.TLabel",
                 font=font_tuple("data_value"),
                 width=3,
             ).pack(side="left")
             ttk.Label(
-                row_f, text=label,
+                row_f,
+                text=label,
                 style="Panel.TLabel",
                 font=font_tuple("data_label"),
             ).pack(side="left", padx=(_GAP_SM, 0))
@@ -366,6 +397,7 @@ class MissionPage(ttk.Frame):
     def attach_store(self, store: "UIStateStore") -> None:
         if self._store_unsub:
             self._store_unsub()
+
         def on_state(state):
             mission = getattr(state, "mission", None)
             if mission is not None:
@@ -376,8 +408,8 @@ class MissionPage(ttk.Frame):
                 self._update_recent_sessions()
                 self._update_recent_folders()
                 has_resumable = bool(self.vm.resumable_scan_ids)
-                self._resume_btn.configure(
-                    state="normal" if has_resumable else "disabled")
+                self._resume_btn.configure(state="normal" if has_resumable else "disabled")
+
         self._store_unsub = store.subscribe(on_state, fire_immediately=False)
 
     def detach_store(self) -> None:
@@ -401,32 +433,32 @@ class MissionPage(ttk.Frame):
         self._update_capabilities()
         self._update_recent_sessions()
         self._update_recent_folders()
-        has_resumable = bool(self.vm.recent_sessions and
-                             any(s.get("scan_id") in
-                                 set(self.coordinator.get_resumable_scan_ids() or [])
-                                 for s in self.vm.recent_sessions))
-        self._resume_btn.configure(
-            state="normal" if has_resumable else "disabled")
+        has_resumable = bool(
+            self.vm.recent_sessions
+            and any(
+                s.get("scan_id") in set(self.coordinator.get_resumable_scan_ids() or [])
+                for s in self.vm.recent_sessions
+            )
+        )
+        self._resume_btn.configure(state="normal" if has_resumable else "disabled")
 
     def _update_engine_card(self):
-        e    = self.vm.engine_status
+        e = self.vm.engine_status
         caps = self.vm.capabilities_by_name()
         self._eng_rows["Hash backend"].set(e.hash_backend)
-        self._eng_rows["Resume"].set(
-            f"{IC.OK} Yes" if e.resume_available else f"{IC.ERROR} No")
+        self._eng_rows["Resume"].set(f"{IC.OK} Yes" if e.resume_available else f"{IC.ERROR} No")
         self._eng_rows["Schema"].set(str(e.schema_version))
         self._eng_rows["Health"].set(f"{IC.OK} Healthy")
         self._eng_rows["Pipeline"].set("Durable")
         if hasattr(self, "_safety_vars"):
-            trash_ok       = caps.get("send2trash", False)
-            revalidate_ok  = True
-            audit_ok       = True
-            self._safety_vars["Status"].set(
-                f"{IC.OK} Active" if trash_ok else f"{IC.WARN} Limited")
+            trash_ok = caps.get("send2trash", False)
+            revalidate_ok = True
+            audit_ok = True
+            self._safety_vars["Status"].set(f"{IC.OK} Active" if trash_ok else f"{IC.WARN} Limited")
             self._safety_vars["Pre-delete revalidation"].set(
-                f"{IC.OK} Enabled" if revalidate_ok else f"{IC.WARN} Limited")
-            self._safety_vars["Audit logging"].set(
-                f"{IC.OK} Enabled" if audit_ok else f"{IC.WARN} Limited")
+                f"{IC.OK} Enabled" if revalidate_ok else f"{IC.WARN} Limited"
+            )
+            self._safety_vars["Audit logging"].set(f"{IC.OK} Enabled" if audit_ok else f"{IC.WARN} Limited")
 
     def _update_last_scan(self):
         ls = self.vm.last_scan
@@ -449,11 +481,7 @@ class MissionPage(ttk.Frame):
     def _update_recent_sessions(self):
         for w in self._recent_cards.winfo_children():
             w.destroy()
-        resumable = set(
-            getattr(self.vm, "resumable_scan_ids", None)
-            or self.coordinator.get_resumable_scan_ids()
-            or []
-        )
+        resumable = set(getattr(self.vm, "resumable_scan_ids", None) or self.coordinator.get_resumable_scan_ids() or [])
         if not self.vm.recent_sessions:
             self._welcome_var.set("")
             self._empty_recent.grid()
@@ -463,16 +491,16 @@ class MissionPage(ttk.Frame):
         max_cards = 6
         cols = 3
         for i, item in enumerate(self.vm.recent_sessions[:max_cards]):
-            scan_id   = item.get("scan_id", "")
-            started   = fmt_dt(item.get("started_at", ""))
-            roots     = item.get("roots") or []
+            scan_id = item.get("scan_id", "")
+            started = fmt_dt(item.get("started_at", ""))
+            roots = item.get("roots") or []
             roots_str = ", ".join(Path(r).name for r in roots[:2])
             if len(roots) > 2:
                 roots_str += "…"
-            files   = fmt_int(item.get("files_scanned", 0))
-            groups  = fmt_int(item.get("duplicates_found", 0))
+            files = fmt_int(item.get("files_scanned", 0))
+            groups = fmt_int(item.get("duplicates_found", 0))
             reclaim = fmt_bytes(item.get("reclaimable_bytes", 0))
-            status  = item.get("status", "—")
+            status = item.get("status", "—")
             if scan_id in resumable:
                 status = "resumable"
 
@@ -485,8 +513,7 @@ class MissionPage(ttk.Frame):
             row = i // cols
             col = i % cols
             self._recent_cards.columnconfigure(col, weight=1)
-            card.grid(row=row, column=col, sticky="nsew",
-                      padx=_GAP_SM, pady=_GAP_SM)
+            card.grid(row=row, column=col, sticky="nsew", padx=_GAP_SM, pady=_GAP_SM)
 
             ttk.Label(
                 card,
@@ -514,13 +541,13 @@ class MissionPage(ttk.Frame):
             ).grid(row=3, column=0, sticky="w", pady=(_GAP_XS, _GAP_MD))
 
             action_text = "Resume" if status == "resumable" else "Review"
-            action_cmd  = (
-                (lambda sid=scan_id: self.on_resume_scan(sid))
-                if status == "resumable"
-                else self._on_open_last_review
+            action_cmd = (
+                (lambda sid=scan_id: self.on_resume_scan(sid)) if status == "resumable" else self._on_open_last_review
             )
             ttk.Button(
-                card, text=action_text, style="Ghost.TButton",
+                card,
+                text=action_text,
+                style="Ghost.TButton",
                 command=action_cmd,
             ).grid(row=4, column=0, sticky="w")
 
@@ -530,7 +557,7 @@ class MissionPage(ttk.Frame):
             "Scan → Review → Cleanup\n\n"
             "1) Start Scan to discover duplicates.\n"
             "2) Use Decision Studio to choose keep/delete safely.\n"
-            "3) Execute cleanup with preview and audit protections."
+            "3) Execute cleanup with preview and audit protections.",
         )
 
     def _update_recent_folders(self):
@@ -545,8 +572,9 @@ class MissionPage(ttk.Frame):
             ).pack(side="left")
             for folder in self.vm.recent_folders[:4]:
                 name = Path(folder).name or folder
-                btn  = ttk.Button(
-                    self._recent_frame, text=name,
+                btn = ttk.Button(
+                    self._recent_frame,
+                    text=name,
                     style="Ghost.TButton",
                     command=lambda f=folder: self._set_path(f),
                 )
@@ -603,13 +631,13 @@ class MissionPage(ttk.Frame):
         if not path.exists() or not path.is_dir():
             messagebox.showerror("Error", f"Invalid path: {path}")
             return
-        label    = self._media_var.get()
+        label = self._media_var.get()
         media_key = self._media_map.get(label, "all")
-        options  = {
-            "min_size":        self._min_size_var.get(),
-            "include_hidden":  self._hidden_var.get(),
+        options = {
+            "min_size": self._min_size_var.get(),
+            "include_hidden": self._hidden_var.get(),
             "scan_subfolders": self._recurse_var.get(),
-            "media_category":  media_key,
+            "media_category": media_key,
         }
         try:
             self.coordinator.add_recent_folder(path)

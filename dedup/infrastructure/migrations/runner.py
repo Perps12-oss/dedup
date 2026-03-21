@@ -9,9 +9,7 @@ from pathlib import Path
 def get_schema_version(conn: sqlite3.Connection) -> int:
     """Return the current durable schema version."""
     try:
-        row = conn.execute(
-            "SELECT value FROM schema_meta WHERE key = 'schema_version'"
-        ).fetchone()
+        row = conn.execute("SELECT value FROM schema_meta WHERE key = 'schema_version'").fetchone()
     except sqlite3.Error:
         return 0
 

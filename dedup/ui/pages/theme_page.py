@@ -3,16 +3,16 @@ Themes page — presets, live preview swatches, WCAG contrast summary.
 
 Phase 2 scope: preset grid + contrast readout. Gradient editor / JSON import-export: see PHASE_ROLLOUT.md.
 """
+
 from __future__ import annotations
 
-import tkinter as tk
 from tkinter import ttk
 from typing import Callable
 
-from ..theme.theme_manager import get_theme_manager
-from ..theme.theme_preview import ThemeSwatchGrid
 from ..theme.contrast import contrast_ratio, format_ratio, passes_aa_normal
 from ..theme.design_system import font_tuple
+from ..theme.theme_manager import get_theme_manager
+from ..theme.theme_preview import ThemeSwatchGrid
 from ..utils.ui_state import UIState
 
 

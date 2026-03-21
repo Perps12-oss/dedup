@@ -5,8 +5,10 @@ Theme-agnostic tokens for typography, spacing, and elevation.
 Shell and page components use these with theme colors for consistent layout and hierarchy.
 Aligns with Master Plan: large page titles, compact data labels, consistent numeric typography.
 """
+
 from __future__ import annotations
-from typing import Dict, Any
+
+from typing import Any, Dict
 
 # ---------------------------------------------------------------------------
 # Typography (font family, size, weight)
@@ -54,8 +56,8 @@ SPACING = {
     "md": 16,
     "lg": 24,
     "xl": 32,
-    "page": 32,   # page edge padding
-    "card": 24,   # card internal padding
+    "page": 32,  # page edge padding
+    "card": 24,  # card internal padding
 }
 
 

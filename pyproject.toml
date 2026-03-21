@@ -24,6 +24,8 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "dedup/tests/**" = ["E402"]
+# Scripts mutate sys.path before importing dedup.*
+"dedup/scripts/**" = ["E402"]
 
 [tool.mypy]
 python_version = "3.11"

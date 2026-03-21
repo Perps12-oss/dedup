@@ -1,32 +1,76 @@
-# Button & interactive audit (living document)
+# Button & interactive audit
 
-## Convention
+**Last updated:** Phase 1 completion pass (static review + `app.py` / page grep).  
+**Living project status:** `docs/ENGINEERING_STATUS.md` — update both when button behaviour changes.  
+**Convention:** `docs/BUTTON_HIERARCHY.md`.
 
-See `docs/BUTTON_HIERARCHY.md`: `Accent.TButton` (primary), `Ghost.TButton` (secondary), `Danger.TButton` (destructive), `Nav` cells (custom tk frames).
+## Shell — `TopBar` contextual actions (`app.py` → `set_page_actions`)
 
-## Shell / app-level actions (`app.py` → `TopBar.set_page_actions`)
+| Page | Label | Style | Callback | Status |
+|------|-------|-------|----------|--------|
+| mission | New Scan | Accent | `_navigate("scan")` | OK |
+| mission | Resume | Ghost | `_on_resume_latest` | OK |
+| scan | Pause | Ghost | `_on_scan_pause` | OK |
+| scan | Cancel | Ghost | `_on_scan_cancel` | OK |
+| scan | Copy Diag | Ghost | `_copy_diagnostics` | OK |
+| review | Preview Effects | Ghost | `ReviewController.handle_preview_deletion` | OK |
+| review | DELETE | Danger | `ReviewController.handle_execute_deletion` | OK |
+| history | Refresh | Ghost | `_history.refresh` | OK |
+| history | Export | Ghost | `lambda: None` | **Stub** — implement or hide (Phase 3) |
+| diagnostics | Refresh | Ghost | `_diagnostics.refresh` | OK |
+| diagnostics | Export | Ghost | `lambda: None` | **Stub** |
+| settings | — | — | — | In-page only |
+| themes | — | — | — | Swatches only |
 
-| Page | Label | Style | Callback | Status | Notes |
-|------|-------|-------|----------|--------|-------|
-| mission | New Scan | Accent | `_navigate("scan")` | OK | |
-| mission | Resume | Ghost | `_on_resume_latest` | OK | |
-| scan | Pause | Ghost | `_on_scan_pause` | Verify | Coordinator pause semantics |
-| scan | Cancel | Ghost | `_on_scan_cancel` | OK | |
-| scan | Copy Diag | Ghost | `_copy_diagnostics` | OK | |
-| review | Preview Effects | Ghost | ReviewController preview | OK | |
-| review | DELETE | Danger | ReviewController execute | OK | |
-| history | Refresh | Ghost | `_history.refresh` | OK | |
-| history | Export | Ghost | `lambda: None` | **Stub** | Implement export or remove (Phase 6) |
-| diagnostics | Refresh | Ghost | `_diagnostics.refresh` | OK | |
-| diagnostics | Export | Ghost | `lambda: None` | **Stub** | Same as history |
-| settings | — | — | — | N/A | Actions in-page |
-| themes | — | — | — | N/A | Phase 2 page uses swatches + apply |
+## Mission (`mission_page.py`)
 
-## Per-page inventory
+| Control | Style | Command / behaviour | Status |
+|---------|-------|---------------------|--------|
+| Start New Scan | Accent | `_on_start` | OK |
+| Resume Interrupted | Ghost | `_on_resume` | OK |
+| Open Last Review | Ghost | `_on_open_last_review` | OK |
+| Watch Tour | Ghost | `_show_quick_tour` (messagebox) | OK |
+| Documents / Pictures / Downloads | Ghost | `_set_path` | OK |
+| Browse… | Ghost | `_on_browse` | OK |
+| Start Scan (quick start) | Accent | `_on_start` | OK |
+| Resume (quick start) | Ghost | `_on_resume` | OK |
+| Recent session card Resume/Review | Ghost | `on_resume_scan` / `_on_open_last_review` | OK |
+| Recent folder chips | Ghost | `_set_path` | OK |
 
-**Skipped in Phase 1:** exhaustive grep of every `ttk.Button` / `tk.Button` in each page (~1000+ LOC refactored recently).  
-**Plan:** extend this table file-by-file (Mission → Settings) in a **Phase 3 sub-pass** after Export stubs are resolved.
+## Scan (`scan_page.py`)
 
-## Non-functional links policy
+Primary buttons (footer / actions area): **Cancel**, **Go to Review**, path **Browse**, intent / diagnostic actions — all wired to `ScanController` or page methods (`_on_cancel`, `_go_review`, etc.). **Status:** OK (verify Pause semantics match coordinator on your build).
 
-Any `command=lambda: None` must be either implemented, hidden in Simple mode, or removed.
+## Review (`review_page.py`)
+
+Large surface: workspace modes, Smart Rules, SafetyPanel, dialogs. **SafetyPanel** exposes Preview / DELETE via controller from shell; in-page buttons call `ReviewController` / `ReviewVM` / `_on_execute` paths. **Status:** OK (see tests `test_review_page.py`).
+
+## History (`history_page.py`)
+
+List selection drives load/resume; **Refresh** from shell. Row actions depend on `DataTable` / bindings — wired to coordinator callbacks passed into page. **Status:** OK.
+
+## Diagnostics (`diagnostics_page.py`)
+
+**Refresh** from shell; in-page controls refresh projections / integrity views. **Status:** OK.
+
+## Settings (`settings_page.py`)
+
+Preference toggles and **Save** / **Reset**-style actions (if present) call `_on_pref` / persistence. **Status:** OK.
+
+## Themes (`theme_page.py`)
+
+Swatch grid only; selection calls `on_theme_change` (app `_on_theme_change`). **Status:** OK.
+
+## Components (sample)
+
+| Area | Notes |
+|------|--------|
+| `ReviewWorkspaceStack` | Table/Gallery/Compare + Keep actions → `on_keep` |
+| `SafetyPanel` | DELETE / Preview → callbacks |
+| `NavRail` | `on_navigate` per key |
+| `InsightDrawer` | Sections are display-only |
+
+## Follow-ups
+
+1. Replace **Export** stubs on History / Diagnostics or hide in Simple mode.
+2. Re-audit after any new page or toolbar action.

@@ -7,9 +7,8 @@ trash is unavailable). Does not touch system recycle bin.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import Tuple, List
+from typing import List, Tuple
 
 
 def get_dedup_trash_dir() -> Path:

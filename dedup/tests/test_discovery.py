@@ -5,10 +5,8 @@ Discovery tests: streaming, cancellation, error handling.
 from __future__ import annotations
 
 import pytest
-from pathlib import Path
 
-from dedup.engine.discovery import FileDiscovery, DiscoveryOptions
-from dedup.engine.models import FileMetadata
+from dedup.engine.discovery import DiscoveryOptions, FileDiscovery
 
 
 @pytest.fixture

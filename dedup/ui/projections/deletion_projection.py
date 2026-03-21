@@ -11,7 +11,9 @@ This projection is the single source of truth for:
 
 Consumers: SafetyPanel, ReviewPage actions, History audit summary.
 """
+
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional
 
@@ -19,16 +21,17 @@ from typing import Optional
 @dataclass(frozen=True)
 class DeletionReadinessProjection:
     """Immutable snapshot of deletion plan readiness."""
-    mode: str                           # "trash" | "permanent"
+
+    mode: str  # "trash" | "permanent"
     pre_delete_revalidation_enabled: bool
     audit_logging_enabled: bool
     selected_delete_count: int
     selected_keep_count: int
-    reclaimable_now: int                # bytes that would be freed right now
-    risk_flags: int                     # count of risky selections
-    dry_run_status: str                 # "" | "passed" | "failed" | "pending"
-    dry_run_detail: str                 # human-readable dry-run summary
-    execution_ready: bool               # True when plan is non-empty + no blocking risk
+    reclaimable_now: int  # bytes that would be freed right now
+    risk_flags: int  # count of risky selections
+    dry_run_status: str  # "" | "passed" | "failed" | "pending"
+    dry_run_detail: str  # human-readable dry-run summary
+    execution_ready: bool  # True when plan is non-empty + no blocking risk
 
     @property
     def mode_label(self) -> str:
@@ -74,14 +77,13 @@ def build_deletion_from_plan(
     Build from a DeletionPlan engine object + current user keep selections.
     """
     groups = getattr(deletion_plan, "groups", []) if deletion_plan else []
-    del_count  = 0
+    del_count = 0
     keep_count = 0
-    reclaim    = 0
-    risk       = 0
+    reclaim = 0
+    risk = 0
 
     for grp in groups:
-        keep_path = (keep_selections or {}).get(
-            getattr(grp, "group_id", ""), "")
+        keep_path = (keep_selections or {}).get(getattr(grp, "group_id", ""), "")
         for tgt in getattr(grp, "targets", []):
             path = getattr(tgt, "path", "")
             if path == keep_path:

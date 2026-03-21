@@ -1,2 +1,1 @@
-dedup\ui\components\review_workspace.py:470: unused variable 'is_left' (100% confidence)
-dedup\ui\shell\status_strip.py:41: unused variable 'fg_key' (100% confidence)
+No issues found.

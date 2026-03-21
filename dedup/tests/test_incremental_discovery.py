@@ -174,9 +174,7 @@ def test_subtree_skip_reuses_prior_files_when_directory_mtime_matches(temp_dir):
         DiscoveryOptions(roots=[root], min_size_bytes=1, max_workers=1),
         prior_session_id="prior",
         prior_dir_mtimes={str(root): root_mtime_ns},
-        get_prior_files_under_dir=lambda _: iter(
-            [FileMetadata(path="reused.txt", size=7, mtime_ns=1)]
-        ),
+        get_prior_files_under_dir=lambda _: iter([FileMetadata(path="reused.txt", size=7, mtime_ns=1)]),
         dir_mtimes_sink={},
     )
 
@@ -193,9 +191,7 @@ def test_subtree_skip_falls_back_on_missing_manifest_row(temp_dir):
         DiscoveryOptions(roots=[root], min_size_bytes=1, max_workers=1),
         prior_session_id="prior",
         prior_dir_mtimes={},
-        get_prior_files_under_dir=lambda _: iter(
-            [FileMetadata(path="reused.txt", size=7, mtime_ns=1)]
-        ),
+        get_prior_files_under_dir=lambda _: iter([FileMetadata(path="reused.txt", size=7, mtime_ns=1)]),
         dir_mtimes_sink={},
     )
 

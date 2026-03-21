@@ -9,42 +9,39 @@ Modern-classic operations shell with:
   - 15-theme token system
   - ProjectionHub: canonical state contract between engine and UI
 """
+
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk, messagebox
 from pathlib import Path
-from typing import Optional
+from tkinter import messagebox
 
 try:
     from tkinterdnd2 import TkinterDnD  # type: ignore
 except Exception:
     TkinterDnD = None
 
-from ..orchestration.coordinator import ScanCoordinator
+from ..engine.models import DeletionResult, ScanResult
 from ..infrastructure.config import load_config, save_config
-from ..engine.models import ScanResult, DeletionResult
-
-from .theme.theme_manager import get_theme_manager
-from .utils.formatting import fmt_bytes, fmt_int, fmt_duration
-from .utils.ui_state import UIState, load_settings, save_settings
-
-from .shell.app_shell import AppShell
-from .shell.shortcut_registry import ShortcutRegistry
-from .pages.mission_page import MissionPage
-from .pages.scan_page import ScanPage
+from ..orchestration.coordinator import ScanCoordinator
 from .controller.review_controller import ReviewController
 from .controller.scan_controller import ScanController
-from .pages.review_page import ReviewPage
-from .pages.history_page import HistoryPage
 from .pages.diagnostics_page import DiagnosticsPage
+from .pages.history_page import HistoryPage
+from .pages.mission_page import MissionPage
+from .pages.review_page import ReviewPage
+from .pages.scan_page import ScanPage
 from .pages.settings_page import SettingsPage
 from .pages.theme_page import ThemePage
-
-from .projections.hub import ProjectionHub
-from .state.store import UIStateStore, MissionState, LastScanSummaryState
-from .state.hub_adapter import ProjectionHubStoreAdapter
 from .projections.history_projection import build_history_from_coordinator
+from .projections.hub import ProjectionHub
+from .shell.app_shell import AppShell
+from .shell.shortcut_registry import ShortcutRegistry
+from .state.hub_adapter import ProjectionHubStoreAdapter
+from .state.store import LastScanSummaryState, MissionState, UIStateStore
+from .theme.theme_manager import get_theme_manager
+from .utils.formatting import fmt_bytes
+from .utils.ui_state import UIState
 
 
 class CerebroApp:
@@ -66,10 +63,10 @@ class CerebroApp:
     refreshed on demand (page focus, scan completion) to keep wiring simple.
     """
 
-    APP_NAME    = "CEREBRO"
+    APP_NAME = "CEREBRO"
     APP_VERSION = "2.1.0"
-    MIN_WIDTH   = 900
-    MIN_HEIGHT  = 560
+    MIN_WIDTH = 900
+    MIN_HEIGHT = 560
 
     def __init__(self):
         # ── Root window ──────────────────────────────────────────────
@@ -88,13 +85,13 @@ class CerebroApp:
             pass
 
         # ── State & config ───────────────────────────────────────────
-        self.state    = UIState()
-        self.config   = load_config()
+        self.state = UIState()
+        self.config = load_config()
         sw = max(1, int(self.root.winfo_screenwidth()))
         sh = max(1, int(self.root.winfo_screenheight()))
-        default_w = max(self.MIN_WIDTH, sw // 2)   # ~1/4 screen area
+        default_w = max(self.MIN_WIDTH, sw // 2)  # ~1/4 screen area
         default_h = max(self.MIN_HEIGHT, sh // 2)
-        w = getattr(self.state.settings, "window_width",  0) or 0
+        w = getattr(self.state.settings, "window_width", 0) or 0
         h = getattr(self.state.settings, "window_height", 0) or 0
         if w <= 0 or h <= 0:
             w, h = default_w, default_h
@@ -158,6 +155,7 @@ class CerebroApp:
     def _wire_hub(self) -> None:
         """Connect ProjectionHub to all shell widgets and pages that need live updates."""
         import logging
+
         _log = logging.getLogger(__name__)
         # Shell widgets — always visible
         try:
@@ -193,6 +191,7 @@ class CerebroApp:
                 if result:
                     self._review.load_result(result)
                     self._navigate("review")
+
         self.hub.subscribe("terminal", _on_terminal)
 
     # ------------------------------------------------------------------
@@ -314,29 +313,29 @@ class CerebroApp:
 
     def _update_page_actions(self, page: str):
         action_map = {
-            "mission":     [
-                ("New Scan",     "Accent.TButton", lambda: self._navigate("scan")),
-                ("Resume",       "Ghost.TButton",  self._on_resume_latest),
+            "mission": [
+                ("New Scan", "Accent.TButton", lambda: self._navigate("scan")),
+                ("Resume", "Ghost.TButton", self._on_resume_latest),
             ],
-            "scan":        [
-                ("Pause",        "Ghost.TButton",  self._on_scan_pause),
-                ("Cancel",       "Ghost.TButton",  lambda: self._on_scan_cancel()),
-                ("Copy Diag",    "Ghost.TButton",  self._copy_diagnostics),
+            "scan": [
+                ("Pause", "Ghost.TButton", self._on_scan_pause),
+                ("Cancel", "Ghost.TButton", lambda: self._on_scan_cancel()),
+                ("Copy Diag", "Ghost.TButton", self._copy_diagnostics),
             ],
-            "review":      [
-                ("Preview Effects", "Ghost.TButton",  lambda: self._review_controller.handle_preview_deletion()),
-                ("DELETE",          "Danger.TButton", lambda: self._review_controller.handle_execute_deletion()),
+            "review": [
+                ("Preview Effects", "Ghost.TButton", lambda: self._review_controller.handle_preview_deletion()),
+                ("DELETE", "Danger.TButton", lambda: self._review_controller.handle_execute_deletion()),
             ],
-            "history":     [
-                ("Refresh",      "Ghost.TButton",  lambda: self._history.refresh()),
-                ("Export",       "Ghost.TButton",  lambda: None),
+            "history": [
+                ("Refresh", "Ghost.TButton", lambda: self._history.refresh()),
+                ("Export", "Ghost.TButton", lambda: None),
             ],
             "diagnostics": [
-                ("Refresh",      "Ghost.TButton",  lambda: self._diagnostics.refresh()),
-                ("Export",       "Ghost.TButton",  lambda: None),
+                ("Refresh", "Ghost.TButton", lambda: self._diagnostics.refresh()),
+                ("Export", "Ghost.TButton", lambda: None),
             ],
-            "settings":    [],
-            "themes":      [],
+            "settings": [],
+            "themes": [],
         }
         self.shell.set_page_actions(action_map.get(page, []))
 
@@ -346,52 +345,71 @@ class CerebroApp:
 
         if page == "scan":
             sections = [
-                ("Session", [
-                    ("ID",      hub_session.session_id[:16] or "—"),
-                    ("Phase",   hub_session.current_phase or "—"),
-                    ("Status",  hub_session.status),
-                    ("Resume",  hub_session.resume_outcome_label or "—"),
-                ]),
-                ("Engine", [
-                    ("Health",  hub_session.engine_health),
-                    ("Warns",   str(hub_session.warnings_count)),
-                    ("Config",  hub_session.config_hash[:12] + "…"
-                                if hub_session.config_hash else "—"),
-                ]),
+                (
+                    "Session",
+                    [
+                        ("ID", hub_session.session_id[:16] or "—"),
+                        ("Phase", hub_session.current_phase or "—"),
+                        ("Status", hub_session.status),
+                        ("Resume", hub_session.resume_outcome_label or "—"),
+                    ],
+                ),
+                (
+                    "Engine",
+                    [
+                        ("Health", hub_session.engine_health),
+                        ("Warns", str(hub_session.warnings_count)),
+                        ("Config", hub_session.config_hash[:12] + "…" if hub_session.config_hash else "—"),
+                    ],
+                ),
             ]
         elif page == "review":
             sections = [
-                ("Review", [
-                    ("Groups",    str(self._review.vm.total_groups)),
-                    ("Delete",    str(self._review.vm.delete_count)),
-                    ("Keep",      str(self._review.vm.keep_count)),
-                    ("Reclaim",   fmt_bytes(self._review.vm.reclaimable_bytes)),
-                ]),
-                ("Safety", [
-                    ("Mode",      "Trash"),
-                    ("Revalidate","ON"),
-                    ("Audit",     "ACTIVE"),
-                ]),
+                (
+                    "Review",
+                    [
+                        ("Groups", str(self._review.vm.total_groups)),
+                        ("Delete", str(self._review.vm.delete_count)),
+                        ("Keep", str(self._review.vm.keep_count)),
+                        ("Reclaim", fmt_bytes(self._review.vm.reclaimable_bytes)),
+                    ],
+                ),
+                (
+                    "Safety",
+                    [
+                        ("Mode", "Trash"),
+                        ("Revalidate", "ON"),
+                        ("Audit", "ACTIVE"),
+                    ],
+                ),
             ]
         elif page == "history":
             sections = [
-                ("Stats", [
-                    ("Total",     str(self._history.vm.total_scans)),
-                    ("Resumable", str(self._history.vm.resumable_count)),
-                ]),
+                (
+                    "Stats",
+                    [
+                        ("Total", str(self._history.vm.total_scans)),
+                        ("Resumable", str(self._history.vm.resumable_count)),
+                    ],
+                ),
             ]
         elif page == "diagnostics":
             phases = self.hub.phases
-            running = next(
-                (p for p in phases.values() if p.status == "running"), None)
+            running = next((p for p in phases.values() if p.status == "running"), None)
             sections = [
-                ("Live Phase", [
-                    ("Current",  running.display_label if running else "—"),
-                    ("Status",   running.status if running else "—"),
-                ]),
-                ("Compat", [
-                    ("Outcome",  self.hub.compat.overall_resume_outcome or "—"),
-                ]),
+                (
+                    "Live Phase",
+                    [
+                        ("Current", running.display_label if running else "—"),
+                        ("Status", running.status if running else "—"),
+                    ],
+                ),
+                (
+                    "Compat",
+                    [
+                        ("Outcome", self.hub.compat.overall_resume_outcome or "—"),
+                    ],
+                ),
             ]
         self.shell.set_drawer_content(sections)
 
@@ -427,7 +445,7 @@ class CerebroApp:
         twice (ReviewPage.load_result is idempotent on the same result).
         """
         self.state.scan_status = "Completed"
-        self.state.scan_phase  = "Results"
+        self.state.scan_phase = "Results"
         self._review.load_result(result)
         self._navigate("review")
 
@@ -453,7 +471,7 @@ class CerebroApp:
 
     def _on_delete_complete(self, result: DeletionResult):
         deleted = len(result.deleted_files)
-        failed  = len(result.failed_files)
+        failed = len(result.failed_files)
         self.state.emit("delete_complete", {"deleted": deleted, "failed": failed})
 
     def _on_load_history_scan(self, scan_id: str):
@@ -487,22 +505,26 @@ class CerebroApp:
             )
         recent_sessions = []
         for d in raw:
-            recent_sessions.append({
-                "scan_id": d.get("scan_id", ""),
-                "started_at": d.get("started_at", ""),
-                "roots": d.get("roots") or [],
-                "files_scanned": d.get("files_scanned", 0),
-                "duplicates_found": d.get("duplicates_found", 0),
-                "reclaimable_bytes": d.get("reclaimable_bytes", 0),
-                "status": d.get("status", "—"),
-                "duration_s": d.get("duration_s", 0),
-            })
-        self.store.set_mission(MissionState(
-            last_scan=last_scan,
-            resumable_scan_ids=resumable_ids,
-            recent_sessions=tuple(recent_sessions),
-            recent_folders=recent_folders,
-        ))
+            recent_sessions.append(
+                {
+                    "scan_id": d.get("scan_id", ""),
+                    "started_at": d.get("started_at", ""),
+                    "roots": d.get("roots") or [],
+                    "files_scanned": d.get("files_scanned", 0),
+                    "duplicates_found": d.get("duplicates_found", 0),
+                    "reclaimable_bytes": d.get("reclaimable_bytes", 0),
+                    "status": d.get("status", "—"),
+                    "duration_s": d.get("duration_s", 0),
+                }
+            )
+        self.store.set_mission(
+            MissionState(
+                last_scan=last_scan,
+                resumable_scan_ids=resumable_ids,
+                recent_sessions=tuple(recent_sessions),
+                recent_folders=recent_folders,
+            )
+        )
 
     def _refresh_history_state(self) -> None:
         """Build history slice from coordinator and push to store (History page subscribes)."""
@@ -533,7 +555,7 @@ class CerebroApp:
     def _copy_diagnostics(self):
         try:
             sess = self.hub.session
-            data  = f"Session: {sess.session_id}\n"
+            data = f"Session: {sess.session_id}\n"
             data += f"Phase:   {sess.current_phase}\n"
             data += f"Status:  {sess.status}\n"
             data += f"Health:  {sess.engine_health}\n"
@@ -547,8 +569,7 @@ class CerebroApp:
     # ------------------------------------------------------------------
     def _on_close(self):
         if self.coordinator.is_scanning:
-            if not messagebox.askyesno("Scan in progress",
-                                       "A scan is active. Cancel and exit?"):
+            if not messagebox.askyesno("Scan in progress", "A scan is active. Cancel and exit?"):
                 return
             self.coordinator.cancel_scan()
         # Shut down hub to stop its poll loop
@@ -558,7 +579,7 @@ class CerebroApp:
             pass
         # Persist geometry
         try:
-            self.state.settings.window_width  = self.root.winfo_width()
+            self.state.settings.window_width = self.root.winfo_width()
             self.state.settings.window_height = self.root.winfo_height()
             self.state.save()
         except Exception:

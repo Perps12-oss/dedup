@@ -3,26 +3,27 @@ NavRail — fixed left navigation rail.
 
 Items: Mission, Scan, Review, History, Diagnostics, Themes, Settings
 """
-from __future__ import annotations
-import tkinter as tk
-from tkinter import ttk
-from typing import Callable, Dict, List, Tuple, Optional
 
-from ..utils.icons import IC
+from __future__ import annotations
+
+import tkinter as tk
+from typing import Callable, Dict, List, Optional, Tuple
+
+from ..theme.design_system import SPACING, font_tuple
 from ..theme.theme_manager import get_theme_manager
-from ..theme.design_system import font_tuple, SPACING
+from ..utils.icons import IC
 
 # Primary pages: Home (Mission), Scan, Review. Secondary: History, Diagnostics, Settings.
 PRIMARY_NAV: List[Tuple[str, str, str]] = [
     ("mission", IC.MISSION, "Mission"),
-    ("scan",    IC.SCAN,    "Scan"),
-    ("review",  IC.REVIEW,  "Review"),
+    ("scan", IC.SCAN, "Scan"),
+    ("review", IC.REVIEW, "Review"),
 ]
 SECONDARY_NAV: List[Tuple[str, str, str]] = [
-    ("history",     IC.HISTORY,     "History"),
+    ("history", IC.HISTORY, "History"),
     ("diagnostics", IC.DIAGNOSTICS, "Diagnostics"),
-    ("themes",      IC.THEMES,      "Themes"),
-    ("settings",    IC.SETTINGS,    "Settings"),
+    ("themes", IC.THEMES, "Themes"),
+    ("settings", IC.SETTINGS, "Settings"),
 ]
 NAV_ITEMS: List[Tuple[str, str, str]] = PRIMARY_NAV + SECONDARY_NAV
 
@@ -52,9 +53,11 @@ class NavRail(tk.Frame):
 
         # App logo/name strip at top
         self._logo = tk.Label(
-            self, text="CE\nRE\nBRO",
+            self,
+            text="CE\nRE\nBRO",
             font=font_tuple("card_title"),
-            pady=SPACING["lg"], cursor="arrow",
+            pady=SPACING["lg"],
+            cursor="arrow",
         )
         self._logo.pack(fill="x")
 
@@ -112,27 +115,23 @@ class NavRail(tk.Frame):
             old = self._buttons[self._active]
             old.configure(background=t["bg_sidebar"])
             for child in old.winfo_children():
-                child.configure(background=t["bg_sidebar"],
-                                foreground=t["text_secondary"])
+                child.configure(background=t["bg_sidebar"], foreground=t["text_secondary"])
         self._active = key
         if key in self._buttons:
             cell = self._buttons[key]
             cell.configure(background=t["nav_active_bg"])
             for child in cell.winfo_children():
-                child.configure(background=t["nav_active_bg"],
-                                foreground=t["nav_active_fg"])
+                child.configure(background=t["nav_active_bg"], foreground=t["nav_active_fg"])
 
     def _apply_colors(self, t: dict):
         self.configure(background=t["bg_sidebar"])
-        self._logo.configure(background=t["bg_sidebar"],
-                             foreground=t["accent_primary"])
+        self._logo.configure(background=t["bg_sidebar"], foreground=t["accent_primary"])
         self._sep1.configure(background=t["border_soft"])
         self._sep_primary_secondary.configure(background=t["border_soft"])
         self._spacer.configure(background=t["bg_sidebar"])
-        self._compact_lbl.configure(background=t["bg_sidebar"],
-                                    foreground=t["text_muted"])
+        self._compact_lbl.configure(background=t["bg_sidebar"], foreground=t["text_muted"])
         for key, cell in self._buttons.items():
-            is_active = (key == self._active)
+            is_active = key == self._active
             bg = t["nav_active_bg"] if is_active else t["bg_sidebar"]
             fg = t["nav_active_fg"] if is_active else t["text_secondary"]
             cell.configure(background=bg)

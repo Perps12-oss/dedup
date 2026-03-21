@@ -71,6 +71,15 @@ plan = pipeline.create_deletion_plan(result)
 
 See `docs/CONTROLLER_CONTRACTS.md` and `docs/REPO_AUTHORITY.md` for single-authority and command-path details.
 
+## Project docs index
+
+| Doc | Role |
+|-----|------|
+| `docs/ENGINEERING_STATUS.md` | **Living status** — update as features/phases land |
+| `docs/PHASE_ROLLOUT.md` | Phase-by-phase history and what was skipped |
+| `docs/AUDIT_REPORT_PHASE1.md` | Phase 1 static audit completion |
+| `CONTRIBUTING.md` | Dev setup, Ruff, pre-commit, tests |
+
 ## Packaging
 
 - **Core**: No required dependencies (standard library).

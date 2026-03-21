@@ -9,23 +9,24 @@ All models are designed to be:
 
 from __future__ import annotations
 
-import hashlib
 import time
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum, auto
+from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Any, Callable
+from typing import Any, Dict, List, Optional, Set
 
 
 class PipelineMode(str, Enum):
     """Scan mode - exact duplicates only (visual/fuzzy removed for simplicity)."""
+
     EXACT = "exact"
 
 
 class FileStatus(str, Enum):
     """Status of a file in the duplicate detection process."""
+
     PENDING = "pending"
     SCANNED = "scanned"
     HASHED_PARTIAL = "hashed_partial"
@@ -37,12 +38,14 @@ class FileStatus(str, Enum):
 
 class DeletionPolicy(str, Enum):
     """Policy for file deletion."""
+
     TRASH = "trash"
     PERMANENT = "permanent"
 
 
 class ScanPhase(str, Enum):
     """Durable pipeline phases."""
+
     DISCOVERY = "discovery"
     SIZE_REDUCTION = "size_reduction"
     PARTIAL_HASH = "partial_hash"
@@ -53,6 +56,7 @@ class ScanPhase(str, Enum):
 
 class PhaseStatus(str, Enum):
     """Status for phase checkpoint state."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -62,6 +66,7 @@ class PhaseStatus(str, Enum):
 
 class ResumeOutcome(str, Enum):
     """Result of resume compatibility check. No vague middle state."""
+
     SAFE_RESUME = "safe_resume"
     REBUILD_CURRENT_PHASE = "rebuild_current_phase"
     RESTART_REQUIRED = "restart_required"
@@ -69,6 +74,7 @@ class ResumeOutcome(str, Enum):
 
 class ResumeReason(str, Enum):
     """Why a given resume outcome was chosen."""
+
     NO_SESSION = "no_session"
     SESSION_NOT_RESUMABLE = "session_not_resumable"
     SCHEMA_VERSION_MISMATCH = "schema_version_mismatch"
@@ -84,6 +90,7 @@ class ResumeReason(str, Enum):
 
 class DeletionVerificationTargetStatus(str, Enum):
     """Verification outcome for an individual delete target."""
+
     DELETED = "deleted"
     STILL_PRESENT = "still_present"
     CHANGED_AFTER_PLAN = "changed_after_plan"
@@ -92,6 +99,7 @@ class DeletionVerificationTargetStatus(str, Enum):
 
 class DeletionVerificationGroupStatus(str, Enum):
     """Verification outcome for a duplicate group after deletion."""
+
     RESOLVED = "resolved"
     PARTIALLY_RESOLVED = "partially_resolved"
     UNRESOLVED = "unresolved"
@@ -101,6 +109,7 @@ class DeletionVerificationGroupStatus(str, Enum):
 @dataclass(slots=True)
 class PhaseCompatibilityReport:
     """Per-phase compatibility result for resume decision."""
+
     phase: ScanPhase
     compatible: bool
     reasons: List[str] = field(default_factory=list)
@@ -110,6 +119,7 @@ class PhaseCompatibilityReport:
 @dataclass(slots=True)
 class ResumeDecision:
     """Authoritative resume decision: outcome, first runnable phase, and reason."""
+
     outcome: ResumeOutcome
     first_runnable_phase: ScanPhase
     reason: str
@@ -117,12 +127,15 @@ class ResumeDecision:
     cursor_or_context: Optional[Dict[str, Any]] = None
 
     def log_message(self) -> str:
-        return f"Resume decision: {self.outcome.value} from phase {self.first_runnable_phase.value}; reason={self.reason}"
+        return (
+            f"Resume decision: {self.outcome.value} from phase {self.first_runnable_phase.value}; reason={self.reason}"
+        )
 
 
 @dataclass(slots=True, frozen=True)
 class FileRecord:
     """Durable inventory row used by the persistence-backed pipeline."""
+
     path: str
     size_bytes: int
     mtime_ns: int
@@ -155,6 +168,7 @@ class FileRecord:
 @dataclass(slots=True)
 class CheckpointInfo:
     """Durable checkpoint metadata for resumable phase execution."""
+
     session_id: str
     phase_name: ScanPhase
     chunk_cursor: Optional[str] = None
@@ -202,9 +216,7 @@ class CheckpointInfo:
             completed_units=data.get("completed_units", 0),
             total_units=data.get("total_units"),
             status=PhaseStatus(data.get("status", PhaseStatus.PENDING.value)),
-            updated_at=datetime.fromisoformat(data["updated_at"])
-            if data.get("updated_at")
-            else datetime.now(),
+            updated_at=datetime.fromisoformat(data["updated_at"]) if data.get("updated_at") else datetime.now(),
             metadata_json=meta,
             schema_version=meta.get("schema_version"),
             phase_version=meta.get("phase_version"),
@@ -220,12 +232,13 @@ class CheckpointInfo:
 class FileMetadata:
     """
     Lightweight, immutable file metadata record.
-    
+
     Designed for memory efficiency with 1M+ files:
     - Uses __slots__ to reduce per-object overhead
     - Stores path as string to avoid Path object overhead in collections
     - Optional hash fields populated progressively
     """
+
     path: str  # Store as string for memory efficiency
     size: int
     mtime_ns: int  # Nanoseconds for precision
@@ -234,24 +247,24 @@ class FileMetadata:
     hash_full: Optional[str] = None  # Complete file hash
     status: FileStatus = FileStatus.PENDING
     error_message: Optional[str] = None
-    
+
     # Derived properties
     @property
     def path_obj(self) -> Path:
         return Path(self.path)
-    
+
     @property
     def mtime(self) -> float:
         return self.mtime_ns / 1_000_000_000
-    
+
     @property
     def extension(self) -> str:
         return Path(self.path).suffix.lower()
-    
+
     @property
     def filename(self) -> str:
         return Path(self.path).name
-    
+
     def with_hash_partial(self, hash_value: str) -> FileMetadata:
         """Return new instance with partial hash set."""
         return FileMetadata(
@@ -263,7 +276,7 @@ class FileMetadata:
             hash_full=self.hash_full,
             status=FileStatus.HASHED_PARTIAL,
         )
-    
+
     def with_hash_full(self, hash_value: str) -> FileMetadata:
         """Return new instance with full hash set."""
         return FileMetadata(
@@ -275,7 +288,7 @@ class FileMetadata:
             hash_full=hash_value,
             status=FileStatus.HASHED_FULL,
         )
-    
+
     def with_error(self, error: str) -> FileMetadata:
         """Return new instance with error status."""
         return FileMetadata(
@@ -288,7 +301,7 @@ class FileMetadata:
             status=FileStatus.ERROR,
             error_message=error,
         )
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary."""
         return {
@@ -301,7 +314,7 @@ class FileMetadata:
             "status": self.status.value,
             "error_message": self.error_message,
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> FileMetadata:
         """Deserialize from dictionary."""
@@ -315,7 +328,7 @@ class FileMetadata:
             status=FileStatus(data.get("status", "pending")),
             error_message=data.get("error_message"),
         )
-    
+
     @classmethod
     def from_path(cls, path: Path | str, follow_symlinks: bool = False) -> Optional[FileMetadata]:
         """Create FileMetadata from filesystem path."""
@@ -323,13 +336,13 @@ class FileMetadata:
             p = Path(path)
             if not p.exists() or not p.is_file():
                 return None
-            
+
             st = p.stat(follow_symlinks=follow_symlinks)
-            
+
             return cls(
                 path=str(p.resolve()),
                 size=st.st_size,
-                mtime_ns=getattr(st, 'st_mtime_ns', int(st.st_mtime * 1_000_000_000)),
+                mtime_ns=getattr(st, "st_mtime_ns", int(st.st_mtime * 1_000_000_000)),
                 inode=st.st_ino,
             )
         except (OSError, ValueError, PermissionError):
@@ -340,32 +353,33 @@ class FileMetadata:
 class DuplicateGroup:
     """
     A group of duplicate files (2 or more files with identical content).
-    
+
     The group_hash is the canonical identifier for this duplicate set.
     """
+
     group_id: str
     group_hash: str  # The hash that defines this group
     files: List[FileMetadata] = field(default_factory=list)
     total_size: int = 0  # Total bytes if all duplicates were removed
     reclaimable_size: int = 0  # Bytes that can be reclaimed (total - one copy)
-    
+
     def __post_init__(self):
         if not self.group_id:
             self.group_id = str(uuid.uuid4())[:8]
         self._recalculate_sizes()
-    
+
     def _recalculate_sizes(self):
         """Recalculate size metrics."""
         if self.files:
             file_size = self.files[0].size
             self.total_size = file_size * len(self.files)
             self.reclaimable_size = file_size * (len(self.files) - 1)
-    
+
     def add_file(self, file: FileMetadata):
         """Add a file to this duplicate group."""
         self.files.append(file)
         self._recalculate_sizes()
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary."""
         return {
@@ -375,7 +389,7 @@ class DuplicateGroup:
             "total_size": self.total_size,
             "reclaimable_size": self.reclaimable_size,
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> DuplicateGroup:
         """Deserialize from dictionary."""
@@ -393,12 +407,13 @@ class DuplicateGroup:
 class ScanConfig:
     """
     Configuration for a duplicate file scan.
-    
+
     All parameters have sensible defaults for immediate use.
     """
+
     # Required
     roots: List[Path] = field(default_factory=list)
-    
+
     # Discovery options
     min_size_bytes: int = 1  # No minimum by default
     max_size_bytes: Optional[int] = None
@@ -406,18 +421,27 @@ class ScanConfig:
     follow_symlinks: bool = False
     scan_subfolders: bool = True  # Recurse into subfolders (default: scan entire tree)
     allowed_extensions: Optional[Set[str]] = None
-    exclude_dirs: Set[str] = field(default_factory=lambda: {
-        '.git', '.svn', '.hg',  # Version control
-        'node_modules', '__pycache__', '.pytest_cache',  # Build artifacts
-        '.venv', 'venv', 'env',  # Virtual environments
-        '$RECYCLE.BIN', 'System Volume Information',  # Windows system
-    })
-    
+    exclude_dirs: Set[str] = field(
+        default_factory=lambda: {
+            ".git",
+            ".svn",
+            ".hg",  # Version control
+            "node_modules",
+            "__pycache__",
+            ".pytest_cache",  # Build artifacts
+            ".venv",
+            "venv",
+            "env",  # Virtual environments
+            "$RECYCLE.BIN",
+            "System Volume Information",  # Windows system
+        }
+    )
+
     # Hashing options
     hash_algorithm: str = "xxhash64"  # Fast, non-cryptographic
     partial_hash_bytes: int = 4096  # First 4KB for initial comparison
     full_hash_workers: int = 4  # Parallel hash workers
-    
+
     # Performance options
     batch_size: int = 5000  # Process files in batches (inventory writes)
     progress_interval_ms: int = 100  # Progress update interval
@@ -430,7 +454,7 @@ class ScanConfig:
 
     # Mode
     mode: PipelineMode = PipelineMode.EXACT
-    
+
     def __post_init__(self):
         # Normalize paths: resolve all, prefer existing; never drop all roots
         # (exists() can be False on network/OneDrive paths; discovery will still try)
@@ -440,8 +464,8 @@ class ScanConfig:
 
         # Normalize extensions to lowercase
         if self.allowed_extensions:
-            self.allowed_extensions = {e.lower().lstrip('.') for e in self.allowed_extensions}
-    
+            self.allowed_extensions = {e.lower().lstrip(".") for e in self.allowed_extensions}
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary."""
         return {
@@ -466,7 +490,7 @@ class ScanConfig:
             "incremental_discovery": self.incremental_discovery,
             "mode": self.mode.value,
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> ScanConfig:
         """Deserialize from dictionary."""
@@ -499,16 +523,17 @@ class ScanConfig:
 class ScanProgress:
     """
     Immutable snapshot of scan progress.
-    
+
     All numeric values are actual measured data, never estimates presented as fact.
     If a value is unknown, it is None (not a fabricated number).
     """
+
     scan_id: str
-    
+
     # Phase information
     phase: str = "idle"  # idle, discovering, grouping, hashing_partial, hashing_full, complete, error
     phase_description: str = ""
-    
+
     # Progress (only show percent if we know the total)
     files_found: int = 0
     files_total: Optional[int] = None  # None until discovery completes
@@ -516,7 +541,7 @@ class ScanProgress:
     bytes_total: Optional[int] = None
     groups_found: int = 0
     duplicates_found: int = 0
-    
+
     # Timing (all in seconds)
     elapsed_seconds: float = 0.0
     phase_elapsed_s: float = 0.0
@@ -525,7 +550,7 @@ class ScanProgress:
     phase_last_updated_at: Optional[float] = None
     phase_total_units: Optional[int] = None
     phase_completed_units: int = 0
-    
+
     # Discovery counters (from FileDiscovery._stats, emitted live)
     dirs_scanned: int = 0
     dirs_reused: int = 0
@@ -534,34 +559,34 @@ class ScanProgress:
     # Throughput (measured, not estimated)
     files_per_second: Optional[float] = None
     bytes_per_second: Optional[float] = None
-    
+
     # Current operation
     current_file: Optional[str] = None
     current_operation: str = ""
-    
+
     # Errors and warnings
     error_count: int = 0
     warning_count: int = 0
     last_error: Optional[str] = None
-    
+
     # Timestamp
     timestamp: float = field(default_factory=time.time)
-    
+
     @property
     def percent_complete(self) -> Optional[float]:
         """Return percent complete only if we know the total."""
         if self.files_total and self.files_total > 0:
             return min(100.0, (self.files_found / self.files_total) * 100)
         return None
-    
+
     @property
     def is_complete(self) -> bool:
         return self.phase == "complete"
-    
+
     @property
     def is_active(self) -> bool:
         return self.phase not in ("idle", "complete", "error", "cancelled")
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary."""
         return {
@@ -599,43 +624,44 @@ class ScanProgress:
 class ScanResult:
     """
     Complete result of a duplicate file scan.
-    
+
     Contains all discovered duplicate groups and scan statistics.
     """
+
     scan_id: str
     config: ScanConfig
-    
+
     # Timing
     started_at: datetime
     completed_at: Optional[datetime] = None
-    
+
     # Discovery results
     files_scanned: int = 0
     bytes_scanned: int = 0
     unique_files: int = 0
-    
+
     # Duplicate results
     duplicate_groups: List[DuplicateGroup] = field(default_factory=list)
     total_duplicates: int = 0
     total_reclaimable_bytes: int = 0
-    
+
     # Errors
     errors: List[str] = field(default_factory=list)
     incremental_discovery_report: Optional[Dict[str, Any]] = None
     benchmark_report: Optional[Dict[str, Any]] = None
-    
+
     @property
     def duration_seconds(self) -> float:
         """Calculate scan duration."""
         if self.completed_at:
             return (self.completed_at - self.started_at).total_seconds()
         return 0.0
-    
+
     @property
     def duplicate_count(self) -> int:
         """Total number of duplicate files (not counting originals)."""
         return sum(len(g.files) - 1 for g in self.duplicate_groups)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary."""
         return {
@@ -653,7 +679,7 @@ class ScanResult:
             "incremental_discovery_report": self.incremental_discovery_report,
             "benchmark_report": self.benchmark_report,
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> ScanResult:
         """Deserialize from dictionary."""
@@ -678,17 +704,18 @@ class ScanResult:
 class DeletionPlan:
     """
     A plan for deleting duplicate files.
-    
+
     Each group specifies which file to keep and which to delete.
     """
+
     scan_id: str
     policy: DeletionPolicy = DeletionPolicy.TRASH
     groups: List[Dict[str, Any]] = field(default_factory=list)
-    
+
     @property
     def total_files_to_delete(self) -> int:
         return sum(len(g.get("delete", [])) for g in self.groups)
-    
+
     @property
     def total_bytes_to_reclaim(self) -> int:
         total = 0
@@ -699,7 +726,7 @@ class DeletionPlan:
                 except (OSError, ValueError):
                     pass
         return total
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "scan_id": self.scan_id,
@@ -713,6 +740,7 @@ class DeletionResult:
     """
     Result of executing a deletion plan.
     """
+
     scan_id: str
     policy: DeletionPolicy
     deleted_files: List[str] = field(default_factory=list)
@@ -721,21 +749,21 @@ class DeletionResult:
     verification_summary: Optional[Dict[str, int]] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
-    
+
     @property
     def success_count(self) -> int:
         return len(self.deleted_files)
-    
+
     @property
     def failure_count(self) -> int:
         return len(self.failed_files)
-    
+
     @property
     def duration_seconds(self) -> float:
         if self.started_at and self.completed_at:
             return (self.completed_at - self.started_at).total_seconds()
         return 0.0
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "scan_id": self.scan_id,
@@ -752,6 +780,7 @@ class DeletionResult:
 @dataclass(slots=True)
 class DeletionVerificationTarget:
     """Verification result for one delete target."""
+
     path: str
     status: DeletionVerificationTargetStatus
     group_id: str = ""
@@ -769,6 +798,7 @@ class DeletionVerificationTarget:
 @dataclass(slots=True)
 class DeletionVerificationGroup:
     """Verification result for one duplicate group."""
+
     group_id: str
     status: DeletionVerificationGroupStatus
     keep_path: str = ""
@@ -786,6 +816,7 @@ class DeletionVerificationGroup:
 @dataclass(slots=True)
 class DeletionVerificationResult:
     """Summary of post-delete verification without running a rescan."""
+
     scan_id: str
     plan_id: str
     target_results: List[DeletionVerificationTarget] = field(default_factory=list)

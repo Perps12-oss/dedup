@@ -2,29 +2,25 @@
 
 This document tracks what was implemented vs deferred across the seven-phase specification.
 
+**For the latest “what works today” summary**, see **`docs/ENGINEERING_STATUS.md`** (update that file as you continue; use this file for phase boundaries and historical deferrals).
+
 ---
 
 ## Phase 1 — Repository audit & analysis
 
-### Done
+### Done (completion pass)
 
-- `pyproject.toml` tooling (`pytest`, `ruff`, `mypy`).
-- `requirements-dev.txt`.
-- Generated: `docs/ruff_issues.txt`, `docs/mypy_issues.txt`, `docs/vulture_report.txt`, `docs/pip_outdated.txt`.
-- Written: `AUDIT_REPORT_PHASE1.md`, `DEPENDENCY_AUDIT.md`, `dead_code_inventory.md`, `ARCHITECTURE_REVIEW.md`, `button_functionality_audit.md` (starter table + stubs), `runtime_warnings.md` (template).
+- **Ruff:** `ruff check dedup` clean; `ruff format` applied; `docs/ruff_issues.txt` refreshed.
+- **Pre-commit:** `.pre-commit-config.yaml`; `pre-commit` in `requirements-dev.txt`.
+- **pip-audit / outdated:** `docs/pip_audit_report.json`, `docs/pip_outdated.txt` refreshed.
+- **Vulture:** clean (`docs/vulture_report.txt`); unused-arg fixes in `review_workspace` / `status_strip`.
+- **Mypy snapshot:** `docs/mypy_issues.txt` refreshed (typing backlog remains).
+- **Buttons / runtime:** `button_functionality_audit.md` expanded; `runtime_warnings.md` has pytest + thread-note.
+- **AUDIT_REPORT_PHASE1.md** marked complete.
 
-### Skipped / why
+### Optional later
 
-- **Pylint export:** overlaps Ruff; enable later on `engine/` only.
-- **pip-audit JSON:** network-dependent; run locally and save as `docs/pip_audit_report.json`.
-- **pydeps SVG:** needs Graphviz; run when available.
-- **Manual GUI soak:** capture stderr into `runtime_warnings.md` during QA.
-- **Per-button exhaustive inventory:** time-intensive; extend `button_functionality_audit.md` in Phase 3 sub-pass.
-
-### When to implement skipped items
-
-- After Ruff auto-fix pass: add `pre-commit` with `ruff check` + `ruff format`.
-- Before release: `pip-audit`, refresh `pip_outdated`, complete button table, one GUI soak.
+- Pylint on `dedup/engine` only; pydeps + Graphviz; interactive GUI soak log; drive mypy to green.
 
 ---
 
@@ -147,7 +143,7 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 
 ## Sub-phase ordering (recommended)
 
-1. Phase 1 follow-up: Ruff `--fix`, pip-audit, button table completion.  
+1. ~~Phase 1 follow-up~~ **Done:** Ruff clean, format, pre-commit, pip-audit JSON, vulture, button audit doc, runtime notes. *Remaining optional:* pylint, pydeps, GUI soak, mypy green.  
 2. Phase 2 follow-up: JSON theme export/import (no draggable editor yet).  
 3. Phase 3 follow-up: Toast wiring + remove/hide Export stubs.  
 4. Phase 4 follow-up: VirtualTree spike + benchmark refresh.  

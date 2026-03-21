@@ -8,14 +8,14 @@ Truthfulness tests: duplicate counts, reclaimable bytes, no candidates as confir
 
 from __future__ import annotations
 
-import pytest
-from pathlib import Path
-
+from dedup.engine.metrics_semantics import Phase, should_show_eta, should_show_percent
 from dedup.engine.models import (
-    FileMetadata, DuplicateGroup, ScanResult, ScanConfig, ScanProgress,
-    FileStatus,
+    DuplicateGroup,
+    FileMetadata,
+    ScanConfig,
+    ScanProgress,
+    ScanResult,
 )
-from dedup.engine.metrics_semantics import should_show_percent, should_show_eta, Phase
 
 
 class TestReclaimableOnlyFromConfirmed:
@@ -23,17 +23,25 @@ class TestReclaimableOnlyFromConfirmed:
 
     def test_reclaimable_is_sum_of_group_reclaimable(self):
         # Each group: reclaimable_size = file_size * (n - 1)
-        g1 = DuplicateGroup(group_id="g1", group_hash="abc", files=[
-            FileMetadata(path="/a", size=100, mtime_ns=0),
-            FileMetadata(path="/b", size=100, mtime_ns=0),
-            FileMetadata(path="/c", size=100, mtime_ns=0),
-        ])
+        g1 = DuplicateGroup(
+            group_id="g1",
+            group_hash="abc",
+            files=[
+                FileMetadata(path="/a", size=100, mtime_ns=0),
+                FileMetadata(path="/b", size=100, mtime_ns=0),
+                FileMetadata(path="/c", size=100, mtime_ns=0),
+            ],
+        )
         assert g1.reclaimable_size == 200  # 100 * 2
 
-        g2 = DuplicateGroup(group_id="g2", group_hash="def", files=[
-            FileMetadata(path="/d", size=50, mtime_ns=0),
-            FileMetadata(path="/e", size=50, mtime_ns=0),
-        ])
+        g2 = DuplicateGroup(
+            group_id="g2",
+            group_hash="def",
+            files=[
+                FileMetadata(path="/d", size=50, mtime_ns=0),
+                FileMetadata(path="/e", size=50, mtime_ns=0),
+            ],
+        )
         assert g2.reclaimable_size == 50
 
         total = g1.reclaimable_size + g2.reclaimable_size
@@ -41,10 +49,14 @@ class TestReclaimableOnlyFromConfirmed:
 
     def test_scan_result_total_reclaimable_matches_groups(self):
         groups = [
-            DuplicateGroup(group_id="1", group_hash="h1", files=[
-                FileMetadata(path="/p1", size=10, mtime_ns=0),
-                FileMetadata(path="/p2", size=10, mtime_ns=0),
-            ]),
+            DuplicateGroup(
+                group_id="1",
+                group_hash="h1",
+                files=[
+                    FileMetadata(path="/p1", size=10, mtime_ns=0),
+                    FileMetadata(path="/p2", size=10, mtime_ns=0),
+                ],
+            ),
         ]
         result = ScanResult(
             scan_id="s1",
@@ -81,15 +93,23 @@ class TestDuplicateCountsExact:
 
     def test_duplicate_count_property(self):
         groups = [
-            DuplicateGroup(group_id="1", group_hash="h1", files=[
-                FileMetadata(path="/a", size=1, mtime_ns=0),
-                FileMetadata(path="/b", size=1, mtime_ns=0),
-                FileMetadata(path="/c", size=1, mtime_ns=0),
-            ]),
-            DuplicateGroup(group_id="2", group_hash="h2", files=[
-                FileMetadata(path="/d", size=1, mtime_ns=0),
-                FileMetadata(path="/e", size=1, mtime_ns=0),
-            ]),
+            DuplicateGroup(
+                group_id="1",
+                group_hash="h1",
+                files=[
+                    FileMetadata(path="/a", size=1, mtime_ns=0),
+                    FileMetadata(path="/b", size=1, mtime_ns=0),
+                    FileMetadata(path="/c", size=1, mtime_ns=0),
+                ],
+            ),
+            DuplicateGroup(
+                group_id="2",
+                group_hash="h2",
+                files=[
+                    FileMetadata(path="/d", size=1, mtime_ns=0),
+                    FileMetadata(path="/e", size=1, mtime_ns=0),
+                ],
+            ),
         ]
         result = ScanResult(
             scan_id="s",

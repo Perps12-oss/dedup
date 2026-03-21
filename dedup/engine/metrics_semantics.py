@@ -28,19 +28,19 @@ from typing import Optional
 
 class MetricSemantics:
     """Documented semantics for each metric; use for UI and validation."""
-    
+
     FILES_DISCOVERED = "files_discovered"  # From discovery phase
-    FILES_SCANNED = "files_scanned"        # Same as discovered at end of discovery
-    FILES_TOTAL = "files_total"            # Set only after discovery completes; None during discovery
-    CANDIDATE_FILES = "candidate_files"    # In size groups with 2+; not confirmed
-    CANDIDATE_GROUPS = "candidate_groups"   # Size groups; not confirmed
+    FILES_SCANNED = "files_scanned"  # Same as discovered at end of discovery
+    FILES_TOTAL = "files_total"  # Set only after discovery completes; None during discovery
+    CANDIDATE_FILES = "candidate_files"  # In size groups with 2+; not confirmed
+    CANDIDATE_GROUPS = "candidate_groups"  # Size groups; not confirmed
     CONFIRMED_DUPLICATE_FILES = "confirmed_duplicate_files"  # After full hash
     CONFIRMED_DUPLICATE_GROUPS = "confirmed_duplicate_groups"
     RECLAIMABLE_BYTES = "reclaimable_bytes"  # Only from confirmed groups
     SKIPPED_FILES = "skipped_files"
     ERRORED_FILES = "errored_files"
     ACTIVE_PHASE = "active_phase"
-    ETA_AVAILABLE = "eta_available"        # Only if stable throughput + known total
+    ETA_AVAILABLE = "eta_available"  # Only if stable throughput + known total
     PERCENT_COMPLETE_AVAILABLE = "percent_complete_available"
 
 

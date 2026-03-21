@@ -4,8 +4,6 @@ Pipeline tests: durable discovery writes inventory and checkpoints.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from dedup.engine.models import ScanConfig, ScanPhase
 from dedup.engine.pipeline import ScanPipeline
 from dedup.infrastructure.persistence import Persistence

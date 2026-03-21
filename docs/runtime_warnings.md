@@ -1,24 +1,19 @@
-# Runtime warnings capture (template)
+# Runtime warnings capture
 
-**Purpose:** GUI soak test notes (Mission → Scan → Review → delete dry-run) on a non-trivial dataset.
+## Automated check (2026-03-21)
 
-## Environment
+- `python -m pytest dedup/tests/` — **exit 0** (full suite).
+- **Known pytest noise:** thumbnail worker threads may raise `RuntimeError: main thread is not in main loop` when Tk is destroyed without a running mainloop (`test_review_page` compare / gallery paths). This is a **test harness** limitation, not a production defect.
 
-- OS:
-- Python version:
-- Optional deps installed: xxhash / send2trash / tkinterdnd2 / Pillow (check all that apply)
+## GUI soak (manual)
 
-## Procedure
+Run when validating a release:
 
 1. `python -m dedup`
-2. Run scan on a directory with ~10k files (or project test fixture).
-3. Open Review, switch Table / Gallery / Compare.
-4. Copy any **stderr** lines and Tk warnings below.
+2. Mission → Scan (small folder) → Review → Preview Effects → cancel execute.
+3. Toggle Themes, Settings, Advanced.
+4. Copy any **stderr** / Tk warnings below.
 
-## Log
+### Log
 
-_(None captured in automated Phase 1 — fill during manual QA.)_
-
-## Pytest note
-
-Thumbnail worker threads may log `RuntimeError: main thread is not in main loop` when tests tear down Tk without a running mainloop; tracked as pytest warnings, not production defects.
+_(No interactive soak captured in this pass.)_

@@ -8,10 +8,10 @@ Controller updates store.set_intent_lifecycle and delegates to coordinator.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict
 
 from ...orchestration.coordinator import ScanCoordinator
-from ..state.store import UIStateStore, IntentLifecycle
+from ..state.store import IntentLifecycle, UIStateStore
 
 
 class ScanController:

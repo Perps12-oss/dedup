@@ -7,21 +7,21 @@ Provides:
   - ReviewGalleryView: thumbnail grid for selected group
   - ReviewCompareView: side-by-side large preview for selected group
 """
+
 from __future__ import annotations
 
 import threading
 import tkinter as tk
-from tkinter import ttk
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, List, Optional, Any
+from tkinter import ttk
+from typing import Any, Callable, List, Optional
 
-from ..utils.formatting import fmt_bytes, truncate_path
-from ..utils.icons import IC
+from ...engine.media_types import is_image_extension
 from ...engine.models import DuplicateGroup
 from ...engine.thumbnails import generate_thumbnails_async, get_cache_dir
-from ...engine.media_types import is_image_extension
-
+from ..utils.formatting import fmt_bytes, truncate_path
+from ..utils.icons import IC
 from .data_table import DataTable
 from .empty_state import EmptyState
 
@@ -56,13 +56,13 @@ class ReviewTableView(ttk.Frame):
         self._file_table = DataTable(
             self,
             columns=[
-                ("action",  "Action",   60, "center"),
-                ("name",    "Name",    160, "w"),
-                ("path",    "Path",    200, "w"),
-                ("size",    "Size",     70, "e"),
-                ("mtime",   "Modified",100, "w"),
-                ("type",    "Type",     60, "w"),
-                ("status",  "Status",   60, "w"),
+                ("action", "Action", 60, "center"),
+                ("name", "Name", 160, "w"),
+                ("path", "Path", 200, "w"),
+                ("size", "Size", 70, "e"),
+                ("mtime", "Modified", 100, "w"),
+                ("type", "Type", 60, "w"),
+                ("status", "Status", 60, "w"),
             ],
             height=12,
             on_select=on_select,
@@ -75,13 +75,15 @@ class ReviewTableView(ttk.Frame):
         act = ttk.Frame(self, style="Panel.TFrame")
         act.grid(row=2, column=0, sticky="ew", pady=(6, 0))
         ttk.Button(
-            act, text=f"{IC.KEEP}  Keep this",
+            act,
+            text=f"{IC.KEEP}  Keep this",
             style="Ghost.TButton",
             command=on_keep,
         ).pack(side="left", padx=(0, 6))
 
         self._empty = EmptyState(
-            self, icon=IC.REVIEW,
+            self,
+            icon=IC.REVIEW,
             heading="No group selected",
             message="Choose a duplicate group from the left panel.",
         )
@@ -103,15 +105,20 @@ class ReviewTableView(ttk.Frame):
         self._file_table.clear()
         for f in group.files:
             self._file_meta[f.path] = f
-            is_keep = (f.path == keep_path)
+            is_keep = f.path == keep_path
             action = f"{IC.KEEP} KEEP" if is_keep else f"{IC.DELETE_TGT} DEL"
             tag = "safe" if is_keep else "warn"
             modified = datetime.fromtimestamp(getattr(f, "mtime_ns", 0) / 1_000_000_000).strftime("%Y-%m-%d")
             self._file_table.insert_row(
                 f.path,
                 (
-                    action, f.filename, truncate_path(f.path, 40),
-                    fmt_bytes(f.size), modified, Path(f.path).suffix or "—", "OK",
+                    action,
+                    f.filename,
+                    truncate_path(f.path, 40),
+                    fmt_bytes(f.size),
+                    modified,
+                    Path(f.path).suffix or "—",
+                    "OK",
                 ),
                 tags=(tag,),
             )
@@ -177,7 +184,8 @@ class ReviewGalleryView(ttk.Frame):
         self.bind("<Destroy>", self._on_destroy, add="+")
 
         self._canvas = tk.Canvas(
-            self, highlightthickness=0,
+            self,
+            highlightthickness=0,
             bg="SystemButtonFace",  # Explicit color; cget("style") returns style name, not color
         )
         self._scroll_v = ttk.Scrollbar(self, orient="vertical", command=self._canvas.yview)
@@ -193,7 +201,8 @@ class ReviewGalleryView(ttk.Frame):
         self._scroll_h.grid(row=1, column=0, sticky="ew")
 
         self._empty = EmptyState(
-            self, icon=IC.REVIEW,
+            self,
+            icon=IC.REVIEW,
             heading="No group selected",
             message="Choose a duplicate group from the left panel.",
         )
@@ -242,14 +251,18 @@ class ReviewGalleryView(ttk.Frame):
                     card.grid(row=row, column=col, padx=4, pady=4, sticky="nw")
 
                     placeholder = ttk.Label(
-                        card, text=Path(fpath).name[:20], style="Panel.Muted.TLabel",
-                        font=("Segoe UI", 8), wraplength=size[0] - 8,
+                        card,
+                        text=Path(fpath).name[:20],
+                        style="Panel.Muted.TLabel",
+                        font=("Segoe UI", 8),
+                        wraplength=size[0] - 8,
                     )
                     placeholder.grid(row=1, column=0)
 
                     if thumb_path and thumb_path.exists():
                         try:
                             from tkinter import PhotoImage
+
                             img = PhotoImage(file=str(thumb_path))
                             self._thumb_refs.append(img)
                             lbl = ttk.Label(card, image=img, style="Panel.TLabel")
@@ -261,12 +274,14 @@ class ReviewGalleryView(ttk.Frame):
 
                     f = next((x for x in files if x.path == fpath), None)
                     if f:
-                        ttk.Label(card, text=fmt_bytes(f.size), style="Panel.Muted.TLabel",
-                                  font=("Segoe UI", 7)).grid(row=2, column=0)
-                        is_keep = (fpath == keep_path)
+                        ttk.Label(card, text=fmt_bytes(f.size), style="Panel.Muted.TLabel", font=("Segoe UI", 7)).grid(
+                            row=2, column=0
+                        )
+                        is_keep = fpath == keep_path
                         action_text = "KEEP" if is_keep else "DEL"
                         btn = ttk.Button(
-                            card, text=action_text,
+                            card,
+                            text=action_text,
                             style="Ghost.TButton" if is_keep else "Danger.TButton",
                             command=lambda p=fpath: self._on_keep(p),
                         )
@@ -278,13 +293,17 @@ class ReviewGalleryView(ttk.Frame):
 
                 if not self._thumb_cancel.is_set():
                     self.after(0, update)
+
             return on_thumb
 
         for idx, f in enumerate(files):
             if is_image_extension(Path(f.path).suffix.lower().lstrip(".")):
                 generate_thumbnails_async(
-                    [f.path], make_on_thumb(idx),
-                    size=size, cache_dir=get_cache_dir(), max_count=len(files),
+                    [f.path],
+                    make_on_thumb(idx),
+                    size=size,
+                    cache_dir=get_cache_dir(),
+                    max_count=len(files),
                     cancel_event=self._thumb_cancel,
                 )
             else:
@@ -292,14 +311,17 @@ class ReviewGalleryView(ttk.Frame):
                 card = ttk.Frame(self._inner, style="Panel.TFrame", padding=4)
                 card.grid(row=row, column=col, padx=4, pady=4, sticky="nw")
                 ttk.Label(card, text="📄", font=("Segoe UI", 24)).grid(row=0, column=0)
-                ttk.Label(card, text=f.filename[:24], style="Panel.Muted.TLabel",
-                          font=("Segoe UI", 8), wraplength=size[0] - 8).grid(row=1, column=0)
-                ttk.Label(card, text=fmt_bytes(f.size), style="Panel.Muted.TLabel",
-                          font=("Segoe UI", 7)).grid(row=2, column=0)
-                is_keep = (f.path == keep_path)
+                ttk.Label(
+                    card, text=f.filename[:24], style="Panel.Muted.TLabel", font=("Segoe UI", 8), wraplength=size[0] - 8
+                ).grid(row=1, column=0)
+                ttk.Label(card, text=fmt_bytes(f.size), style="Panel.Muted.TLabel", font=("Segoe UI", 7)).grid(
+                    row=2, column=0
+                )
+                is_keep = f.path == keep_path
                 action_text = "KEEP" if is_keep else "DEL"
                 ttk.Button(
-                    card, text=action_text,
+                    card,
+                    text=action_text,
                     style="Ghost.TButton" if is_keep else "Danger.TButton",
                     command=lambda p=f.path: self._on_keep(p),
                 ).grid(row=3, column=0, pady=2)
@@ -355,26 +377,28 @@ class ReviewCompareView(ttk.Frame):
         act.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         act.columnconfigure(0, weight=1)
         act.columnconfigure(1, weight=1)
-        ttk.Button(act, text="Keep Left", style="Ghost.TButton",
-                   command=on_keep_left).grid(row=0, column=0, padx=4)
-        ttk.Button(act, text="Keep Right", style="Ghost.TButton",
-                   command=on_keep_right).grid(row=0, column=1, padx=4)
-        ttk.Button(act, text="Keep All Except Left", style="Ghost.TButton",
-                   command=on_keep_left).grid(row=1, column=0, padx=4, pady=(4, 0))
-        ttk.Button(act, text="Keep All Except Right", style="Ghost.TButton",
-                   command=on_keep_right).grid(row=1, column=1, padx=4, pady=(4, 0))
+        ttk.Button(act, text="Keep Left", style="Ghost.TButton", command=on_keep_left).grid(row=0, column=0, padx=4)
+        ttk.Button(act, text="Keep Right", style="Ghost.TButton", command=on_keep_right).grid(row=0, column=1, padx=4)
+        ttk.Button(act, text="Keep All Except Left", style="Ghost.TButton", command=on_keep_left).grid(
+            row=1, column=0, padx=4, pady=(4, 0)
+        )
+        ttk.Button(act, text="Keep All Except Right", style="Ghost.TButton", command=on_keep_right).grid(
+            row=1, column=1, padx=4, pady=(4, 0)
+        )
 
         # Tier 3: Multi-compare strip (up to 6)
         mc = ttk.Frame(self, style="Panel.TFrame")
         mc.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         mc.columnconfigure(0, weight=1)
-        ttk.Label(mc, text="Multi-Compare (up to 6): promote to left/right",
-                  style="Panel.Muted.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(mc, text="Multi-Compare (up to 6): promote to left/right", style="Panel.Muted.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
         self._multi_grid = ttk.Frame(mc, style="Panel.TFrame")
         self._multi_grid.grid(row=1, column=0, sticky="ew", pady=(4, 0))
 
         self._empty = EmptyState(
-            self, icon=IC.REVIEW,
+            self,
+            icon=IC.REVIEW,
             heading="No group selected",
             message="Choose a duplicate group from the left panel.",
         )
@@ -467,19 +491,22 @@ class ReviewCompareView(ttk.Frame):
             self._left_idx, self._right_idx = li, ri
         self._pair_lbl.configure(text=f"Comparing {self._left_idx + 1} vs {self._right_idx + 1}")
 
-        def add_preview(frame: ttk.Frame, f, is_left: bool):
+        def add_preview(frame: ttk.Frame, f):
             for w in frame.winfo_children():
                 w.destroy()
             size = (320, 320)
-            ttk.Label(frame, text=f.filename, style="Panel.Secondary.TLabel",
-                      font=("Segoe UI", 9), wraplength=300).grid(row=0, column=0)
+            ttk.Label(
+                frame, text=f.filename, style="Panel.Secondary.TLabel", font=("Segoe UI", 9), wraplength=300
+            ).grid(row=0, column=0)
             ext = Path(f.path).suffix.lower().lstrip(".")
             if is_image_extension(ext):
+
                 def on_thumb(_p, thumb_path):
                     def upd():
                         if thumb_path and thumb_path.exists():
                             try:
                                 from tkinter import PhotoImage
+
                                 img = PhotoImage(file=str(thumb_path))
                                 self._thumb_refs.append(img)
                                 lbl = ttk.Label(frame, image=img, style="Panel.TLabel")
@@ -489,20 +516,31 @@ class ReviewCompareView(ttk.Frame):
                                 ttk.Label(frame, text="[preview]", style="Panel.Muted.TLabel").grid(row=1, column=0)
                         else:
                             ttk.Label(frame, text="[no preview]", style="Panel.Muted.TLabel").grid(row=1, column=0)
+
                     if not self._thumb_cancel.is_set():
                         self.after(0, upd)
-                generate_thumbnails_async([f.path], on_thumb, size=size, cache_dir=get_cache_dir(), max_count=1,
-                                         cancel_event=self._thumb_cancel)
-            else:
-                ttk.Label(frame, text="📄 " + ext.upper(), style="Panel.Muted.TLabel",
-                          font=("Segoe UI", 14)).grid(row=1, column=0)
-            ttk.Label(frame, text=f"{fmt_bytes(f.size)}", style="Panel.Muted.TLabel",
-                      font=("Segoe UI", 8)).grid(row=2, column=0)
-            ttk.Label(frame, text=truncate_path(f.path, 50), style="Panel.Muted.TLabel",
-                      font=("Segoe UI", 7), wraplength=300).grid(row=3, column=0)
 
-        add_preview(self._left_frame, left_f, True)
-        add_preview(self._right_frame, right_f, False)
+                generate_thumbnails_async(
+                    [f.path],
+                    on_thumb,
+                    size=size,
+                    cache_dir=get_cache_dir(),
+                    max_count=1,
+                    cancel_event=self._thumb_cancel,
+                )
+            else:
+                ttk.Label(frame, text="📄 " + ext.upper(), style="Panel.Muted.TLabel", font=("Segoe UI", 14)).grid(
+                    row=1, column=0
+                )
+            ttk.Label(frame, text=f"{fmt_bytes(f.size)}", style="Panel.Muted.TLabel", font=("Segoe UI", 8)).grid(
+                row=2, column=0
+            )
+            ttk.Label(
+                frame, text=truncate_path(f.path, 50), style="Panel.Muted.TLabel", font=("Segoe UI", 7), wraplength=300
+            ).grid(row=3, column=0)
+
+        add_preview(self._left_frame, left_f)
+        add_preview(self._right_frame, right_f)
 
     def _render_multi_compare(self) -> None:
         for w in self._multi_grid.winfo_children():
@@ -515,10 +553,12 @@ class ReviewCompareView(ttk.Frame):
             card.grid(row=0, column=idx, padx=4, sticky="nw")
             ttk.Label(card, text=f.filename[:14], style="Panel.Muted.TLabel").grid(row=0, column=0, columnspan=2)
             ttk.Label(card, text=fmt_bytes(f.size), style="Panel.Muted.TLabel").grid(row=1, column=0, columnspan=2)
-            ttk.Button(card, text="Set Left", style="Ghost.TButton",
-                       command=lambda i=idx: self._promote_left(i)).grid(row=2, column=0, padx=(0, 2))
-            ttk.Button(card, text="Set Right", style="Ghost.TButton",
-                       command=lambda i=idx: self._promote_right(i)).grid(row=2, column=1, padx=(2, 0))
+            ttk.Button(card, text="Set Left", style="Ghost.TButton", command=lambda i=idx: self._promote_left(i)).grid(
+                row=2, column=0, padx=(0, 2)
+            )
+            ttk.Button(
+                card, text="Set Right", style="Ghost.TButton", command=lambda i=idx: self._promote_right(i)
+            ).grid(row=2, column=1, padx=(2, 0))
 
     def _promote_left(self, idx: int) -> None:
         self._left_idx = idx

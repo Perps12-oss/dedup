@@ -11,18 +11,19 @@ Layout:
 │ STATUS STRIP                                             │
 └──────────────────────────────────────────────────────────┘
 """
-from __future__ import annotations
-import tkinter as tk
-from tkinter import ttk
-from typing import Callable, Dict, Optional, List, Tuple
 
-from ..theme.theme_manager import get_theme_manager
+from __future__ import annotations
+
+from tkinter import ttk
+from typing import Callable, Dict, List, Optional, Tuple
+
 from ..theme.gradients import GradientBar
-from .nav_rail import NavRail
-from .top_bar import TopBar
-from .status_strip import StatusStrip
-from .insight_drawer import InsightDrawer
+from ..theme.theme_manager import get_theme_manager
 from ..utils.ui_state import UIState
+from .insight_drawer import InsightDrawer
+from .nav_rail import NavRail
+from .status_strip import StatusStrip
+from .top_bar import TopBar
 
 ActionSpec = Tuple[str, str, Callable]
 
@@ -35,10 +36,14 @@ class AppShell(ttk.Frame):
     Pages are placed in `self.content` and shown/hidden via `show_page()`.
     """
 
-    def __init__(self, parent, state: UIState,
-                 on_navigate: Callable[[str], None],
-                 on_theme_change: Callable[[str], None],
-                 **kwargs):
+    def __init__(
+        self,
+        parent,
+        state: UIState,
+        on_navigate: Callable[[str], None],
+        on_theme_change: Callable[[str], None],
+        **kwargs,
+    ):
         super().__init__(parent, **kwargs)
         self._state = state
         self._on_navigate = on_navigate
@@ -65,7 +70,8 @@ class AppShell(ttk.Frame):
         # ---- Gradient accent bar under top bar ----
         t = self._tm.tokens
         self._grad_bar = GradientBar(
-            self, height=2,
+            self,
+            height=2,
             color_start=t["gradient_start"],
             color_end=t["gradient_end"],
         )
@@ -129,11 +135,19 @@ class AppShell(ttk.Frame):
     def set_page_actions(self, actions: List[ActionSpec]):
         self.top_bar.set_page_actions(actions)
 
-    def update_status(self, session_id: str = "", phase: str = "",
-                      engine_health: str = "Healthy", checkpoint_ts: str = "—",
-                      workers: int = 0, warnings: int = 0, storage_mode: str = ""):
+    def update_status(
+        self,
+        session_id: str = "",
+        phase: str = "",
+        engine_health: str = "Healthy",
+        checkpoint_ts: str = "—",
+        workers: int = 0,
+        warnings: int = 0,
+        storage_mode: str = "",
+    ):
         self.status_strip.update_session(
-            session_id, phase, engine_health, checkpoint_ts, workers, warnings, storage_mode)
+            session_id, phase, engine_health, checkpoint_ts, workers, warnings, storage_mode
+        )
         mode = "Scanning" if phase and phase not in ("", "Idle") else "Idle"
         self.top_bar.set_session(session_id, mode)
 
@@ -148,8 +162,7 @@ class AppShell(ttk.Frame):
             self._state.settings.show_insight_drawer = False
         else:
             self.insight_drawer.show()
-            self.insight_drawer.grid(row=0, column=3, sticky="ns",
-                                     in_=self.content.master)
+            self.insight_drawer.grid(row=0, column=3, sticky="ns", in_=self.content.master)
             self._state.settings.show_insight_drawer = True
 
     def _handle_navigate(self, page: str):

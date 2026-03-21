@@ -5,15 +5,17 @@ Now thin: owns only the projections it receives from ProjectionHub
 plus user-interaction state (is_scanning, current_file display).
 All business logic and metric computation live in the projection layer.
 """
+
 from __future__ import annotations
+
+import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
-import time
 
-from ..projections.session_projection import SessionProjection, EMPTY_SESSION
+from ..projections.compatibility_projection import EMPTY_COMPAT, CompatibilityProjection
+from ..projections.metrics_projection import EMPTY_METRICS, MetricsProjection
 from ..projections.phase_projection import PhaseProjection, initial_phase_map
-from ..projections.metrics_projection import MetricsProjection, EMPTY_METRICS
-from ..projections.compatibility_projection import CompatibilityProjection, EMPTY_COMPAT
+from ..projections.session_projection import EMPTY_SESSION, SessionProjection
 
 
 @dataclass
@@ -65,6 +67,7 @@ class ScanPhaseMetrics:
 @dataclass
 class ResultAssemblyMetrics:
     """Phase-local assembly progress (live counters, not final truth)."""
+
     rows_processed: int = 0
     rows_total: int = 0
     groups_assembled: int = 0
@@ -78,6 +81,7 @@ class FinalScanResultsSummary:
     These match exactly what Review page shows and persist monotonically.
     Never overwritten by phase-local counters.
     """
+
     duplicate_groups_total: int = 0
     duplicate_files_total: int = 0
     reclaimable_bytes_total: int = 0
@@ -92,43 +96,46 @@ class ScanVM:
     View-model for the Scan page.
     Thin holder of projection snapshots + UI interaction state.
     """
+
     # --- Projections (pushed by ProjectionHub) ---
-    session:       SessionProjection                   = field(default_factory=lambda: EMPTY_SESSION)
-    phases:        Dict[str, PhaseProjection]          = field(default_factory=initial_phase_map)
-    metrics:       MetricsProjection                   = field(default_factory=lambda: EMPTY_METRICS)
-    compat:        CompatibilityProjection             = field(default_factory=lambda: EMPTY_COMPAT)
-    events_log:    List[str]                           = field(default_factory=list)
-    session_metrics: ScanSessionMetrics                = field(default_factory=ScanSessionMetrics)
-    phase_metrics: ScanPhaseMetrics                    = field(default_factory=ScanPhaseMetrics)
-    result_metrics: ResultAssemblyMetrics              = field(default_factory=ResultAssemblyMetrics)
-    final_results:  FinalScanResultsSummary            = field(default_factory=FinalScanResultsSummary)
+    session: SessionProjection = field(default_factory=lambda: EMPTY_SESSION)
+    phases: Dict[str, PhaseProjection] = field(default_factory=initial_phase_map)
+    metrics: MetricsProjection = field(default_factory=lambda: EMPTY_METRICS)
+    compat: CompatibilityProjection = field(default_factory=lambda: EMPTY_COMPAT)
+    events_log: List[str] = field(default_factory=list)
+    session_metrics: ScanSessionMetrics = field(default_factory=ScanSessionMetrics)
+    phase_metrics: ScanPhaseMetrics = field(default_factory=ScanPhaseMetrics)
+    result_metrics: ResultAssemblyMetrics = field(default_factory=ResultAssemblyMetrics)
+    final_results: FinalScanResultsSummary = field(default_factory=FinalScanResultsSummary)
 
     # --- UI interaction state ---
-    is_scanning:   bool  = False
-    current_file:  str   = ""
-    error_message: str   = ""
-    _start_wall:   float = field(default_factory=time.time)
+    is_scanning: bool = False
+    current_file: str = ""
+    error_message: str = ""
+    _start_wall: float = field(default_factory=time.time)
 
     def elapsed_display(self) -> str:
         """Wall-clock elapsed (for the UI timer label, independent of metrics)."""
         from ..utils.formatting import fmt_duration
+
         return fmt_duration(time.time() - self._start_wall)
 
     def reset(self) -> None:
         from ..projections.phase_projection import initial_phase_map as _im
-        self.session      = EMPTY_SESSION
-        self.phases       = _im()
-        self.metrics      = EMPTY_METRICS
-        self.compat       = EMPTY_COMPAT
-        self.events_log   = []
+
+        self.session = EMPTY_SESSION
+        self.phases = _im()
+        self.metrics = EMPTY_METRICS
+        self.compat = EMPTY_COMPAT
+        self.events_log = []
         self.session_metrics = ScanSessionMetrics()
         self.phase_metrics = ScanPhaseMetrics()
         self.result_metrics = ResultAssemblyMetrics()
         self.final_results = FinalScanResultsSummary()
-        self.is_scanning  = True
+        self.is_scanning = True
         self.current_file = ""
-        self.error_message= ""
-        self._start_wall  = time.time()
+        self.error_message = ""
+        self._start_wall = time.time()
 
     def apply_session_projection(self, proj: SessionProjection) -> None:
         self.session = proj
@@ -142,9 +149,7 @@ class ScanVM:
         active = next((p for p in phases.values() if p.status == "running"), None)
         if active:
             self.phase_metrics.phase_name = active.phase_name
-            self.phase_metrics.completed_units = max(
-                self.phase_metrics.completed_units, int(active.rows_written or 0)
-            )
+            self.phase_metrics.completed_units = max(self.phase_metrics.completed_units, int(active.rows_written or 0))
             self.phase_metrics.status = "active"
 
     def apply_metrics_projection(self, proj: MetricsProjection) -> None:
@@ -153,7 +158,9 @@ class ScanVM:
         sm.files_discovered_total = max(sm.files_discovered_total, int(proj.files_discovered_total or 0))
         sm.directories_scanned_total = max(sm.directories_scanned_total, int(proj.dirs_scanned or 0))
         sm.candidates_total = max(sm.candidates_total, int(proj.result_rows_assembled or 0))
-        sm.duplicate_groups_total = max(sm.duplicate_groups_total, int(proj.result_duplicate_groups or proj.duplicate_groups_live or 0))
+        sm.duplicate_groups_total = max(
+            sm.duplicate_groups_total, int(proj.result_duplicate_groups or proj.duplicate_groups_live or 0)
+        )
         sm.duplicate_files_total = max(sm.duplicate_files_total, int(proj.result_duplicate_files or 0))
         sm.reclaimable_bytes_total = max(sm.reclaimable_bytes_total, int(proj.result_reclaimable_bytes or 0))
         sm.elapsed_total_s = max(sm.elapsed_total_s, float(proj.elapsed_s or 0.0))
@@ -169,11 +176,7 @@ class ScanVM:
         if proj.current_phase_name:
             pm.phase_name = proj.current_phase_name
         pm.completed_units = int(proj.current_phase_rows_processed or 0)
-        pm.total_units = (
-            int(proj.current_phase_total_units)
-            if proj.current_phase_total_units is not None
-            else None
-        )
+        pm.total_units = int(proj.current_phase_total_units) if proj.current_phase_total_units is not None else None
         pm.elapsed_phase_s = float(proj.current_phase_elapsed_s or 0.0)
         pm.current_item_label = proj.current_file or ""
         if proj.current_phase_name:
@@ -189,18 +192,10 @@ class ScanVM:
         if proj.results_ready:
             fr = self.final_results
             fr.results_ready = True
-            fr.duplicate_groups_total = max(
-                fr.duplicate_groups_total, int(proj.result_duplicate_groups or 0)
-            )
-            fr.duplicate_files_total = max(
-                fr.duplicate_files_total, int(proj.result_duplicate_files or 0)
-            )
-            fr.reclaimable_bytes_total = max(
-                fr.reclaimable_bytes_total, int(proj.result_reclaimable_bytes or 0)
-            )
-            fr.files_scanned_total = max(
-                fr.files_scanned_total, int(proj.result_files_scanned or 0)
-            )
+            fr.duplicate_groups_total = max(fr.duplicate_groups_total, int(proj.result_duplicate_groups or 0))
+            fr.duplicate_files_total = max(fr.duplicate_files_total, int(proj.result_duplicate_files or 0))
+            fr.reclaimable_bytes_total = max(fr.reclaimable_bytes_total, int(proj.result_reclaimable_bytes or 0))
+            fr.files_scanned_total = max(fr.files_scanned_total, int(proj.result_files_scanned or 0))
             if proj.result_verification_level:
                 fr.verification_level = proj.result_verification_level
 
@@ -223,12 +218,12 @@ class ScanVM:
         skip_pct = f"{sm.skip_ratio * 100:.0f}%" if sm.skip_ratio > 0 else "—"
         hit_pct = f"{sm.hash_cache_hit_rate * 100:.0f}%" if sm.hash_cache_hit_rate > 0 else "—"
         return {
-            "Reuse mode":        self.metrics.discovery_reuse_mode or sm.run_mode,
-            "Dirs skipped":      str(sm.dirs_skipped_via_manifest),
-            "Files reused":      str(sm.files_reused_total),
-            "Skip ratio":        skip_pct,
+            "Reuse mode": self.metrics.discovery_reuse_mode or sm.run_mode,
+            "Dirs skipped": str(sm.dirs_skipped_via_manifest),
+            "Files reused": str(sm.files_reused_total),
+            "Skip ratio": skip_pct,
             "Hash cache hit rate": hit_pct,
-            "Compatible prior":  "Yes" if self.metrics.prior_session_compatible else "No",
+            "Compatible prior": "Yes" if self.metrics.prior_session_compatible else "No",
             "Compatibility reason": (self.metrics.prior_session_rejected_reason or "none")[:40],
-            "Time saved":        f"~{self.metrics.time_saved_estimate:.0f}s" if self.metrics.time_saved_estimate else "—",
+            "Time saved": f"~{self.metrics.time_saved_estimate:.0f}s" if self.metrics.time_saved_estimate else "—",
         }

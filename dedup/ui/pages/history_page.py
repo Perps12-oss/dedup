@@ -16,22 +16,25 @@ UI Refactor (v2): Aligned to shared 8px design system.
     _GAP_XS row gaps (was padx=4, pady=2 per sub-frame).
   - All hardcoded px values replaced with _S() constants.
 """
+
 from __future__ import annotations
+
 import tkinter as tk
-from tkinter import ttk, messagebox
 from pathlib import Path
-from typing import Callable, Optional, TYPE_CHECKING
+from tkinter import messagebox, ttk
+from typing import TYPE_CHECKING, Callable, Optional
 
 if TYPE_CHECKING:
     from ..state.store import UIStateStore
 
-from ..components import DataTable, SectionCard, MetricCard, EmptyState, InlineNotice
-from ..viewmodels.history_vm import HistoryVM, SessionEntry
-from ..utils.formatting import fmt_bytes, fmt_int, fmt_duration, fmt_dt
-from ..utils.icons import IC
-from ..theme.design_system import font_tuple, SPACING
+from ...infrastructure.trash import empty_dedup_trash, list_dedup_trash
 from ...orchestration.coordinator import ScanCoordinator
-from ...infrastructure.trash import list_dedup_trash, empty_dedup_trash
+from ..components import DataTable, InlineNotice, MetricCard, SectionCard
+from ..theme.design_system import font_tuple
+from ..utils.formatting import fmt_bytes, fmt_duration, fmt_int
+from ..utils.icons import IC
+from ..viewmodels.history_vm import HistoryVM, SessionEntry
+
 
 # ---------------------------------------------------------------------------
 # Spacing helpers — 8-pt grid (shared across all pages)
@@ -39,22 +42,26 @@ from ...infrastructure.trash import list_dedup_trash, empty_dedup_trash
 def _S(n: int) -> int:
     return n * 4
 
-_PAD_PAGE  = _S(6)   # 24px
-_GAP_XS    = _S(1)   # 4px
-_GAP_SM    = _S(2)   # 8px
-_GAP_MD    = _S(4)   # 16px
-_GAP_LG    = _S(6)   # 24px
+
+_PAD_PAGE = _S(6)  # 24px
+_GAP_XS = _S(1)  # 4px
+_GAP_SM = _S(2)  # 8px
+_GAP_MD = _S(4)  # 16px
+_GAP_LG = _S(6)  # 24px
 
 
 class HistoryPage(ttk.Frame):
     """Scan history page."""
 
-    def __init__(self, parent,
-                 coordinator: ScanCoordinator,
-                 on_load_scan: Callable[[str], None],
-                 on_resume_scan: Callable[[str], None],
-                 on_request_refresh: Optional[Callable[[], None]] = None,
-                 **kwargs):
+    def __init__(
+        self,
+        parent,
+        coordinator: ScanCoordinator,
+        on_load_scan: Callable[[str], None],
+        on_resume_scan: Callable[[str], None],
+        on_request_refresh: Optional[Callable[[], None]] = None,
+        **kwargs,
+    ):
         super().__init__(parent, **kwargs)
         self.coordinator = coordinator
         self.on_load_scan = on_load_scan
@@ -96,28 +103,27 @@ class HistoryPage(ttk.Frame):
 
         # ── Summary stats strip ───────────────────────────────────────
         stats_card = SectionCard(self, title="Summary")
-        stats_card.grid(row=1, column=0, sticky="ew",
-                        padx=_PAD_PAGE, pady=(0, _GAP_MD))
+        stats_card.grid(row=1, column=0, sticky="ew", padx=_PAD_PAGE, pady=(0, _GAP_MD))
         self._build_summary(stats_card.body)
 
         # ── Session table ─────────────────────────────────────────────
         table_card = SectionCard(self, title=f"{IC.FILE}  Sessions")
-        table_card.grid(row=2, column=0, sticky="nsew",
-                        padx=_PAD_PAGE, pady=(0, _GAP_MD))
+        table_card.grid(row=2, column=0, sticky="nsew", padx=_PAD_PAGE, pady=(0, _GAP_MD))
         table_card.body.rowconfigure(2, weight=1)
         self._load_notice = InlineNotice(
-            table_card.body, message="", variant="warning",
+            table_card.body,
+            message="",
+            variant="warning",
             action_label="Dismiss",
-            on_action=lambda: self._load_notice.hide())
-        self._load_notice.grid(row=0, column=0, sticky="ew",
-                               pady=(0, _GAP_SM))
+            on_action=lambda: self._load_notice.hide(),
+        )
+        self._load_notice.grid(row=0, column=0, sticky="ew", pady=(0, _GAP_SM))
         self._load_notice.hide()
         self._build_table(table_card.body)
 
         # ── Detail panel ──────────────────────────────────────────────
         detail_card = SectionCard(self, title=f"{IC.INFO}  Session Detail")
-        detail_card.grid(row=3, column=0, sticky="ew",
-                         padx=_PAD_PAGE, pady=(0, _PAD_PAGE))
+        detail_card.grid(row=3, column=0, sticky="ew", padx=_PAD_PAGE, pady=(0, _PAD_PAGE))
         self._build_detail(detail_card.body)
 
     def _build_summary(self, body: ttk.Frame):
@@ -127,15 +133,14 @@ class HistoryPage(ttk.Frame):
         body.columnconfigure(3, weight=1)
         self._summary_cards: dict[str, MetricCard] = {}
         specs = [
-            ("total",   f"{IC.FILE}  Total Scans",       "0",  "neutral"),
-            ("avg_dur", f"{IC.SPEED} Avg Duration",       "—",  "neutral"),
-            ("avg_rec", f"{IC.RECLAIM} Avg Reclaimable",  "—",  "positive"),
-            ("resume",  f"{IC.RESUME} Resumable",         "0",  "accent"),
+            ("total", f"{IC.FILE}  Total Scans", "0", "neutral"),
+            ("avg_dur", f"{IC.SPEED} Avg Duration", "—", "neutral"),
+            ("avg_rec", f"{IC.RECLAIM} Avg Reclaimable", "—", "positive"),
+            ("resume", f"{IC.RESUME} Resumable", "0", "accent"),
         ]
         for i, (key, label, val, variant) in enumerate(specs):
             c = MetricCard(body, label=label, value=val, variant=variant, width=0)
-            c.grid(row=0, column=i, sticky="nsew",
-                   padx=_GAP_XS, pady=_GAP_XS)
+            c.grid(row=0, column=i, sticky="nsew", padx=_GAP_XS, pady=_GAP_XS)
             self._summary_cards[key] = c
 
     def _build_table(self, body: ttk.Frame):
@@ -146,19 +151,22 @@ class HistoryPage(ttk.Frame):
         toolbar = ttk.Frame(body, style="Panel.TFrame")
         toolbar.grid(row=1, column=0, sticky="ew", pady=(0, _GAP_SM))
         self._resumable_var = tk.BooleanVar(value=False)
-        self._failed_var    = tk.BooleanVar(value=False)
+        self._failed_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
-            toolbar, text="Resumable only",
+            toolbar,
+            text="Resumable only",
             variable=self._resumable_var,
             command=self._apply_filter,
         ).pack(side="left")
         ttk.Checkbutton(
-            toolbar, text="Failed only",
+            toolbar,
+            text="Failed only",
             variable=self._failed_var,
             command=self._apply_filter,
         ).pack(side="left", padx=(_GAP_MD, 0))
         ttk.Button(
-            toolbar, text=f"{IC.TRASH} Empty Trash",
+            toolbar,
+            text=f"{IC.TRASH} Empty Trash",
             style="Ghost.TButton",
             command=self._on_empty_trash,
         ).pack(side="right")
@@ -166,13 +174,13 @@ class HistoryPage(ttk.Frame):
         self._table = DataTable(
             body,
             columns=[
-                ("date",     "Date",        140, "w"),
-                ("status",   "Status",       72, "w"),
-                ("resume",   "Resume",       60, "center"),
-                ("files",    "Files",        80, "e"),
-                ("groups",   "Groups",       70, "e"),
-                ("reclaim",  "Reclaimable",  90, "e"),
-                ("warnings", "Warns",        50, "center"),
+                ("date", "Date", 140, "w"),
+                ("status", "Status", 72, "w"),
+                ("resume", "Resume", 60, "center"),
+                ("files", "Files", 80, "e"),
+                ("groups", "Groups", 70, "e"),
+                ("reclaim", "Reclaimable", 90, "e"),
+                ("warnings", "Warns", 50, "center"),
             ],
             height=12,
             on_select=self._on_session_select,
@@ -183,21 +191,24 @@ class HistoryPage(ttk.Frame):
         act = ttk.Frame(body, style="Panel.TFrame")
         act.grid(row=3, column=0, sticky="ew", pady=(_GAP_SM, 0))
         self._load_btn = ttk.Button(
-            act, text=f"{IC.FILE} Load Results",
+            act,
+            text=f"{IC.FILE} Load Results",
             style="Ghost.TButton",
             command=self._on_load,
             state="disabled",
         )
         self._load_btn.pack(side="left")
         self._resume_btn = ttk.Button(
-            act, text=f"{IC.RESUME} Resume Scan",
+            act,
+            text=f"{IC.RESUME} Resume Scan",
             style="Accent.TButton",
             command=self._on_resume,
             state="disabled",
         )
         self._resume_btn.pack(side="left", padx=(_GAP_SM, 0))
         self._del_btn = ttk.Button(
-            act, text=f"{IC.TRASH} Delete Entry",
+            act,
+            text=f"{IC.TRASH} Delete Entry",
             style="Ghost.TButton",
             command=self._on_delete,
             state="disabled",
@@ -208,32 +219,38 @@ class HistoryPage(ttk.Frame):
         # Two-column key/value grid — right-aligned keys, _GAP_MD indent
         body.columnconfigure(0, minsize=120)
         body.columnconfigure(1, weight=1)
-        body.columnconfigure(2, minsize=_GAP_LG)   # gutter
+        body.columnconfigure(2, minsize=_GAP_LG)  # gutter
         body.columnconfigure(3, minsize=120)
         body.columnconfigure(4, weight=1)
 
         self._detail_vars: dict[str, tk.StringVar] = {}
         fields = [
-            ("Session ID",     "—"), ("Status",        "—"),
-            ("Started",        "—"), ("Duration",       "—"),
-            ("Config Hash",    "—"), ("Roots",          "—"),
-            ("Resume Outcome", "—"), ("Resume Reason",  "—"),
-            ("Delete Verify",  "—"), ("Bench",          "—"),
+            ("Session ID", "—"),
+            ("Status", "—"),
+            ("Started", "—"),
+            ("Duration", "—"),
+            ("Config Hash", "—"),
+            ("Roots", "—"),
+            ("Resume Outcome", "—"),
+            ("Resume Reason", "—"),
+            ("Delete Verify", "—"),
+            ("Bench", "—"),
         ]
         for i, (label, default) in enumerate(fields):
-            lcol = (i % 2) * 3          # 0 or 3
+            lcol = (i % 2) * 3  # 0 or 3
             vcol = lcol + 1
-            row  = i // 2
+            row = i // 2
             ttk.Label(
-                body, text=label,
+                body,
+                text=label,
                 style="Panel.Muted.TLabel",
                 font=font_tuple("data_label"),
                 anchor="e",
-            ).grid(row=row, column=lcol, sticky="e",
-                   padx=(0, _GAP_SM), pady=(_GAP_XS, 0))
+            ).grid(row=row, column=lcol, sticky="e", padx=(0, _GAP_SM), pady=(_GAP_XS, 0))
             var = tk.StringVar(value=default)
             ttk.Label(
-                body, textvariable=var,
+                body,
+                textvariable=var,
                 style="Panel.TLabel",
                 font=font_tuple("data_value"),
                 wraplength=280,
@@ -246,12 +263,14 @@ class HistoryPage(ttk.Frame):
     def attach_store(self, store: "UIStateStore") -> None:
         if self._store_unsub:
             self._store_unsub()
+
         def on_state(state):
             history = getattr(state, "history", None)
             if history is not None:
                 self.vm.refresh_from_history(history)
                 self._update_summary()
                 self._populate_table()
+
         self._store_unsub = store.subscribe(on_state, fire_immediately=False)
 
     def detach_store(self) -> None:
@@ -286,20 +305,38 @@ class HistoryPage(ttk.Frame):
         self._table.clear()
         for e in self.vm.filtered_sessions:
             resume_icon = IC.OK if e.is_resumable else "—"
-            status_icon = (IC.OK    if e.status == "completed"                   else
-                           IC.WARN  if e.status in ("interrupted", "resumable")  else
-                           IC.ERROR if e.status == "failed"                      else "—")
-            tag  = ("safe"   if e.status == "completed"  else
-                    "warn"   if e.is_resumable             else
-                    "danger" if e.status == "failed"       else "")
+            status_icon = (
+                IC.OK
+                if e.status == "completed"
+                else IC.WARN
+                if e.status in ("interrupted", "resumable")
+                else IC.ERROR
+                if e.status == "failed"
+                else "—"
+            )
+            tag = (
+                "safe"
+                if e.status == "completed"
+                else "warn"
+                if e.is_resumable
+                else "danger"
+                if e.status == "failed"
+                else ""
+            )
             roots = ", ".join(Path(r).name for r in e.roots[:2])
             if len(e.roots) > 2:
                 roots += "…"
             self._table.insert_row(
                 e.scan_id,
-                (e.started_at, f"{status_icon} {e.status}", resume_icon,
-                 fmt_int(e.files_scanned), fmt_int(e.duplicates_found),
-                 fmt_bytes(e.reclaimable_bytes), str(e.warning_count)),
+                (
+                    e.started_at,
+                    f"{status_icon} {e.status}",
+                    resume_icon,
+                    fmt_int(e.files_scanned),
+                    fmt_int(e.duplicates_found),
+                    fmt_bytes(e.reclaimable_bytes),
+                    str(e.warning_count),
+                ),
                 tags=(tag,) if tag else (),
             )
         self._load_btn.configure(state="disabled")
@@ -308,7 +345,7 @@ class HistoryPage(ttk.Frame):
 
     def _apply_filter(self):
         self.vm.show_resumable_only = self._resumable_var.get()
-        self.vm.show_failed_only    = self._failed_var.get()
+        self.vm.show_failed_only = self._failed_var.get()
         self._populate_table()
 
     def _on_session_select(self, scan_id: str):
@@ -318,20 +355,16 @@ class HistoryPage(ttk.Frame):
             return
         self._update_detail(entry)
         self._load_btn.configure(state="normal")
-        self._resume_btn.configure(
-            state="normal" if entry.is_resumable else "disabled")
+        self._resume_btn.configure(state="normal" if entry.is_resumable else "disabled")
         self._del_btn.configure(state="normal")
 
     def _update_detail(self, e: SessionEntry):
-        self._detail_vars["Session ID"].set(
-            e.scan_id[:20] + "…" if len(e.scan_id) > 20 else e.scan_id)
+        self._detail_vars["Session ID"].set(e.scan_id[:20] + "…" if len(e.scan_id) > 20 else e.scan_id)
         self._detail_vars["Status"].set(e.status)
         self._detail_vars["Started"].set(e.started_at)
         self._detail_vars["Duration"].set(fmt_duration(e.duration_s))
-        self._detail_vars["Config Hash"].set(
-            e.config_hash[:12] if e.config_hash else "—")
-        self._detail_vars["Roots"].set(
-            ", ".join(Path(r).name for r in e.roots[:3]) or "—")
+        self._detail_vars["Config Hash"].set(e.config_hash[:12] if e.config_hash else "—")
+        self._detail_vars["Roots"].set(", ".join(Path(r).name for r in e.roots[:3]) or "—")
         self._detail_vars["Resume Outcome"].set(e.resume_outcome or "—")
         self._detail_vars["Resume Reason"].set(e.resume_reason or "—")
         verify = e.deletion_verification_summary or {}
@@ -377,10 +410,7 @@ class HistoryPage(ttk.Frame):
     def _on_delete(self):
         if not self.vm.selected_id:
             return
-        if messagebox.askyesno(
-            "Delete Entry",
-            "Remove this scan from history?\nThis does not delete any files."
-        ):
+        if messagebox.askyesno("Delete Entry", "Remove this scan from history?\nThis does not delete any files."):
             if self.coordinator.delete_scan(self.vm.selected_id):
                 self._refresh()
             else:
@@ -393,8 +423,7 @@ class HistoryPage(ttk.Frame):
             return
         if messagebox.askyesno(
             "Empty Trash",
-            f"{count} files ({fmt_bytes(total_bytes)}) in DEDUP trash.\n"
-            "Permanently delete? This cannot be undone."
+            f"{count} files ({fmt_bytes(total_bytes)}) in DEDUP trash.\nPermanently delete? This cannot be undone.",
         ):
             deleted, failed = empty_dedup_trash()
             if failed:

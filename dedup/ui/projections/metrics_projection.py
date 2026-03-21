@@ -4,7 +4,9 @@ MetricsProjection — truthful metrics with confidence labels.
 Rule (Noah's law): every field is an actual measured value or explicitly None.
 No fabricated estimates presented as fact. ETA is labeled with its confidence tier.
 """
+
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional
 
@@ -14,6 +16,7 @@ class MetricsProjection:
     """
     Immutable metrics snapshot, explicitly separated by scope.
     """
+
     # Scan scope (live totals)
     files_discovered_total: int
     files_discovered_fresh: int
@@ -63,6 +66,7 @@ class MetricsProjection:
         if self.eta_seconds is None:
             return "—"
         from ..utils.formatting import fmt_duration
+
         return f"~{fmt_duration(self.eta_seconds)} ({self.eta_confidence})"
 
     @property
@@ -206,8 +210,12 @@ def merge_metrics(
 ) -> MetricsProjection:
     """Return a new MetricsProjection with only the provided fields updated."""
     return MetricsProjection(
-        files_discovered_total=files_discovered_total if files_discovered_total is not None else base.files_discovered_total,
-        files_discovered_fresh=files_discovered_fresh if files_discovered_fresh is not None else base.files_discovered_fresh,
+        files_discovered_total=files_discovered_total
+        if files_discovered_total is not None
+        else base.files_discovered_total,
+        files_discovered_fresh=files_discovered_fresh
+        if files_discovered_fresh is not None
+        else base.files_discovered_fresh,
         files_reused_from_prior_inventory=(
             files_reused_from_prior_inventory
             if files_reused_from_prior_inventory is not None
@@ -216,28 +224,26 @@ def merge_metrics(
         dirs_scanned=dirs_scanned if dirs_scanned is not None else base.dirs_scanned,
         dirs_reused=dirs_reused if dirs_reused is not None else base.dirs_reused,
         elapsed_s=elapsed_s if elapsed_s is not None else base.elapsed_s,
-        duplicate_groups_live=duplicate_groups_live if duplicate_groups_live is not None else base.duplicate_groups_live,
+        duplicate_groups_live=duplicate_groups_live
+        if duplicate_groups_live is not None
+        else base.duplicate_groups_live,
         current_phase_name=current_phase_name if current_phase_name is not None else base.current_phase_name,
-        current_phase_progress=current_phase_progress if current_phase_progress is not None else base.current_phase_progress,
+        current_phase_progress=current_phase_progress
+        if current_phase_progress is not None
+        else base.current_phase_progress,
         current_phase_rows_processed=(
             current_phase_rows_processed
             if current_phase_rows_processed is not None
             else base.current_phase_rows_processed
         ),
         current_phase_total_units=(
-            current_phase_total_units
-            if current_phase_total_units is not None
-            else base.current_phase_total_units
+            current_phase_total_units if current_phase_total_units is not None else base.current_phase_total_units
         ),
         current_phase_elapsed_s=(
-            current_phase_elapsed_s
-            if current_phase_elapsed_s is not None
-            else base.current_phase_elapsed_s
+            current_phase_elapsed_s if current_phase_elapsed_s is not None else base.current_phase_elapsed_s
         ),
         current_phase_started_at=(
-            current_phase_started_at
-            if current_phase_started_at is not None
-            else base.current_phase_started_at
+            current_phase_started_at if current_phase_started_at is not None else base.current_phase_started_at
         ),
         current_phase_last_updated_at=(
             current_phase_last_updated_at
@@ -246,46 +252,28 @@ def merge_metrics(
         ),
         current_file=current_file if current_file is not None else base.current_file,
         result_duplicate_files=(
-            result_duplicate_files
-            if result_duplicate_files is not None
-            else base.result_duplicate_files
+            result_duplicate_files if result_duplicate_files is not None else base.result_duplicate_files
         ),
         result_duplicate_groups=(
-            result_duplicate_groups
-            if result_duplicate_groups is not None
-            else base.result_duplicate_groups
+            result_duplicate_groups if result_duplicate_groups is not None else base.result_duplicate_groups
         ),
         result_rows_assembled=(
-            result_rows_assembled
-            if result_rows_assembled is not None
-            else base.result_rows_assembled
+            result_rows_assembled if result_rows_assembled is not None else base.result_rows_assembled
         ),
         result_reclaimable_bytes=(
-            result_reclaimable_bytes
-            if result_reclaimable_bytes is not None
-            else base.result_reclaimable_bytes
+            result_reclaimable_bytes if result_reclaimable_bytes is not None else base.result_reclaimable_bytes
         ),
-        result_files_scanned=(
-            result_files_scanned if result_files_scanned is not None else base.result_files_scanned
-        ),
+        result_files_scanned=(result_files_scanned if result_files_scanned is not None else base.result_files_scanned),
         result_verification_level=(
-            result_verification_level
-            if result_verification_level is not None
-            else base.result_verification_level
+            result_verification_level if result_verification_level is not None else base.result_verification_level
         ),
         results_ready=results_ready if results_ready is not None else base.results_ready,
-        discovery_reuse_mode=(
-            discovery_reuse_mode if discovery_reuse_mode is not None else base.discovery_reuse_mode
-        ),
+        discovery_reuse_mode=(discovery_reuse_mode if discovery_reuse_mode is not None else base.discovery_reuse_mode),
         dirs_skipped_via_manifest=(
-            dirs_skipped_via_manifest
-            if dirs_skipped_via_manifest is not None
-            else base.dirs_skipped_via_manifest
+            dirs_skipped_via_manifest if dirs_skipped_via_manifest is not None else base.dirs_skipped_via_manifest
         ),
         prior_session_compatible=(
-            prior_session_compatible
-            if prior_session_compatible is not None
-            else base.prior_session_compatible
+            prior_session_compatible if prior_session_compatible is not None else base.prior_session_compatible
         ),
         prior_session_rejected_reason=(
             prior_session_rejected_reason

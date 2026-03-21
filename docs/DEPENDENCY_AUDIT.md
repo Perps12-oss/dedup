@@ -13,18 +13,22 @@ Core app runs on **stdlib + Tkinter** only.
 
 ## Dev (`requirements-dev.txt`)
 
-Adds: `ruff`, `mypy`, `pytest`, `vulture`, `pip-audit`, `pydeps`, `pylint`.
+Adds: `ruff`, `mypy`, `pytest`, `vulture`, `pip-audit`, `pydeps`, `pylint`, **`pre-commit`** (for `.pre-commit-config.yaml` at repo root).
 
 ## Audits to run locally
 
 ```bash
 python -m pip install -r requirements-dev.txt
+pre-commit install   # optional: run ruff + ruff-format on commit
 python -m pip_audit -r docs/requirements.txt
+python -m pip_audit -r docs/requirements.txt -f json   # refresh artifact
 python -m pip list --outdated
 ```
 
-Record CVE output under `docs/pip_audit_report.json` (or paste summary here).  
-`docs/pip_outdated.txt` is a snapshot from one machine; refresh before releases.
+**Checked in artifacts (refresh before releases):**
+
+- `docs/pip_audit_report.json` — last structured pip-audit for optional runtime deps
+- `docs/pip_outdated.txt` — machine snapshot; regenerate with `pip list --outdated`
 
 ## Pruning opportunities
 

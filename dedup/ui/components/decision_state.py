@@ -4,14 +4,12 @@ Decision-state model and safety rail language (Master Plan Interaction Blueprint
 Decision states per group: unresolved | keep_selected | ready | warning | skipped.
 Consistent copy for Keep, Preview, Execute, and warnings.
 """
-from __future__ import annotations
-import tkinter as tk
-from tkinter import ttk
-from typing import Optional
 
-from ..theme.theme_manager import get_theme_manager
-from ..theme.design_system import font_tuple, SPACING
-from .badges import StatusBadge, BADGE_STYLES
+from __future__ import annotations
+
+from tkinter import ttk
+
+from .badges import StatusBadge
 
 # ---------------------------------------------------------------------------
 # Decision states (per group)

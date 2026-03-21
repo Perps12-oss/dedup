@@ -2,20 +2,20 @@
 MetricCard — reusable stat card for CEREBRO dashboard.
 Variants: neutral, positive (success), warning, danger, accent.
 """
+
 from __future__ import annotations
+
 import tkinter as tk
 from tkinter import ttk
-from typing import Optional
 
-from ..theme.design_system import font_tuple, SPACING
-
+from ..theme.design_system import SPACING, font_tuple
 
 VARIANT_STYLES = {
-    "neutral":  ("Panel.TFrame", "Panel.TLabel",         "Panel.Secondary.TLabel"),
+    "neutral": ("Panel.TFrame", "Panel.TLabel", "Panel.Secondary.TLabel"),
     "positive": ("Panel.TFrame", "Panel.Success.TLabel", "Panel.Secondary.TLabel"),
-    "warning":  ("Panel.TFrame", "Panel.Warning.TLabel", "Panel.Secondary.TLabel"),
-    "danger":   ("Panel.TFrame", "Panel.Danger.TLabel",  "Panel.Secondary.TLabel"),
-    "accent":   ("Panel.TFrame", "Panel.Accent.TLabel",  "Panel.Secondary.TLabel"),
+    "warning": ("Panel.TFrame", "Panel.Warning.TLabel", "Panel.Secondary.TLabel"),
+    "danger": ("Panel.TFrame", "Panel.Danger.TLabel", "Panel.Secondary.TLabel"),
+    "accent": ("Panel.TFrame", "Panel.Accent.TLabel", "Panel.Secondary.TLabel"),
 }
 
 
@@ -52,21 +52,17 @@ class MetricCard(ttk.Frame):
         # Label row
         label_text = f"{icon}  {label}" if icon else label
         self._label_var = tk.StringVar(value=label_text)
-        ttk.Label(self, textvariable=self._label_var,
-                  style=sub_style,
-                  font=font_tuple("data_label")).pack(anchor="w")
+        ttk.Label(self, textvariable=self._label_var, style=sub_style, font=font_tuple("data_label")).pack(anchor="w")
 
         # Value
         self._value_var = tk.StringVar(value=value)
-        ttk.Label(self, textvariable=self._value_var,
-                  style=val_style,
-                  font=font_tuple("metric_value")).pack(anchor="w", pady=(SPACING["xs"], 0))
+        ttk.Label(self, textvariable=self._value_var, style=val_style, font=font_tuple("metric_value")).pack(
+            anchor="w", pady=(SPACING["xs"], 0)
+        )
 
         # Sub-label
         self._sub_var = tk.StringVar(value=sub_label)
-        self._sub_lbl = ttk.Label(self, textvariable=self._sub_var,
-                                  style=sub_style,
-                                  font=font_tuple("data_label"))
+        self._sub_lbl = ttk.Label(self, textvariable=self._sub_var, style=sub_style, font=font_tuple("data_label"))
         self._sub_lbl.pack(anchor="w")
 
     def update(self, value: str, sub_label: str = "", label: str = ""):
@@ -75,7 +71,7 @@ class MetricCard(ttk.Frame):
         if sub_label is not None:
             self._sub_var.set(sub_label)
         if label:
-            current = self._label_var.get()
+            self._label_var.get()
             # preserve icon prefix if any
             self._label_var.set(label)
 

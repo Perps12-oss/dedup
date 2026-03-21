@@ -1,32 +1,38 @@
 """
 Tests for UI viewmodels — ensure they conform to page contracts.
 """
+
 from __future__ import annotations
 
 import pytest
 
-from dedup.ui.viewmodels.review_vm import ReviewVM
-from dedup.ui.viewmodels.history_vm import HistoryVM
-from dedup.ui.viewmodels.scan_vm import ScanVM
-from dedup.ui.viewmodels.mission_vm import MissionVM
-from dedup.ui.viewmodels.diagnostics_vm import DiagnosticsVM
-from dedup.ui.projections.review_projection import ReviewGroupProjection
-from dedup.ui.projections.session_projection import EMPTY_SESSION
 from dedup.ui.projections.history_projection import EMPTY_HISTORY
 from dedup.ui.projections.metrics_projection import merge_metrics
-
+from dedup.ui.projections.review_projection import ReviewGroupProjection
+from dedup.ui.viewmodels.diagnostics_vm import DiagnosticsVM
+from dedup.ui.viewmodels.history_vm import HistoryVM
+from dedup.ui.viewmodels.mission_vm import MissionVM
+from dedup.ui.viewmodels.review_vm import ReviewVM
+from dedup.ui.viewmodels.scan_vm import ScanVM
 
 # ---------------------------------------------------------------------------
 # ReviewVM
 # ---------------------------------------------------------------------------
 
+
 def _make_group(gid: str, file_count: int = 2, reclaimable: int = 1024) -> ReviewGroupProjection:
     return ReviewGroupProjection(
-        group_id=gid, group_size=512, file_count=file_count,
-        verification_level="full_hash", confidence_label="Exact",
-        reclaimable_bytes=reclaimable, review_status="unreviewed",
-        risk_flags=(), keeper_candidate="/a/f1.txt",
-        thumbnail_capable=False, metadata_summary=f"group {gid}",
+        group_id=gid,
+        group_size=512,
+        file_count=file_count,
+        verification_level="full_hash",
+        confidence_label="Exact",
+        reclaimable_bytes=reclaimable,
+        review_status="unreviewed",
+        risk_flags=(),
+        keeper_candidate="/a/f1.txt",
+        thumbnail_capable=False,
+        metadata_summary=f"group {gid}",
     )
 
 
@@ -65,6 +71,7 @@ class TestReviewVM:
 # HistoryVM
 # ---------------------------------------------------------------------------
 
+
 class TestHistoryVM:
     def test_selected_session_property(self):
         vm = HistoryVM()
@@ -83,6 +90,7 @@ class TestHistoryVM:
 # ScanVM
 # ---------------------------------------------------------------------------
 
+
 class TestScanVM:
     def test_default_state(self):
         vm = ScanVM()
@@ -98,16 +106,18 @@ class TestScanVM:
 
     def test_work_saved_projection_uses_reuse_metrics(self):
         vm = ScanVM()
-        vm.apply_metrics_projection(merge_metrics(
-            vm.metrics,
-            files_reused_from_prior_inventory=123,
-            dirs_skipped_via_manifest=45,
-            dirs_scanned=100,
-            discovery_reuse_mode="subtree_skip",
-            prior_session_compatible=True,
-            prior_session_rejected_reason="compatible",
-            time_saved_estimate=9.8,
-        ))
+        vm.apply_metrics_projection(
+            merge_metrics(
+                vm.metrics,
+                files_reused_from_prior_inventory=123,
+                dirs_skipped_via_manifest=45,
+                dirs_scanned=100,
+                discovery_reuse_mode="subtree_skip",
+                prior_session_compatible=True,
+                prior_session_rejected_reason="compatible",
+                time_saved_estimate=9.8,
+            )
+        )
         ws = vm.work_saved_info
         assert ws["Dirs skipped"] == "45"
         assert ws["Files reused"] == "123"
@@ -129,22 +139,26 @@ class TestScanVM:
 
     def test_session_totals_are_monotonic_across_updates(self):
         vm = ScanVM()
-        vm.apply_metrics_projection(merge_metrics(
-            vm.metrics,
-            files_discovered_total=100,
-            dirs_scanned=20,
-            result_duplicate_groups=8,
-            result_duplicate_files=25,
-            elapsed_s=10.0,
-        ))
-        vm.apply_metrics_projection(merge_metrics(
-            vm.metrics,
-            files_discovered_total=40,
-            dirs_scanned=5,
-            result_duplicate_groups=3,
-            result_duplicate_files=10,
-            elapsed_s=2.0,
-        ))
+        vm.apply_metrics_projection(
+            merge_metrics(
+                vm.metrics,
+                files_discovered_total=100,
+                dirs_scanned=20,
+                result_duplicate_groups=8,
+                result_duplicate_files=25,
+                elapsed_s=10.0,
+            )
+        )
+        vm.apply_metrics_projection(
+            merge_metrics(
+                vm.metrics,
+                files_discovered_total=40,
+                dirs_scanned=5,
+                result_duplicate_groups=3,
+                result_duplicate_files=10,
+                elapsed_s=2.0,
+            )
+        )
         assert vm.session_metrics.files_discovered_total == 100
         assert vm.session_metrics.directories_scanned_total == 20
         assert vm.session_metrics.duplicate_groups_total == 8
@@ -153,70 +167,82 @@ class TestScanVM:
 
     def test_dirs_scanned_flows_from_projection(self):
         vm = ScanVM()
-        vm.apply_metrics_projection(merge_metrics(
-            vm.metrics,
-            files_discovered_total=1000,
-            dirs_scanned=200,
-            dirs_reused=50,
-            dirs_skipped_via_manifest=50,
-            elapsed_s=10.0,
-        ))
+        vm.apply_metrics_projection(
+            merge_metrics(
+                vm.metrics,
+                files_discovered_total=1000,
+                dirs_scanned=200,
+                dirs_reused=50,
+                dirs_skipped_via_manifest=50,
+                elapsed_s=10.0,
+            )
+        )
         assert vm.session_metrics.directories_scanned_total == 200
         assert vm.session_metrics.dirs_reused_total == 50
         assert vm.session_metrics.dirs_skipped_via_manifest == 50
 
     def test_discovery_speed_property(self):
         vm = ScanVM()
-        vm.apply_metrics_projection(merge_metrics(
-            vm.metrics,
-            files_discovered_total=5000,
-            elapsed_s=10.0,
-        ))
+        vm.apply_metrics_projection(
+            merge_metrics(
+                vm.metrics,
+                files_discovered_total=5000,
+                elapsed_s=10.0,
+            )
+        )
         assert vm.session_metrics.discovery_speed == pytest.approx(500.0)
 
     def test_discovery_speed_zero_when_elapsed_zero(self):
         """When elapsed_total_s is 0, discovery_speed must return 0 (not inf or absurd value)."""
         vm = ScanVM()
-        vm.apply_metrics_projection(merge_metrics(
-            vm.metrics,
-            files_discovered_total=2120,
-            elapsed_s=0.0,
-        ))
+        vm.apply_metrics_projection(
+            merge_metrics(
+                vm.metrics,
+                files_discovered_total=2120,
+                elapsed_s=0.0,
+            )
+        )
         assert vm.session_metrics.discovery_speed == 0.0
 
     def test_skip_ratio_property(self):
         vm = ScanVM()
-        vm.apply_metrics_projection(merge_metrics(
-            vm.metrics,
-            dirs_scanned=100,
-            dirs_skipped_via_manifest=75,
-        ))
+        vm.apply_metrics_projection(
+            merge_metrics(
+                vm.metrics,
+                dirs_scanned=100,
+                dirs_skipped_via_manifest=75,
+            )
+        )
         assert vm.session_metrics.skip_ratio == pytest.approx(0.75)
 
     def test_hash_cache_hit_rate_property(self):
         vm = ScanVM()
-        vm.apply_metrics_projection(merge_metrics(
-            vm.metrics,
-            hash_cache_hits=90,
-            hash_cache_misses=10,
-        ))
+        vm.apply_metrics_projection(
+            merge_metrics(
+                vm.metrics,
+                hash_cache_hits=90,
+                hash_cache_misses=10,
+            )
+        )
         assert vm.session_metrics.hash_cache_hit_rate == pytest.approx(0.9)
         ws = vm.work_saved_info
         assert ws["Hash cache hit rate"] == "90%"
 
     def test_phase_and_result_metrics_are_separate(self):
         vm = ScanVM()
-        vm.apply_metrics_projection(merge_metrics(
-            vm.metrics,
-            current_phase_name="result_assembly",
-            current_phase_rows_processed=12,
-            current_phase_total_units=20,
-            current_phase_elapsed_s=3.5,
-            current_file="C:/x/a.txt",
-            result_rows_assembled=30,
-            result_duplicate_groups=6,
-            result_duplicate_files=18,
-        ))
+        vm.apply_metrics_projection(
+            merge_metrics(
+                vm.metrics,
+                current_phase_name="result_assembly",
+                current_phase_rows_processed=12,
+                current_phase_total_units=20,
+                current_phase_elapsed_s=3.5,
+                current_file="C:/x/a.txt",
+                result_rows_assembled=30,
+                result_duplicate_groups=6,
+                result_duplicate_files=18,
+            )
+        )
         assert vm.phase_metrics.phase_name == "result_assembly"
         assert vm.phase_metrics.completed_units == 12
         assert vm.phase_metrics.total_units == 20
@@ -227,13 +253,15 @@ class TestScanVM:
     def test_final_results_not_set_without_results_ready(self):
         """FinalScanResultsSummary is never populated from non-terminal projections."""
         vm = ScanVM()
-        vm.apply_metrics_projection(merge_metrics(
-            vm.metrics,
-            result_duplicate_groups=1030,
-            result_duplicate_files=2060,
-            result_reclaimable_bytes=2_000_000_000,
-            # results_ready=False (default)
-        ))
+        vm.apply_metrics_projection(
+            merge_metrics(
+                vm.metrics,
+                result_duplicate_groups=1030,
+                result_duplicate_files=2060,
+                result_reclaimable_bytes=2_000_000_000,
+                # results_ready=False (default)
+            )
+        )
         assert not vm.final_results.results_ready
         assert vm.final_results.duplicate_groups_total == 0
         assert vm.final_results.reclaimable_bytes_total == 0
@@ -241,15 +269,17 @@ class TestScanVM:
     def test_final_results_populated_on_terminal_event(self):
         """FinalScanResultsSummary is set only when results_ready=True."""
         vm = ScanVM()
-        vm.apply_metrics_projection(merge_metrics(
-            vm.metrics,
-            result_duplicate_groups=1030,
-            result_duplicate_files=2060,
-            result_reclaimable_bytes=2_000_000_000,
-            result_files_scanned=144267,
-            result_verification_level="full_hash",
-            results_ready=True,
-        ))
+        vm.apply_metrics_projection(
+            merge_metrics(
+                vm.metrics,
+                result_duplicate_groups=1030,
+                result_duplicate_files=2060,
+                result_reclaimable_bytes=2_000_000_000,
+                result_files_scanned=144267,
+                result_verification_level="full_hash",
+                results_ready=True,
+            )
+        )
         fr = vm.final_results
         assert fr.results_ready is True
         assert fr.duplicate_groups_total == 1030
@@ -261,19 +291,23 @@ class TestScanVM:
     def test_final_results_are_monotonic(self):
         """A later stale/smaller update cannot overwrite a true terminal value."""
         vm = ScanVM()
-        vm.apply_metrics_projection(merge_metrics(
-            vm.metrics,
-            result_duplicate_groups=1030,
-            result_reclaimable_bytes=2_000_000_000,
-            results_ready=True,
-        ))
+        vm.apply_metrics_projection(
+            merge_metrics(
+                vm.metrics,
+                result_duplicate_groups=1030,
+                result_reclaimable_bytes=2_000_000_000,
+                results_ready=True,
+            )
+        )
         # Simulate stale / partial update arriving after the real terminal event
-        vm.apply_metrics_projection(merge_metrics(
-            vm.metrics,
-            result_duplicate_groups=5,
-            result_reclaimable_bytes=1000,
-            results_ready=True,
-        ))
+        vm.apply_metrics_projection(
+            merge_metrics(
+                vm.metrics,
+                result_duplicate_groups=5,
+                result_reclaimable_bytes=1000,
+                results_ready=True,
+            )
+        )
         assert vm.final_results.duplicate_groups_total == 1030
         assert vm.final_results.reclaimable_bytes_total == 2_000_000_000
 
@@ -283,8 +317,10 @@ class TestScanVM:
         'duplicate_groups' (a list).  The hub must read these keys — not the
         legacy 'duplicates_found' / 'groups_found' names that caused Groups=0.
         """
-        from dedup.engine.models import ScanResult, ScanConfig, DuplicateGroup, FileMetadata
         from datetime import datetime
+
+        from dedup.engine.models import DuplicateGroup, FileMetadata, ScanConfig, ScanResult
+
         config = ScanConfig(roots=[], min_size_bytes=1)
         grp = DuplicateGroup(
             group_id="g1",
@@ -322,6 +358,7 @@ class TestScanVM:
 # MissionVM
 # ---------------------------------------------------------------------------
 
+
 class TestMissionVM:
     def test_capabilities_by_name_empty_before_refresh(self):
         """Before refresh_from_coordinator, capabilities are empty."""
@@ -337,6 +374,7 @@ class TestMissionVM:
 # ---------------------------------------------------------------------------
 # DiagnosticsVM
 # ---------------------------------------------------------------------------
+
 
 class TestDiagnosticsVM:
     def test_default_session(self):

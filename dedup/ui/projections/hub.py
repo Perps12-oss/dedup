@@ -32,32 +32,38 @@ UI event type labels (for subscription keys)
   "events_log"    — List[str]  (structured event log entries)
   "terminal"      — SessionProjection  (scan finished / failed / cancelled)
 """
+
 from __future__ import annotations
 
 import logging
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List
 
 from ...orchestration.events import EventBus, ScanEvent, ScanEventType
-
-_log = logging.getLogger(__name__)
-
-from .session_projection import (
-    SessionProjection, EMPTY_SESSION, build_session_from_event,
-)
-from .phase_projection import (
-    PhaseProjection, PHASE_ORDER, canonical_phase,
-    initial_phase_map, build_phase_from_checkpoint,
-)
-from .metrics_projection import (
-    MetricsProjection, EMPTY_METRICS, build_metrics_from_progress, merge_metrics,
-)
 from .compatibility_projection import (
-    CompatibilityProjection, EMPTY_COMPAT,
+    EMPTY_COMPAT,
+    CompatibilityProjection,
     build_compat_from_event_payload,
 )
-from .deletion_projection import DeletionReadinessProjection, EMPTY_DELETION
+from .deletion_projection import EMPTY_DELETION, DeletionReadinessProjection
+from .metrics_projection import (
+    EMPTY_METRICS,
+    MetricsProjection,
+    merge_metrics,
+)
+from .phase_projection import (
+    PhaseProjection,
+    canonical_phase,
+    initial_phase_map,
+)
+from .session_projection import (
+    EMPTY_SESSION,
+    SessionProjection,
+    build_session_from_event,
+)
+
+_log = logging.getLogger(__name__)
 
 # Poll interval (ms): how often the Tk main thread checks for dirty projections.
 POLL_MS = 80
@@ -65,13 +71,13 @@ POLL_MS = 80
 # Throttle per projection type (ms between consecutive deliveries to UI).
 # 0 = deliver as soon as dirty (next poll tick). Larger values reduce UI work on large scans.
 THROTTLE_MS: Dict[str, int] = {
-    "session":       0,
-    "phase":         150,   # was 0; avoid flooding timeline on rapid progress
+    "session": 0,
+    "phase": 150,  # was 0; avoid flooding timeline on rapid progress
     "compatibility": 0,
-    "terminal":      0,
-    "metrics":       400,   # was 300
-    "events_log":    1200,  # was 750; listbox refresh is costly
-    "deletion":      0,
+    "terminal": 0,
+    "metrics": 400,  # was 300
+    "events_log": 1200,  # was 750; listbox refresh is costly
+    "deletion": 0,
 }
 
 Callback = Callable[[Any], None]
@@ -84,24 +90,24 @@ class ProjectionHub:
     """
 
     def __init__(self, event_bus: EventBus, tk_root):
-        self._bus      = event_bus
-        self._root     = tk_root
-        self._lock     = threading.Lock()
-        self._alive    = True
+        self._bus = event_bus
+        self._root = tk_root
+        self._lock = threading.Lock()
+        self._alive = True
 
         # --- Current projection snapshots ---
-        self._session:  SessionProjection       = EMPTY_SESSION
-        self._phases:   Dict[str, PhaseProjection] = initial_phase_map()
-        self._metrics:  MetricsProjection        = EMPTY_METRICS
-        self._compat:   CompatibilityProjection  = EMPTY_COMPAT
+        self._session: SessionProjection = EMPTY_SESSION
+        self._phases: Dict[str, PhaseProjection] = initial_phase_map()
+        self._metrics: MetricsProjection = EMPTY_METRICS
+        self._compat: CompatibilityProjection = EMPTY_COMPAT
         self._deletion: DeletionReadinessProjection = EMPTY_DELETION
-        self._events_log: List[str]              = []
+        self._events_log: List[str] = []
 
         # --- Checkpoint throttling: per-phase {phase: files} and timestamps ---
         self._last_checkpoint: Dict[str, Any] = {}  # phase -> files, phase_ts -> time
 
         # --- Dirty flags and last-delivery timestamps ---
-        self._dirty: Dict[str, bool]  = {k: False for k in THROTTLE_MS}
+        self._dirty: Dict[str, bool] = {k: False for k in THROTTLE_MS}
         self._last_delivered: Dict[str, float] = {k: 0.0 for k in THROTTLE_MS}
 
         # --- UI subscribers: type -> list of callbacks ---
@@ -134,6 +140,7 @@ class ProjectionHub:
                     self._subscribers[projection_type].remove(callback)
                 except (KeyError, ValueError):
                     pass
+
         return unsub
 
     # ------------------------------------------------------------------
@@ -194,8 +201,8 @@ class ProjectionHub:
         Translate a raw engine ScanEvent into projection updates.
         Called from background threads — must only touch self._lock protected state.
         """
-        et      = event.event_type
-        sid     = event.scan_id
+        et = event.event_type
+        sid = event.scan_id
         payload = event.payload or {}
 
         with self._lock:
@@ -210,12 +217,12 @@ class ProjectionHub:
                 self._events_log = []
                 self._last_checkpoint = {}
                 self._dirty["session"] = True
-                self._dirty["phase"]   = True
+                self._dirty["phase"] = True
                 self._dirty["metrics"] = True
 
             elif et == ScanEventType.PHASE_STARTED:
                 phase_raw = payload.get("phase", "")
-                canon     = canonical_phase(phase_raw)
+                canon = canonical_phase(phase_raw)
                 if canon in self._phases:
                     old = self._phases[canon]
                     self._phases[canon] = PhaseProjection(
@@ -245,7 +252,7 @@ class ProjectionHub:
                     schema_version=self._session.schema_version,
                     scan_root=self._session.scan_root,
                 )
-                self._dirty["phase"]   = True
+                self._dirty["phase"] = True
                 self._dirty["session"] = True
                 ts = time.strftime("%H:%M:%S")
                 desc = payload.get("description", phase_raw)
@@ -302,7 +309,9 @@ class ProjectionHub:
                     canon = canonical_phase(phase_raw)
                     if canon in self._phases:
                         old = self._phases[canon]
-                        phase_completed = payload.get("phase_completed_units", payload.get("files_found", old.rows_written))
+                        phase_completed = payload.get(
+                            "phase_completed_units", payload.get("files_found", old.rows_written)
+                        )
                         self._phases[canon] = PhaseProjection(
                             phase_name=old.phase_name,
                             display_label=old.display_label,
@@ -321,8 +330,8 @@ class ProjectionHub:
             elif et == ScanEventType.RESUME_VALIDATED:
                 compat = build_compat_from_event_payload(payload)
                 self._compat = compat
-                outcome  = payload.get("outcome", "safe_resume")
-                reason   = payload.get("reason", "")
+                outcome = payload.get("outcome", "safe_resume")
+                reason = payload.get("reason", "")
                 self._session = build_session_from_event(
                     session_id=sid,
                     status="running",
@@ -357,17 +366,15 @@ class ProjectionHub:
                 if time_saved > 0:
                     self._metrics = merge_metrics(self._metrics, time_saved_estimate=time_saved)
                     self._dirty["metrics"] = True
-                self._dirty["phase"]        = True
+                self._dirty["phase"] = True
                 self._dirty["compatibility"] = True
-                self._dirty["session"]       = True
+                self._dirty["session"] = True
                 ts = time.strftime("%H:%M:%S")
-                self._events_log.insert(0,
-                    f"[{ts}] Resume validated: {outcome} — {reason[:60]}")
+                self._events_log.insert(0, f"[{ts}] Resume validated: {outcome} — {reason[:60]}")
                 self._dirty["events_log"] = True
 
             elif et == ScanEventType.RESUME_REJECTED:
-                compat = build_compat_from_event_payload(
-                    {**payload, "outcome": "restart_required"})
+                compat = build_compat_from_event_payload({**payload, "outcome": "restart_required"})
                 self._compat = compat
                 reason = payload.get("reason", "")
                 self._session = build_session_from_event(
@@ -383,10 +390,9 @@ class ProjectionHub:
                     scan_root=self._session.scan_root,
                 )
                 self._dirty["compatibility"] = True
-                self._dirty["session"]       = True
+                self._dirty["session"] = True
                 ts = time.strftime("%H:%M:%S")
-                self._events_log.insert(0,
-                    f"[{ts}] Resume rejected: restart required — {reason[:60]}")
+                self._events_log.insert(0, f"[{ts}] Resume rejected: restart required — {reason[:60]}")
                 self._dirty["events_log"] = True
 
             elif et in (ScanEventType.SESSION_COMPLETED, ScanEventType.SCAN_COMPLETED):
@@ -396,19 +402,24 @@ class ProjectionHub:
                 self._metrics = merge_metrics(
                     self._metrics,
                     files_discovered_total=int(
-                        benchmark.get("files_discovered_total") or
-                        result.get("files_scanned") or
-                        self._metrics.files_discovered_total or 0
+                        benchmark.get("files_discovered_total")
+                        or result.get("files_scanned")
+                        or self._metrics.files_discovered_total
+                        or 0
                     ),
-                    files_discovered_fresh=int(benchmark.get("files_discovered_fresh", self._metrics.files_discovered_fresh) or 0),
+                    files_discovered_fresh=int(
+                        benchmark.get("files_discovered_fresh", self._metrics.files_discovered_fresh) or 0
+                    ),
                     files_reused_from_prior_inventory=int(
-                        benchmark.get("files_reused_from_prior_inventory", self._metrics.files_reused_from_prior_inventory) or 0
+                        benchmark.get(
+                            "files_reused_from_prior_inventory", self._metrics.files_reused_from_prior_inventory
+                        )
+                        or 0
                     ),
                     dirs_scanned=int(benchmark.get("dirs_scanned", self._metrics.dirs_scanned) or 0),
                     dirs_reused=int(benchmark.get("dirs_reused", self._metrics.dirs_reused) or 0),
                     duplicate_groups_live=int(
-                        len(result.get("duplicate_groups", [])) or
-                        self._metrics.duplicate_groups_live or 0
+                        len(result.get("duplicate_groups", [])) or self._metrics.duplicate_groups_live or 0
                     ),
                     result_duplicate_files=int(result.get("total_duplicates", 0) or 0),
                     result_duplicate_groups=int(len(result.get("duplicate_groups", [])) or 0),
@@ -460,9 +471,9 @@ class ProjectionHub:
                             resume_outcome=ph.resume_outcome,
                             failure_reason="",
                         )
-                self._dirty["session"]  = True
-                self._dirty["phase"]    = True
-                self._dirty["metrics"]  = True
+                self._dirty["session"] = True
+                self._dirty["phase"] = True
+                self._dirty["metrics"] = True
                 self._dirty["terminal"] = True
                 ts = time.strftime("%H:%M:%S")
                 self._events_log.insert(0, f"[{ts}] Scan completed")
@@ -479,7 +490,7 @@ class ProjectionHub:
                     schema_version=self._session.schema_version,
                     scan_root=self._session.scan_root,
                 )
-                self._dirty["session"]  = True
+                self._dirty["session"] = True
                 self._dirty["terminal"] = True
 
             elif et in (ScanEventType.SESSION_FAILED, ScanEventType.SCAN_ERROR):
@@ -494,7 +505,7 @@ class ProjectionHub:
                     schema_version=self._session.schema_version,
                     scan_root=self._session.scan_root,
                 )
-                self._dirty["session"]  = True
+                self._dirty["session"] = True
                 self._dirty["terminal"] = True
                 ts = time.strftime("%H:%M:%S")
                 self._events_log.insert(0, f"[{ts}] ERROR: {err[:80]}")
@@ -528,7 +539,8 @@ class ProjectionHub:
             if self._alive:
                 _log.warning("Hub poll schedule failed (root may be destroyed): %s", e)
                 try:
-                    from ...infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_HUB_DELIVERY
+                    from ...infrastructure.diagnostics import CATEGORY_HUB_DELIVERY, get_diagnostics_recorder
+
                     get_diagnostics_recorder().record(CATEGORY_HUB_DELIVERY, "Poll schedule failed", str(e))
                 except Exception:
                     pass
@@ -543,7 +555,8 @@ class ProjectionHub:
         except Exception as e:
             _log.warning("Hub flush failed: %s", e)
             try:
-                from ...infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_HUB_DELIVERY
+                from ...infrastructure.diagnostics import CATEGORY_HUB_DELIVERY, get_diagnostics_recorder
+
                 get_diagnostics_recorder().record(CATEGORY_HUB_DELIVERY, "Flush failed", str(e))
             except Exception:
                 pass
@@ -572,10 +585,9 @@ class ProjectionHub:
                 except Exception as e:
                     _log.warning("Hub delivery callback failed for %s: %s", ptype, e)
                     try:
-                        from ...infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_HUB_DELIVERY
-                        get_diagnostics_recorder().record(
-                            CATEGORY_HUB_DELIVERY, f"Callback failed ({ptype})", str(e)
-                        )
+                        from ...infrastructure.diagnostics import CATEGORY_HUB_DELIVERY, get_diagnostics_recorder
+
+                        get_diagnostics_recorder().record(CATEGORY_HUB_DELIVERY, f"Callback failed ({ptype})", str(e))
                     except Exception:
                         pass
 
@@ -604,12 +616,14 @@ class ProjectionHub:
         roots = payload.get("roots", [])
         if roots:
             from pathlib import Path
+
             return Path(roots[0]).name if roots[0] else ""
         config = payload.get("config", {})
         if isinstance(config, dict):
             r = config.get("roots", [])
             if r:
                 from pathlib import Path
+
                 return Path(r[0]).name if r[0] else ""
         return ""
 
@@ -637,9 +651,9 @@ class ProjectionHub:
     @staticmethod
     def _map_outcome_to_policy(outcome: str) -> str:
         return {
-            "safe_resume":              "safe",
-            "rebuild_current_phase":    "rebuild_phase",
-            "restart_required":         "restart_required",
+            "safe_resume": "safe",
+            "rebuild_current_phase": "rebuild_phase",
+            "restart_required": "restart_required",
         }.get(outcome, "none")
 
     @staticmethod
@@ -656,9 +670,7 @@ class ProjectionHub:
             if remaining > 0:
                 eta = remaining / fps
                 eta_conf = "low"
-        eta_conf = "unknown" if eta is None else (
-            "medium" if elapsed > 30 else "low" if eta is not None else "unknown"
-        )
+        eta_conf = "unknown" if eta is None else ("medium" if elapsed > 30 else "low" if eta is not None else "unknown")
         if eta is not None and elapsed > 120:
             eta_conf = "high"
 
@@ -673,13 +685,12 @@ class ProjectionHub:
             current_phase_name=d.get("phase", "") or "",
             current_phase_progress=(
                 f"{int(d.get('phase_completed_units', d.get('files_found', 0)) or 0):,} / "
-                f"{int(d['phase_total_units']):,}" if d.get("phase_total_units") is not None
+                f"{int(d['phase_total_units']):,}"
+                if d.get("phase_total_units") is not None
                 else f"{int(d.get('phase_completed_units', d.get('files_found', 0)) or 0):,} / —"
             ),
             current_phase_rows_processed=int(d.get("phase_completed_units", d.get("files_found", 0)) or 0),
-            current_phase_total_units=(
-                int(d["phase_total_units"]) if d.get("phase_total_units") is not None else None
-            ),
+            current_phase_total_units=(int(d["phase_total_units"]) if d.get("phase_total_units") is not None else None),
             current_phase_elapsed_s=float(d.get("phase_elapsed_s", elapsed) or 0.0),
             current_phase_started_at=d.get("phase_started_at"),
             current_phase_last_updated_at=d.get("phase_last_updated_at"),

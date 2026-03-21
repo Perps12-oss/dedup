@@ -5,12 +5,16 @@ Owns:
   - HistoryProjection snapshot (refreshed on demand)
   - UI selection / filter state
 """
+
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Optional
 
 from ..projections.history_projection import (
-    HistoryProjection, HistorySessionProjection, EMPTY_HISTORY,
+    EMPTY_HISTORY,
+    HistoryProjection,
+    HistorySessionProjection,
     build_history_from_coordinator,
 )
 
@@ -21,14 +25,15 @@ class HistoryVM:
     View-model for the History page.
     Thin: owns HistoryProjection + filter / selection state.
     """
+
     # --- Projection snapshot ---
-    history:       HistoryProjection          = field(default_factory=lambda: EMPTY_HISTORY)
+    history: HistoryProjection = field(default_factory=lambda: EMPTY_HISTORY)
 
     # --- UI state ---
-    selected_id:   Optional[str]              = None
-    search_text:   str                        = ""
-    show_resumable_only: bool                 = False
-    show_failed_only:    bool                 = False
+    selected_id: Optional[str] = None
+    search_text: str = ""
+    show_resumable_only: bool = False
+    show_failed_only: bool = False
 
     def refresh(self, coordinator) -> None:
         """Pull fresh data. Safe to call on UI thread (no async work)."""
@@ -48,10 +53,7 @@ class HistoryVM:
         if self.search_text:
             q = self.search_text.lower()
             sessions = [
-                s for s in sessions
-                if q in s.scan_id.lower()
-                or q in s.roots_display.lower()
-                or q in s.status.lower()
+                s for s in sessions if q in s.scan_id.lower() or q in s.roots_display.lower() or q in s.status.lower()
             ]
         return sessions
 

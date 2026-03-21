@@ -3,9 +3,11 @@ PhaseProjection — canonical phase state for PhaseTimeline, ScanPage, Diagnosti
 
 One PhaseProjection per pipeline phase, assembled from CheckpointInfo + progress events.
 """
+
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+
+from dataclasses import dataclass
+from typing import Dict, Tuple
 
 # Canonical ordered phase sequence
 PHASE_ORDER: Tuple[str, ...] = (
@@ -18,29 +20,29 @@ PHASE_ORDER: Tuple[str, ...] = (
 
 # Human display labels
 PHASE_LABELS: Dict[str, str] = {
-    "discovery":      "Discovery",
+    "discovery": "Discovery",
     "size_reduction": "Size",
-    "partial_hash":   "Partial Hash",
-    "full_hash":      "Full Hash",
-    "result_assembly":"Results",
+    "partial_hash": "Partial Hash",
+    "full_hash": "Full Hash",
+    "result_assembly": "Results",
 }
 
 # Timeline key aliases — pipeline emits short names (including engine progress.phase)
 PHASE_ALIASES: Dict[str, str] = {
-    "scanning":          "discovery",
-    "discovering":       "discovery",
-    "grouping":          "size_reduction",
-    "size":              "size_reduction",
-    "size_reduction":    "size_reduction",
-    "partial":           "partial_hash",
-    "partial_hash":      "partial_hash",
-    "hashing_partial":   "partial_hash",
-    "full":              "full_hash",
-    "full_hash":         "full_hash",
-    "hashing_full":      "full_hash",
-    "results":           "result_assembly",
-    "result_assembly":   "result_assembly",
-    "complete":          "result_assembly",
+    "scanning": "discovery",
+    "discovering": "discovery",
+    "grouping": "size_reduction",
+    "size": "size_reduction",
+    "size_reduction": "size_reduction",
+    "partial": "partial_hash",
+    "partial_hash": "partial_hash",
+    "hashing_partial": "partial_hash",
+    "full": "full_hash",
+    "full_hash": "full_hash",
+    "hashing_full": "full_hash",
+    "results": "result_assembly",
+    "result_assembly": "result_assembly",
+    "complete": "result_assembly",
 }
 
 
@@ -56,16 +58,17 @@ class PhaseProjection:
     Immutable per-phase state snapshot.
     Replaced atomically when status changes.
     """
-    phase_name: str          # canonical key from PHASE_ORDER
+
+    phase_name: str  # canonical key from PHASE_ORDER
     display_label: str
-    status: str              # pending | running | completed | failed | resumed | rebuilt | skipped
+    status: str  # pending | running | completed | failed | resumed | rebuilt | skipped
     finalized: bool
     integrity_ok: bool
     rows_written: int
     duration_ms: float
     checkpoint_cursor: str
-    is_reused: bool          # True when this phase was loaded from durable state
-    resume_outcome: str      # safe_resume | rebuild_phase | restart_required | unknown
+    is_reused: bool  # True when this phase was loaded from durable state
+    resume_outcome: str  # safe_resume | rebuild_phase | restart_required | unknown
     failure_reason: str
 
     # Timeline display state (maps to PhaseTimeline component states)

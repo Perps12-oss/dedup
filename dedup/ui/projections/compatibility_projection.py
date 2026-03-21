@@ -4,9 +4,11 @@ CompatibilityProjection — per-phase resume compatibility state.
 Crucial for ScanPage status ribbon, History detail, and Diagnostics compatibility tab.
 These must not be inferred by the UI — they come directly from ResumeDecision.
 """
+
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Optional
+
+from dataclasses import dataclass
+from typing import Dict, Optional, Tuple
 
 from .phase_projection import PHASE_ORDER
 
@@ -14,25 +16,30 @@ from .phase_projection import PHASE_ORDER
 @dataclass(frozen=True)
 class PhaseCompatibilityProjection:
     """Per-phase compatibility slot."""
+
     phase_name: str
     schema_match: bool
     config_hash_match: bool
     phase_version_match: bool
     artifact_integrity_ok: bool
     finalization_ok: bool
-    resume_action: str          # safe_resume | rebuild_phase | restart_required | unknown
+    resume_action: str  # safe_resume | rebuild_phase | restart_required | unknown
 
     @property
     def all_ok(self) -> bool:
-        return (self.schema_match and self.config_hash_match
-                and self.phase_version_match and self.artifact_integrity_ok
-                and self.finalization_ok)
+        return (
+            self.schema_match
+            and self.config_hash_match
+            and self.phase_version_match
+            and self.artifact_integrity_ok
+            and self.finalization_ok
+        )
 
     @property
     def ribbon_variant(self) -> str:
         return {
-            "safe_resume":      "safe_resume",
-            "rebuild_phase":    "rebuild_phase",
+            "safe_resume": "safe_resume",
+            "rebuild_phase": "rebuild_phase",
             "restart_required": "restart_required",
         }.get(self.resume_action, "idle")
 
@@ -43,8 +50,9 @@ class CompatibilityProjection:
     Full-session compatibility snapshot.
     Contains one PhaseCompatibilityProjection per pipeline phase.
     """
+
     phases: Tuple[PhaseCompatibilityProjection, ...]
-    overall_resume_outcome: str   # safe_resume | rebuild_current_phase | restart_required | unknown
+    overall_resume_outcome: str  # safe_resume | rebuild_current_phase | restart_required | unknown
     overall_resume_reason: str
     session_compatible: bool
 
@@ -104,21 +112,23 @@ def build_compat_from_resume_decision(decision) -> CompatibilityProjection:
             continue
         compatible = getattr(r, "compatible", False)
         reasons = getattr(r, "reasons", [])
-        schema_ok   = not any("schema" in x.lower()  for x in reasons)
-        config_ok   = not any("config" in x.lower()  for x in reasons)
-        pver_ok     = not any("version" in x.lower() for x in reasons)
+        schema_ok = not any("schema" in x.lower() for x in reasons)
+        config_ok = not any("config" in x.lower() for x in reasons)
+        pver_ok = not any("version" in x.lower() for x in reasons)
         artifact_ok = not any("artifact" in x.lower() or "incomplete" in x.lower() for x in reasons)
-        final_ok    = not any("finali" in x.lower()  for x in reasons)
+        final_ok = not any("finali" in x.lower() for x in reasons)
         action = "safe_resume" if compatible else "rebuild_phase"
-        phase_compats.append(PhaseCompatibilityProjection(
-            phase_name=pname,
-            schema_match=schema_ok,
-            config_hash_match=config_ok,
-            phase_version_match=pver_ok,
-            artifact_integrity_ok=artifact_ok,
-            finalization_ok=final_ok,
-            resume_action=action,
-        ))
+        phase_compats.append(
+            PhaseCompatibilityProjection(
+                phase_name=pname,
+                schema_match=schema_ok,
+                config_hash_match=config_ok,
+                phase_version_match=pver_ok,
+                artifact_integrity_ok=artifact_ok,
+                finalization_ok=final_ok,
+                resume_action=action,
+            )
+        )
 
     outcome_val = getattr(decision.outcome, "value", str(decision.outcome))
     return CompatibilityProjection(
@@ -131,9 +141,9 @@ def build_compat_from_resume_decision(decision) -> CompatibilityProjection:
 
 def build_compat_from_event_payload(payload: dict) -> CompatibilityProjection:
     """Build from a raw RESUME_VALIDATED / RESUME_REJECTED event payload dict."""
-    outcome  = payload.get("outcome", "unknown")
-    reason   = payload.get("reason", "")
-    reports  = payload.get("compatibility_reports", [])
+    outcome = payload.get("outcome", "unknown")
+    reason = payload.get("reason", "")
+    reports = payload.get("compatibility_reports", [])
 
     phase_compats = []
     report_map = {r.get("phase", ""): r for r in reports}
@@ -141,24 +151,26 @@ def build_compat_from_event_payload(payload: dict) -> CompatibilityProjection:
     for pname in PHASE_ORDER:
         r = report_map.get(pname, {})
         compatible = r.get("compatible", True)
-        reasons    = r.get("reasons", [])
-        schema_ok  = not any("schema" in x.lower()  for x in reasons)
-        config_ok  = not any("config" in x.lower()  for x in reasons)
-        pver_ok    = not any("version" in x.lower() for x in reasons)
-        art_ok     = not any("artifact" in x.lower() for x in reasons)
-        final_ok   = not any("finali" in x.lower()  for x in reasons)
-        action     = "safe_resume" if compatible else "rebuild_phase"
+        reasons = r.get("reasons", [])
+        schema_ok = not any("schema" in x.lower() for x in reasons)
+        config_ok = not any("config" in x.lower() for x in reasons)
+        pver_ok = not any("version" in x.lower() for x in reasons)
+        art_ok = not any("artifact" in x.lower() for x in reasons)
+        final_ok = not any("finali" in x.lower() for x in reasons)
+        action = "safe_resume" if compatible else "rebuild_phase"
         if outcome == "restart_required":
             action = "restart_required"
-        phase_compats.append(PhaseCompatibilityProjection(
-            phase_name=pname,
-            schema_match=schema_ok,
-            config_hash_match=config_ok,
-            phase_version_match=pver_ok,
-            artifact_integrity_ok=art_ok,
-            finalization_ok=final_ok,
-            resume_action=action,
-        ))
+        phase_compats.append(
+            PhaseCompatibilityProjection(
+                phase_name=pname,
+                schema_match=schema_ok,
+                config_hash_match=config_ok,
+                phase_version_match=pver_ok,
+                artifact_integrity_ok=art_ok,
+                finalization_ok=final_ok,
+                resume_action=action,
+            )
+        )
 
     return CompatibilityProjection(
         phases=tuple(phase_compats),

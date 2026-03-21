@@ -11,21 +11,24 @@ Designed for 1M+ file datasets:
 from __future__ import annotations
 
 import os
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator, Optional, Set, Callable, List, Dict, Tuple
-from queue import Queue, Empty
-import threading
+from queue import Empty, Queue
+from typing import Callable, Dict, Iterator, List, Optional, Set, Tuple
 
-from .models import FileMetadata, FileRecord, ScanConfig
-from .discovery_compat import normalize_discovery_path
 from ..infrastructure.profiler import measure
+from .discovery_compat import normalize_discovery_path
+from .models import FileMetadata, FileRecord, ScanConfig
 
 try:
     from ..infrastructure.profiler import measure
 except ImportError:
     from contextlib import nullcontext as _nc
-    measure = lambda n: _nc()
+
+    def measure(n):
+        return _nc()
+
 
 @dataclass(slots=True)
 class DiscoveryOptions:
@@ -34,6 +37,7 @@ class DiscoveryOptions:
     resolve_paths=False (default) keeps the discovery hot path minimal; paths
     are used as returned by the OS. Set True only when canonical paths are required.
     """
+
     roots: List[Path]
     min_size_bytes: int = 1
     max_size_bytes: Optional[int] = None
@@ -68,12 +72,14 @@ class DiscoveryOptions:
 @dataclass(slots=True)
 class DiscoveryCursor:
     """Chunk cursor for durable discovery ingestion."""
+
     files_emitted: int = 0
 
 
 @dataclass(slots=True)
 class DiscoveryStats:
     """Summary counters emitted by chunked discovery."""
+
     files_found: int = 0
     bytes_found: int = 0
 
@@ -81,13 +87,13 @@ class DiscoveryStats:
 class FileDiscovery:
     """
     Streaming file discovery engine.
-    
+
     Memory-efficient design for large datasets:
     - Uses generators to yield files as they're found
     - Parallel directory traversal
     - Respects cancellation via callback
     """
-    
+
     def __init__(
         self,
         options: DiscoveryOptions,
@@ -120,23 +126,23 @@ class FileDiscovery:
         self._get_prior_files_under_dir = get_prior_files_under_dir
         self._dir_mtimes_sink = dir_mtimes_sink if dir_mtimes_sink is not None else {}
         self._dir_mtimes_lock = threading.Lock()
-    
+
     def cancel(self):
         """Request cancellation of discovery."""
         self._cancelled = True
-    
+
     @property
     def is_cancelled(self) -> bool:
         return self._cancelled
-    
+
     def get_stats(self) -> Dict[str, int]:
         """Get discovery statistics."""
         return self._stats.copy()
-    
+
     def discover(self, progress_cb: Optional[Callable[[FileMetadata], None]] = None) -> Iterator[FileMetadata]:
         """
         Discover files using parallel traversal.
-        
+
         Yields FileMetadata objects as they are discovered.
         This is a generator - memory usage stays constant regardless of dataset size.
         """
@@ -215,12 +221,9 @@ class FileDiscovery:
                 work_queue.join()
             for t in threads:
                 t.join(timeout=1.0)
-    
+
     def _scan_directory(
-        self,
-        directory: Path,
-        work_queue: Queue[Optional[Path]],
-        result_queue: Queue[Optional[FileMetadata]]
+        self, directory: Path, work_queue: Queue[Optional[Path]], result_queue: Queue[Optional[FileMetadata]]
     ):
         """Scan a single directory and queue results."""
         try:
@@ -261,44 +264,44 @@ class FileDiscovery:
                 for entry in entries:
                     if self._cancelled:
                         return
-                    
+
                     try:
                         name = entry.name
-                        
+
                         # Skip hidden files/directories
-                        if not self.options.include_hidden and name.startswith('.'):
+                        if not self.options.include_hidden and name.startswith("."):
                             continue
-                        
+
                         # Handle directories (recurse only if scan_subfolders)
                         if entry.is_dir(follow_symlinks=self.options.follow_symlinks):
                             if self.options.scan_subfolders and name not in self.options.exclude_dirs:
                                 work_queue.put(Path(entry.path))
                             continue
-                        
+
                         # Handle files
                         if not entry.is_file(follow_symlinks=self.options.follow_symlinks):
                             continue
-                        
+
                         # Get file stats
                         self._stats["stat_calls"] += 1
                         with measure("discovery.stat"):
                             st = entry.stat(follow_symlinks=self.options.follow_symlinks)
                         size = st.st_size
-                        
+
                         # Size filters
                         if size < self.options.min_size_bytes:
                             continue
                         if self.options.max_size_bytes and size > self.options.max_size_bytes:
                             continue
-                        
+
                         # Extension filter
                         if self.options.allowed_extensions:
-                            ext = os.path.splitext(name)[1].lower().lstrip('.')
+                            ext = os.path.splitext(name)[1].lower().lstrip(".")
                             if ext not in self.options.allowed_extensions:
                                 continue
-                        
+
                         # Create metadata; avoid resolve/measure when not needed (hot path).
-                        mtime_ns = getattr(st, 'st_mtime_ns', int(st.st_mtime * 1_000_000_000))
+                        mtime_ns = getattr(st, "st_mtime_ns", int(st.st_mtime * 1_000_000_000))
                         if self.options.resolve_paths:
                             self._stats["resolve_calls"] += 1
                             with measure("discovery.resolve"):
@@ -311,45 +314,43 @@ class FileDiscovery:
                             mtime_ns=mtime_ns,
                             inode=st.st_ino,
                         )
-                        
+
                         self._stats["files_discovered_fresh"] += 1
                         result_queue.put(metadata)
-                        
-                    except (OSError, PermissionError) as e:
+
+                    except (OSError, PermissionError):
                         self._stats["errors"] += 1
                         continue
-                        
+
         except (OSError, PermissionError):
             self._stats["errors"] += 1
         except Exception:
             self._stats["errors"] += 1
-        
+
         self._stats["dirs_scanned"] += 1
-    
+
     def discover_batch(
-        self,
-        batch_size: int = 1000,
-        progress_cb: Optional[Callable[[int], None]] = None
+        self, batch_size: int = 1000, progress_cb: Optional[Callable[[int], None]] = None
     ) -> Iterator[List[FileMetadata]]:
         """
         Discover files in batches.
-        
+
         Yields lists of FileMetadata objects.
         More efficient for downstream processing.
         """
         batch: List[FileMetadata] = []
         total = 0
-        
+
         for metadata in self.discover():
             batch.append(metadata)
-            
+
             if len(batch) >= batch_size:
                 total += len(batch)
                 if progress_cb:
                     progress_cb(total)
                 yield batch
                 batch = []
-        
+
         # Yield remaining files
         if batch:
             total += len(batch)
@@ -359,13 +360,11 @@ class FileDiscovery:
 
 
 def quick_discover(
-    path: Path,
-    min_size: int = 1,
-    progress_cb: Optional[Callable[[FileMetadata], None]] = None
+    path: Path, min_size: int = 1, progress_cb: Optional[Callable[[FileMetadata], None]] = None
 ) -> Iterator[FileMetadata]:
     """
     Quick file discovery with default options.
-    
+
     Usage:
         for file in quick_discover(Path("/data"), min_size=1024):
             print(file.path)

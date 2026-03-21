@@ -47,14 +47,16 @@ def run_baseline(
                 touch_subtree=touch_subtree,
             )
             wall_s = time.perf_counter() - t0
-            results.append({
-                "scenario": scenario,
-                "run": i + 1,
-                "wall_s": round(wall_s, 2),
-                "baseline_total_ms": out.get("baseline", {}).get("total_elapsed_ms"),
-                "second_total_ms": out.get("second", {}).get("total_elapsed_ms"),
-                "speedup_vs_first": out.get("speedup_vs_first"),
-            })
+            results.append(
+                {
+                    "scenario": scenario,
+                    "run": i + 1,
+                    "wall_s": round(wall_s, 2),
+                    "baseline_total_ms": out.get("baseline", {}).get("total_elapsed_ms"),
+                    "second_total_ms": out.get("second", {}).get("total_elapsed_ms"),
+                    "speedup_vs_first": out.get("speedup_vs_first"),
+                }
+            )
     return {
         "scenarios": SCENARIOS,
         "runs_per_scenario": runs,

@@ -8,7 +8,7 @@ Used during discovery to filter by media type; extensions are normalized lowerca
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Dict, Set, List, Optional
+from typing import Dict, List, Optional, Set
 
 # Category key used in config/UI (lowercase, no spaces)
 CATEGORY_ALL = "all"
@@ -21,24 +21,81 @@ CATEGORY_ARCHIVES = "archives"
 # Extension sets per category (lowercase, no leading dot)
 _EXTENSIONS: Dict[str, Set[str]] = {
     CATEGORY_IMAGES: {
-        "jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff", "tif",
-        "heic", "heif", "raw", "cr2", "nef", "arw", "dng", "ico",
+        "jpg",
+        "jpeg",
+        "png",
+        "gif",
+        "bmp",
+        "webp",
+        "tiff",
+        "tif",
+        "heic",
+        "heif",
+        "raw",
+        "cr2",
+        "nef",
+        "arw",
+        "dng",
+        "ico",
     },
     CATEGORY_VIDEOS: {
-        "mp4", "mov", "avi", "mkv", "webm", "flv", "wmv", "m4v",
-        "mpg", "mpeg", "m2v", "3gp", "ogv", "ts",
+        "mp4",
+        "mov",
+        "avi",
+        "mkv",
+        "webm",
+        "flv",
+        "wmv",
+        "m4v",
+        "mpg",
+        "mpeg",
+        "m2v",
+        "3gp",
+        "ogv",
+        "ts",
     },
     CATEGORY_AUDIO: {
-        "mp3", "wav", "aac", "flac", "ogg", "m4a", "wma", "aiff",
-        "aif", "opus", "oga", "weba",
+        "mp3",
+        "wav",
+        "aac",
+        "flac",
+        "ogg",
+        "m4a",
+        "wma",
+        "aiff",
+        "aif",
+        "opus",
+        "oga",
+        "weba",
     },
     CATEGORY_DOCUMENTS: {
-        "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
-        "txt", "rtf", "odt", "ods", "odp", "csv", "md", "tex",
+        "pdf",
+        "doc",
+        "docx",
+        "xls",
+        "xlsx",
+        "ppt",
+        "pptx",
+        "txt",
+        "rtf",
+        "odt",
+        "ods",
+        "odp",
+        "csv",
+        "md",
+        "tex",
     },
     CATEGORY_ARCHIVES: {
-        "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "zst",
-        "iso", "dmg",
+        "zip",
+        "rar",
+        "7z",
+        "tar",
+        "gz",
+        "bz2",
+        "xz",
+        "zst",
+        "iso",
+        "dmg",
     },
 }
 
@@ -75,8 +132,11 @@ def get_category_label(category: str) -> str:
 def list_categories() -> List[str]:
     """Return category keys for UI (e.g. dropdown). Order: All, then the rest."""
     return [CATEGORY_ALL] + [
-        CATEGORY_IMAGES, CATEGORY_VIDEOS, CATEGORY_AUDIO,
-        CATEGORY_DOCUMENTS, CATEGORY_ARCHIVES,
+        CATEGORY_IMAGES,
+        CATEGORY_VIDEOS,
+        CATEGORY_AUDIO,
+        CATEGORY_DOCUMENTS,
+        CATEGORY_ARCHIVES,
     ]
 
 

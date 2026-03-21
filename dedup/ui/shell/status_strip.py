@@ -5,14 +5,13 @@ Shows: Session | Phase | Engine Health | Checkpoint | Workers | Warnings | Inten
 Intent reflects store.scan.last_intent (idle | accepted | failed | completed).
 Color rules: green=safe, amber=warning, red=failure
 """
+
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk
-from typing import Optional
 
+from ..theme.design_system import SPACING, font_tuple
 from ..theme.theme_manager import get_theme_manager
-from ..theme.design_system import font_tuple, SPACING
 from ..utils.icons import IC
 
 
@@ -38,7 +37,7 @@ class StatusStrip(tk.Frame):
         row.pack(fill="both", expand=True, padx=SPACING["md"])
         self._row = row
 
-        def _item(icon: str, var: tk.StringVar, fg_key: str = "text_secondary"):
+        def _item(icon: str, var: tk.StringVar):
             cell = tk.Frame(row)
             cell.pack(side="left", padx=(0, SPACING["lg"]))
             tk.Label(cell, text=icon, font=font_tuple("strip")).pack(side="left", padx=(0, SPACING["xs"]))
@@ -46,26 +45,26 @@ class StatusStrip(tk.Frame):
             self._lbl.pack(side="left")
             return cell, self._lbl
 
-        self._session_var   = tk.StringVar(value="Session: —")
-        self._phase_var     = tk.StringVar(value="Phase: Idle")
-        self._engine_var    = tk.StringVar(value="Engine: Healthy")
-        self._ckpt_var      = tk.StringVar(value="Checkpoint: —")
-        self._workers_var   = tk.StringVar(value="Workers: 0")
-        self._warnings_var  = tk.StringVar(value="Warnings: 0")
-        self._storage_var   = tk.StringVar(value="")
-        self._intent_var    = tk.StringVar(value="Intent: idle")
+        self._session_var = tk.StringVar(value="Session: —")
+        self._phase_var = tk.StringVar(value="Phase: Idle")
+        self._engine_var = tk.StringVar(value="Engine: Healthy")
+        self._ckpt_var = tk.StringVar(value="Checkpoint: —")
+        self._workers_var = tk.StringVar(value="Workers: 0")
+        self._warnings_var = tk.StringVar(value="Warnings: 0")
+        self._storage_var = tk.StringVar(value="")
+        self._intent_var = tk.StringVar(value="Intent: idle")
 
         self._cells = {}
         self._labels = {}
         specs = [
-            ("session",  IC.CHECKPOINT, self._session_var),
-            ("phase",    IC.RUNNING,    self._phase_var),
-            ("engine",   IC.SHIELD,     self._engine_var),
-            ("ckpt",     IC.CHECKPOINT, self._ckpt_var),
-            ("workers",  IC.WORKERS,    self._workers_var),
-            ("warnings", IC.WARN,       self._warnings_var),
-            ("storage",  IC.SCHEMA,     self._storage_var),
-            ("intent",   IC.INFO,       self._intent_var),
+            ("session", IC.CHECKPOINT, self._session_var),
+            ("phase", IC.RUNNING, self._phase_var),
+            ("engine", IC.SHIELD, self._engine_var),
+            ("ckpt", IC.CHECKPOINT, self._ckpt_var),
+            ("workers", IC.WORKERS, self._workers_var),
+            ("warnings", IC.WARN, self._warnings_var),
+            ("storage", IC.SCHEMA, self._storage_var),
+            ("intent", IC.INFO, self._intent_var),
         ]
         for key, icon, var in specs:
             cell, lbl = _item(icon, var)
@@ -75,9 +74,16 @@ class StatusStrip(tk.Frame):
         # Right spacer
         tk.Frame(row).pack(side="left", fill="x", expand=True)
 
-    def update_session(self, session_id: str, phase: str, engine_health: str = "Healthy",
-                       checkpoint_ts: str = "—", workers: int = 0, warnings: int = 0,
-                       storage_mode: str = ""):
+    def update_session(
+        self,
+        session_id: str,
+        phase: str,
+        engine_health: str = "Healthy",
+        checkpoint_ts: str = "—",
+        workers: int = 0,
+        warnings: int = 0,
+        storage_mode: str = "",
+    ):
         t = self._tm.tokens
         short = (session_id[:10] + "…") if len(session_id) > 10 else (session_id or "—")
         self._session_var.set(f"Session: {short}")
@@ -89,8 +95,11 @@ class StatusStrip(tk.Frame):
         self._storage_var.set(storage_mode)
 
         # Color the engine health label
-        eng_fg = t["success"] if engine_health == "Healthy" else (
-            t["warning"] if engine_health == "Warning" else t["danger"])
+        eng_fg = (
+            t["success"]
+            if engine_health == "Healthy"
+            else (t["warning"] if engine_health == "Warning" else t["danger"])
+        )
         self._labels["engine"].configure(foreground=eng_fg)
 
         # Color warnings
@@ -102,8 +111,10 @@ class StatusStrip(tk.Frame):
         Subscribe to ProjectionHub session projections.
         Drives the status strip from the canonical SessionProjection.
         """
+
         def _on_session(proj) -> None:
             import time as _t
+
             ts = _t.strftime("%H:%M:%S")
             self.update_session(
                 session_id=proj.session_id,
@@ -114,6 +125,7 @@ class StatusStrip(tk.Frame):
                 warnings=proj.warnings_count,
                 storage_mode=f"schema v{proj.schema_version}" if proj.schema_version else "",
             )
+
         hub.subscribe("session", _on_session)
 
     def subscribe_to_store(self, store) -> None:
@@ -121,6 +133,7 @@ class StatusStrip(tk.Frame):
         Subscribe to UIStateStore to show scan intent lifecycle.
         Safe if store or store.scan.last_intent is absent/None — shows "Intent: idle".
         """
+
         def _on_state(state) -> None:
             scan = getattr(state, "scan", None)
             if scan is None:

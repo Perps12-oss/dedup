@@ -3,6 +3,7 @@ Central registry for global keyboard shortcuts (descriptions + bind_all).
 
 Review-specific shortcuts remain on ReviewPage; this covers shell-wide navigation.
 """
+
 from __future__ import annotations
 
 import tkinter as tk

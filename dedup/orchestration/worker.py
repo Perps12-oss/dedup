@@ -10,16 +10,17 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable, Optional, Dict, Any
+from typing import Any, Callable, Dict, Optional
 
 from ..engine.models import ScanConfig, ScanProgress, ScanResult
-from ..engine.pipeline import ScanPipeline, ResumableScanPipeline
+from ..engine.pipeline import ResumableScanPipeline, ScanPipeline
 from .events import EventBus, ScanEvent, ScanEventType, get_event_bus
 
 
 @dataclass
 class ScanWorkerCallbacks:
     """Callbacks for scan progress."""
+
     on_progress: Optional[Callable[[ScanProgress], None]] = None
     on_complete: Optional[Callable[[ScanResult], None]] = None
     on_error: Optional[Callable[[str], None]] = None
@@ -42,17 +43,17 @@ class CancellationToken:
 class ScanWorker:
     """
     Background worker for scan execution.
-    
+
     Usage:
         worker = ScanWorker(config)
         worker.callbacks.on_progress = lambda p: print(f"{p.percent}%")
         worker.start()
-        
+
         # Later...
         worker.cancel()
         worker.join()
     """
-    
+
     def __init__(
         self,
         config: ScanConfig,
@@ -79,40 +80,39 @@ class ScanWorker:
         self._cancelled = False
         self._lock = threading.Lock()
         self.cancellation_token = CancellationToken()
-    
+
     @property
     def is_running(self) -> bool:
         """Check if scan is running."""
         return self._thread is not None and self._thread.is_alive()
-    
+
     @property
     def scan_id(self) -> Optional[str]:
         """Get the scan ID if started."""
         return self._pipeline.scan_id if self._pipeline else None
-    
+
     def start(self) -> str:
         """
         Start the scan in a background thread.
-        
+
         Returns:
             Scan ID
         """
         with self._lock:
             if self.is_running:
                 raise RuntimeError("Scan already running")
-            
+
             self._cancelled = False
             self._result = None
             self._error = None
 
             # Use resumable pipeline when checkpoint_dir is set (save checkpoint on cancel)
             from pathlib import Path
+
             if self._checkpoint_dir:
                 cp_path = Path(self._checkpoint_dir)
                 if self._resume_scan_id:
-                    resume_config = ResumableScanPipeline.load_checkpoint_config(
-                        cp_path, self._resume_scan_id
-                    )
+                    resume_config = ResumableScanPipeline.load_checkpoint_config(cp_path, self._resume_scan_id)
                     if resume_config is None:
                         raise ValueError(f"Checkpoint not found for scan {self._resume_scan_id}")
                     self._pipeline = ResumableScanPipeline(
@@ -139,24 +139,28 @@ class ScanWorker:
                     hash_cache_setter=self._hash_cache_setter,
                 )
             scan_id = self._pipeline.scan_id
-            
+
             # Start thread
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
-            
-            # Publish event
-            self.event_bus.publish(ScanEvent(
-                event_type=ScanEventType.SESSION_STARTED,
-                scan_id=scan_id,
-            ))
 
-            self.event_bus.publish(ScanEvent(
-                event_type=ScanEventType.SCAN_STARTED,
-                scan_id=scan_id,
-            ))
-            
+            # Publish event
+            self.event_bus.publish(
+                ScanEvent(
+                    event_type=ScanEventType.SESSION_STARTED,
+                    scan_id=scan_id,
+                )
+            )
+
+            self.event_bus.publish(
+                ScanEvent(
+                    event_type=ScanEventType.SCAN_STARTED,
+                    scan_id=scan_id,
+                )
+            )
+
             return scan_id
-    
+
     def _run(self):
         """Internal run method (executed in background thread)."""
         try:
@@ -165,61 +169,73 @@ class ScanWorker:
             def on_progress(progress: ScanProgress):
                 # Throttle progress updates (max 10 per second)
                 current_time = time.time()
-                if not hasattr(self, '_last_progress_time'):
+                if not hasattr(self, "_last_progress_time"):
                     self._last_progress_time = 0
-                
+
                 if current_time - self._last_progress_time >= 0.1:
                     self._last_progress_time = current_time
                     if progress.phase != self._last_phase:
                         if self._last_phase is not None:
-                            self.event_bus.publish(ScanEvent(
-                                event_type=ScanEventType.PHASE_COMPLETED,
-                                scan_id=progress.scan_id,
-                                payload={"phase": self._last_phase},
-                            ))
+                            self.event_bus.publish(
+                                ScanEvent(
+                                    event_type=ScanEventType.PHASE_COMPLETED,
+                                    scan_id=progress.scan_id,
+                                    payload={"phase": self._last_phase},
+                                )
+                            )
                         self._last_phase = progress.phase
-                        self.event_bus.publish(ScanEvent(
-                            event_type=ScanEventType.PHASE_STARTED,
-                            scan_id=progress.scan_id,
-                            payload={"phase": progress.phase, "description": progress.phase_description},
-                        ))
-                    
+                        self.event_bus.publish(
+                            ScanEvent(
+                                event_type=ScanEventType.PHASE_STARTED,
+                                scan_id=progress.scan_id,
+                                payload={"phase": progress.phase, "description": progress.phase_description},
+                            )
+                        )
+
                     # Call user callback
                     if self.callbacks.on_progress:
                         try:
                             self.callbacks.on_progress(progress)
                         except Exception as e:
                             import logging
+
                             logging.getLogger(__name__).warning("Progress callback failed: %s", e)
                             try:
-                                from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
+                                from ..infrastructure.diagnostics import CATEGORY_CALLBACK, get_diagnostics_recorder
+
                                 get_diagnostics_recorder().record(CATEGORY_CALLBACK, "Progress callback failed", str(e))
                             except Exception:
                                 pass
-                    
+
                     # Publish event
-                    self.event_bus.publish(ScanEvent(
-                        event_type=ScanEventType.SCAN_PROGRESS,
-                        scan_id=progress.scan_id,
-                        payload=progress.to_dict(),
-                    ))
-                    self.event_bus.publish(ScanEvent(
-                        event_type=ScanEventType.PHASE_PROGRESS,
-                        scan_id=progress.scan_id,
-                        payload=progress.to_dict(),
-                    ))
-                    self.event_bus.publish(ScanEvent(
-                        event_type=ScanEventType.PHASE_CHECKPOINTED,
-                        scan_id=progress.scan_id,
-                        payload={"phase": progress.phase, "files_found": progress.files_found},
-                    ))
-            
+                    self.event_bus.publish(
+                        ScanEvent(
+                            event_type=ScanEventType.SCAN_PROGRESS,
+                            scan_id=progress.scan_id,
+                            payload=progress.to_dict(),
+                        )
+                    )
+                    self.event_bus.publish(
+                        ScanEvent(
+                            event_type=ScanEventType.PHASE_PROGRESS,
+                            scan_id=progress.scan_id,
+                            payload=progress.to_dict(),
+                        )
+                    )
+                    self.event_bus.publish(
+                        ScanEvent(
+                            event_type=ScanEventType.PHASE_CHECKPOINTED,
+                            scan_id=progress.scan_id,
+                            payload={"phase": progress.phase, "files_found": progress.files_found},
+                        )
+                    )
+
             # Run the scan
             self._result = self._pipeline.run(
                 progress_cb=on_progress,
                 event_bus=self.event_bus,
             )
-            
+
             # Check if cancelled
             if self._cancelled:
                 if self.callbacks.on_cancel:
@@ -227,22 +243,28 @@ class ScanWorker:
                         self.callbacks.on_cancel()
                     except Exception as e:
                         import logging
+
                         logging.getLogger(__name__).warning("Cancel callback failed: %s", e)
                         try:
-                            from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
+                            from ..infrastructure.diagnostics import CATEGORY_CALLBACK, get_diagnostics_recorder
+
                             get_diagnostics_recorder().record(CATEGORY_CALLBACK, "Cancel callback failed", str(e))
                         except Exception:
                             pass
-                
-                self.event_bus.publish(ScanEvent(
-                    event_type=ScanEventType.SESSION_CANCELLED,
-                    scan_id=self._pipeline.scan_id,
-                ))
 
-                self.event_bus.publish(ScanEvent(
-                    event_type=ScanEventType.SCAN_CANCELLED,
-                    scan_id=self._pipeline.scan_id,
-                ))
+                self.event_bus.publish(
+                    ScanEvent(
+                        event_type=ScanEventType.SESSION_CANCELLED,
+                        scan_id=self._pipeline.scan_id,
+                    )
+                )
+
+                self.event_bus.publish(
+                    ScanEvent(
+                        event_type=ScanEventType.SCAN_CANCELLED,
+                        scan_id=self._pipeline.scan_id,
+                    )
+                )
             else:
                 # Success
                 if self.callbacks.on_complete:
@@ -250,52 +272,64 @@ class ScanWorker:
                         self.callbacks.on_complete(self._result)
                     except Exception as e:
                         import logging
+
                         logging.getLogger(__name__).warning("Complete callback failed: %s", e)
                         try:
-                            from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
+                            from ..infrastructure.diagnostics import CATEGORY_CALLBACK, get_diagnostics_recorder
+
                             get_diagnostics_recorder().record(CATEGORY_CALLBACK, "Complete callback failed", str(e))
                         except Exception:
                             pass
-                
-                self.event_bus.publish(ScanEvent(
-                    event_type=ScanEventType.SESSION_COMPLETED,
-                    scan_id=self._pipeline.scan_id,
-                    payload={"result": self._result.to_dict()},
-                ))
 
-                self.event_bus.publish(ScanEvent(
-                    event_type=ScanEventType.SCAN_COMPLETED,
-                    scan_id=self._pipeline.scan_id,
-                    payload={"result": self._result.to_dict()},
-                ))
-        
+                self.event_bus.publish(
+                    ScanEvent(
+                        event_type=ScanEventType.SESSION_COMPLETED,
+                        scan_id=self._pipeline.scan_id,
+                        payload={"result": self._result.to_dict()},
+                    )
+                )
+
+                self.event_bus.publish(
+                    ScanEvent(
+                        event_type=ScanEventType.SCAN_COMPLETED,
+                        scan_id=self._pipeline.scan_id,
+                        payload={"result": self._result.to_dict()},
+                    )
+                )
+
         except Exception as e:
             self._error = str(e)
-            
+
             if self.callbacks.on_error:
                 try:
                     self.callbacks.on_error(self._error)
                 except Exception as e:
                     import logging
+
                     logging.getLogger(__name__).warning("Error callback failed: %s", e)
                     try:
-                        from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
+                        from ..infrastructure.diagnostics import CATEGORY_CALLBACK, get_diagnostics_recorder
+
                         get_diagnostics_recorder().record(CATEGORY_CALLBACK, "Error callback failed", str(e))
                     except Exception:
                         pass
-            
-            self.event_bus.publish(ScanEvent(
-                event_type=ScanEventType.SESSION_FAILED,
-                scan_id=self._pipeline.scan_id if self._pipeline else "unknown",
-                payload={"error": self._error},
-            ))
 
-            self.event_bus.publish(ScanEvent(
-                event_type=ScanEventType.SCAN_ERROR,
-                scan_id=self._pipeline.scan_id if self._pipeline else "unknown",
-                payload={"error": self._error},
-            ))
-    
+            self.event_bus.publish(
+                ScanEvent(
+                    event_type=ScanEventType.SESSION_FAILED,
+                    scan_id=self._pipeline.scan_id if self._pipeline else "unknown",
+                    payload={"error": self._error},
+                )
+            )
+
+            self.event_bus.publish(
+                ScanEvent(
+                    event_type=ScanEventType.SCAN_ERROR,
+                    scan_id=self._pipeline.scan_id if self._pipeline else "unknown",
+                    payload={"error": self._error},
+                )
+            )
+
     def cancel(self):
         """Request cancellation of the scan."""
         with self._lock:
@@ -303,14 +337,14 @@ class ScanWorker:
             self.cancellation_token.cancel()
             if self._pipeline:
                 self._pipeline.cancel()
-    
+
     def join(self, timeout: Optional[float] = None) -> bool:
         """
         Wait for the scan to complete.
-        
+
         Args:
             timeout: Maximum time to wait (None = forever)
-        
+
         Returns:
             True if scan completed, False if timed out
         """
@@ -318,11 +352,11 @@ class ScanWorker:
             self._thread.join(timeout)
             return not self._thread.is_alive()
         return True
-    
+
     def get_result(self) -> Optional[ScanResult]:
         """Get the scan result (if completed)."""
         return self._result
-    
+
     def get_error(self) -> Optional[str]:
         """Get error message (if failed)."""
         return self._error

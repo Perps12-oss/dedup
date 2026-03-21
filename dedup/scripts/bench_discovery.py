@@ -19,6 +19,7 @@ Suggested benchmark sequence:
     # SSD comparison (copy Takeout to local SSD first)
     python -m dedup.scripts.bench_discovery "C:\\temp\\Takeout_copy" --files 20000 --runs 3
 """
+
 from __future__ import annotations
 
 import argparse
@@ -32,7 +33,7 @@ _root = Path(__file__).resolve().parent.parent
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
-from dedup.engine.discovery import FileDiscovery, DiscoveryOptions
+from dedup.engine.discovery import DiscoveryOptions, FileDiscovery
 from dedup.engine.models import ScanConfig
 
 
@@ -66,9 +67,7 @@ def run_once(
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(
-        description="Benchmark file discovery throughput."
-    )
+    ap = argparse.ArgumentParser(description="Benchmark file discovery throughput.")
     ap.add_argument("path", type=Path, help="Root path to scan")
     ap.add_argument("--files", type=int, default=None, help="Stop after N files")
     ap.add_argument("--runs", type=int, default=3, help="Number of runs for mean/stdev")

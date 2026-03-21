@@ -1,10 +1,11 @@
 """SectionCard — a titled panel card used throughout the app."""
+
 from __future__ import annotations
+
 import tkinter as tk
 from tkinter import ttk
-from typing import Optional
 
-from ..theme.design_system import font_tuple, SPACING
+from ..theme.design_system import SPACING, font_tuple
 
 
 class SectionCard(ttk.Frame):
@@ -13,8 +14,7 @@ class SectionCard(ttk.Frame):
     Content is placed inside `self.body`.
     """
 
-    def __init__(self, parent, title: str = "", badge: str = "",
-                 style: str = "Panel.TFrame", **kwargs):
+    def __init__(self, parent, title: str = "", badge: str = "", style: str = "Panel.TFrame", **kwargs):
         super().__init__(parent, style=style, **kwargs)
         self.columnconfigure(0, weight=1)
 
@@ -25,15 +25,15 @@ class SectionCard(ttk.Frame):
 
         if title:
             self._title_var = tk.StringVar(value=title)
-            ttk.Label(header, textvariable=self._title_var,
-                      style="Panel.Secondary.TLabel",
-                      font=font_tuple("card_title")).grid(row=0, column=0, sticky="w")
+            ttk.Label(
+                header, textvariable=self._title_var, style="Panel.Secondary.TLabel", font=font_tuple("card_title")
+            ).grid(row=0, column=0, sticky="w")
 
         if badge:
             self._badge_var = tk.StringVar(value=badge)
-            ttk.Label(header, textvariable=self._badge_var,
-                      style="Panel.Muted.TLabel",
-                      font=font_tuple("caption")).grid(row=0, column=1, sticky="e", padx=(SPACING["md"], 0))
+            ttk.Label(
+                header, textvariable=self._badge_var, style="Panel.Muted.TLabel", font=font_tuple("caption")
+            ).grid(row=0, column=1, sticky="e", padx=(SPACING["md"], 0))
         else:
             self._badge_var = None
 

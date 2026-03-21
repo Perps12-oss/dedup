@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import pytest
 from dedup.engine.media_types import (
-    get_extensions_for_category,
-    get_category_label,
-    list_categories,
-    is_image_extension,
     CATEGORY_ALL,
     CATEGORY_IMAGES,
+    get_category_label,
+    get_extensions_for_category,
+    is_image_extension,
+    list_categories,
 )
 
 

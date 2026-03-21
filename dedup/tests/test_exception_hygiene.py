@@ -6,20 +6,17 @@ Tests for exception hygiene: diagnostics recording, logging, and failure semanti
 - save_scan failure is logged and recorded.
 - Diagnostics recorder is thread-safe and bounded.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from dedup.infrastructure.diagnostics import (
-    DiagnosticsRecorder,
-    DiagnosticEntry,
-    get_diagnostics_recorder,
+    CATEGORY_CALLBACK,
     CATEGORY_CHECKPOINT,
     CATEGORY_REPOSITORY,
-    CATEGORY_CALLBACK,
-    CATEGORY_HUB_DELIVERY,
+    DiagnosticsRecorder,
+    get_diagnostics_recorder,
 )
 
 
@@ -77,10 +74,11 @@ class TestCoordinatorSaveScanFailure:
     """When persistence.save_scan raises, coordinator records and logs."""
 
     def test_save_scan_failure_recorded(self):
-        from dedup.orchestration.coordinator import ScanCoordinator
-        from dedup.engine.models import ScanResult, ScanConfig
-        from pathlib import Path
         from datetime import datetime
+        from pathlib import Path
+
+        from dedup.engine.models import ScanConfig, ScanResult
+        from dedup.orchestration.coordinator import ScanCoordinator
 
         rec = get_diagnostics_recorder()
         rec.clear()
@@ -115,8 +113,10 @@ class TestEventBusSubscriberFailure:
         rec.clear()
 
         bus = EventBus()
+
         def bad_subscriber(event):
             raise ValueError("subscriber broken")
+
         bus.subscribe(ScanEventType.SCAN_PROGRESS, bad_subscriber)
         ev = ScanEvent(ScanEventType.SCAN_PROGRESS, "sid", {})
         bus.publish(ev)

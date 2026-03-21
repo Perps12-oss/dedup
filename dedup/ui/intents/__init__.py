@@ -6,10 +6,10 @@ Pages emit intents; controller performs the action and updates state.
 """
 
 from .review_intents import (
-    SetKeep,
     ClearKeep,
-    PreviewDeletion,
     ExecuteDeletion,
+    PreviewDeletion,
+    SetKeep,
 )
 
 __all__ = [

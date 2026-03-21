@@ -1,36 +1,37 @@
 """Badge and StatusBadge label components."""
+
 from __future__ import annotations
+
 import tkinter as tk
 from tkinter import ttk
-from typing import Optional
 
-from ..theme.theme_manager import get_theme_manager
 from ..theme.design_system import font_tuple
+from ..theme.theme_manager import get_theme_manager
 
 BADGE_STYLES = {
     "success": "Panel.Success.TLabel",
     "warning": "Panel.Warning.TLabel",
-    "danger":  "Panel.Danger.TLabel",
-    "info":    "Panel.Accent.TLabel",
-    "muted":   "Panel.Muted.TLabel",
+    "danger": "Panel.Danger.TLabel",
+    "info": "Panel.Accent.TLabel",
+    "muted": "Panel.Muted.TLabel",
     "default": "Panel.Secondary.TLabel",
 }
 
 _VARIANT_TOKEN_MAP = {
     "success": "success",
     "warning": "warning",
-    "danger":  "danger",
-    "info":    "accent_primary",
-    "muted":   "text_muted",
+    "danger": "danger",
+    "info": "accent_primary",
+    "muted": "text_muted",
 }
 
 
 class Badge(ttk.Label):
     """Inline text badge — just a styled label."""
+
     def __init__(self, parent, text: str = "", variant: str = "default", **kwargs):
         style = BADGE_STYLES.get(variant, BADGE_STYLES["default"])
-        super().__init__(parent, text=text, style=style,
-                         font=font_tuple("data_value"), **kwargs)
+        super().__init__(parent, text=text, style=style, font=font_tuple("data_value"), **kwargs)
         self._var = None
 
     def set_text(self, text: str):
@@ -40,18 +41,14 @@ class Badge(ttk.Label):
 class StatusBadge(ttk.Frame):
     """Dot + text badge for status display."""
 
-    def __init__(self, parent, text: str = "", variant: str = "muted",
-                 style: str = "Panel.TFrame", **kwargs):
+    def __init__(self, parent, text: str = "", variant: str = "muted", style: str = "Panel.TFrame", **kwargs):
         super().__init__(parent, style=style, **kwargs)
-        self._dot_canvas = tk.Canvas(self, width=8, height=8,
-                                     highlightthickness=0, borderwidth=0)
+        self._dot_canvas = tk.Canvas(self, width=8, height=8, highlightthickness=0, borderwidth=0)
         self._dot_canvas.pack(side="left", padx=(0, 4))
         self._dot_id = None
         self._text_var = tk.StringVar(value=text)
         label_style = BADGE_STYLES.get(variant, "Panel.Secondary.TLabel")
-        ttk.Label(self, textvariable=self._text_var,
-                  style=label_style,
-                  font=font_tuple("data_value")).pack(side="left")
+        ttk.Label(self, textvariable=self._text_var, style=label_style, font=font_tuple("data_value")).pack(side="left")
         self.set(text, variant)
 
     def _get_bg(self) -> str:

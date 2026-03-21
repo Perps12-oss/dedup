@@ -12,12 +12,12 @@ import logging
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from ..projections.session_projection import SessionProjection, EMPTY_SESSION
+from ..projections.compatibility_projection import EMPTY_COMPAT, CompatibilityProjection
+from ..projections.deletion_projection import EMPTY_DELETION, DeletionReadinessProjection
+from ..projections.history_projection import EMPTY_HISTORY, HistoryProjection
+from ..projections.metrics_projection import EMPTY_METRICS, MetricsProjection
 from ..projections.phase_projection import PhaseProjection, initial_phase_map
-from ..projections.metrics_projection import MetricsProjection, EMPTY_METRICS
-from ..projections.compatibility_projection import CompatibilityProjection, EMPTY_COMPAT
-from ..projections.deletion_projection import DeletionReadinessProjection, EMPTY_DELETION
-from ..projections.history_projection import HistoryProjection, EMPTY_HISTORY
+from ..projections.session_projection import EMPTY_SESSION, SessionProjection
 
 _log = logging.getLogger(__name__)
 
@@ -28,6 +28,7 @@ class IntentLifecycle:
     Non-optimistic intent lifecycle signal for scan (and later review) actions.
     Shown in UI so users see accepted/failed/completed without fake optimistic state.
     """
+
     status: str  # "idle" | "accepted" | "failed" | "completed"
     intent_type: str = ""
     message: str = ""
@@ -43,9 +44,7 @@ class ProjectedScanState:
     compat: CompatibilityProjection = EMPTY_COMPAT
     events_log: List[str] = field(default_factory=list)
     terminal: Optional[SessionProjection] = None
-    last_intent: IntentLifecycle = field(
-        default_factory=lambda: IntentLifecycle(status="idle")
-    )
+    last_intent: IntentLifecycle = field(default_factory=lambda: IntentLifecycle(status="idle"))
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +57,7 @@ class ProjectedScanState:
 @dataclass(frozen=True)
 class ReviewIndexState:
     """Group navigator / list position and metadata."""
+
     current_group_index: int = 0
     groups_total: int = 0
     current_group_id: Optional[str] = None
@@ -67,6 +67,7 @@ class ReviewIndexState:
 @dataclass(frozen=True)
 class ReviewSelectionState:
     """Keep selections and selected group; clear/override state."""
+
     keep_selections: Dict[str, str] = field(default_factory=dict)  # group_id -> keep path
     selected_group_id: Optional[str] = None
 
@@ -74,6 +75,7 @@ class ReviewSelectionState:
 @dataclass(frozen=True)
 class ReviewPlanState:
     """Deletion plan summary, safety counts, reclaimable bytes, risk flags."""
+
     deletion_readiness: DeletionReadinessProjection = EMPTY_DELETION
     reclaimable_bytes: int = 0
     risk_flags: int = 0
@@ -83,6 +85,7 @@ class ReviewPlanState:
 @dataclass(frozen=True)
 class ReviewPreviewState:
     """Preview/compare targets and view-mode-specific preview metadata."""
+
     preview_target_path: Optional[str] = None
     compare_target_path: Optional[str] = None
     view_mode: str = "table"  # "table" | "gallery" | "compare"
@@ -92,6 +95,7 @@ class ReviewPreviewState:
 @dataclass(frozen=True)
 class ReviewState:
     """All four review slices. Populated by adapter/page when review is migrated."""
+
     index: ReviewIndexState = field(default_factory=ReviewIndexState)
     selection: ReviewSelectionState = field(default_factory=ReviewSelectionState)
     plan: ReviewPlanState = field(default_factory=ReviewPlanState)
@@ -103,9 +107,11 @@ class ReviewState:
 # Updated by app when navigating to Mission or after scan complete.
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class LastScanSummaryState:
     """Last scan summary for Mission page."""
+
     files_scanned: int = 0
     duplicate_groups: int = 0
     reclaimable_bytes: int = 0
@@ -115,6 +121,7 @@ class LastScanSummaryState:
 @dataclass(frozen=True)
 class MissionState:
     """Mission page slice: coordinator-sourced summary data."""
+
     last_scan: Optional[LastScanSummaryState] = None
     resumable_scan_ids: Tuple[str, ...] = ()
     recent_sessions: Tuple[Dict[str, Any], ...] = ()

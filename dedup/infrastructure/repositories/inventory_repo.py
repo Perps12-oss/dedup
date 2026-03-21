@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import sqlite3
 import os
+import sqlite3
 from typing import Dict, Iterable, Iterator, List, Optional
 
 from ...engine.models import FileMetadata, FileRecord
@@ -175,9 +175,7 @@ class InventoryRepository:
             inode=int(row["inode"]) if row["inode"] is not None else None,
         )
 
-    def load_metadata_for_file_ids(
-        self, session_id: str, file_ids: List[int]
-    ) -> List[FileMetadata]:
+    def load_metadata_for_file_ids(self, session_id: str, file_ids: List[int]) -> List[FileMetadata]:
         """Load FileMetadata for given file_ids in one query. Order not preserved."""
         if not file_ids:
             return []

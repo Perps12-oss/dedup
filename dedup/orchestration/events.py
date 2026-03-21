@@ -7,10 +7,10 @@ to receive scan updates without direct coupling.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Callable, Dict, List, Any, Optional
-import threading
+from typing import Any, Callable, Dict, List, Optional
 
 
 class ScanEventType(Enum):
@@ -33,6 +33,7 @@ class ScanEventType(Enum):
     Rule: no widget should subscribe to raw engine events directly.
     Use ProjectionHub.subscribe() instead.
     """
+
     SESSION_STARTED = auto()
     SESSION_COMPLETED = auto()
     SESSION_CANCELLED = auto()
@@ -58,68 +59,61 @@ class ScanEventType(Enum):
     PHASE_REBUILD_STARTED = auto()
 
     # ---- UI projection event labels (synthesised, never by engine) ----
-    UI_SESSION_SNAPSHOT      = auto()
-    UI_PHASE_SNAPSHOT        = auto()
-    UI_METRICS_SNAPSHOT      = auto()
-    UI_RESUME_DECISION       = auto()
-    UI_REVIEW_STATE_CHANGED  = auto()
+    UI_SESSION_SNAPSHOT = auto()
+    UI_PHASE_SNAPSHOT = auto()
+    UI_METRICS_SNAPSHOT = auto()
+    UI_RESUME_DECISION = auto()
+    UI_REVIEW_STATE_CHANGED = auto()
     UI_DELETION_PLAN_CHANGED = auto()
-    UI_INTEGRITY_WARNING     = auto()
-    UI_SESSION_TERMINAL      = auto()
+    UI_INTEGRITY_WARNING = auto()
+    UI_SESSION_TERMINAL = auto()
 
 
 @dataclass
 class ScanEvent:
     """A scan event with payload."""
+
     event_type: ScanEventType
     scan_id: str
     payload: Dict[str, Any] = field(default_factory=dict)
-    timestamp: float = field(default_factory=lambda: __import__('time').time())
+    timestamp: float = field(default_factory=lambda: __import__("time").time())
 
 
 class EventBus:
     """
     Simple event bus for decoupled communication.
-    
+
     Usage:
         bus = EventBus()
-        
+
         def on_progress(event: ScanEvent):
             print(f"Progress: {event.payload}")
-        
+
         bus.subscribe(ScanEventType.SCAN_PROGRESS, on_progress)
         bus.publish(ScanEvent(ScanEventType.SCAN_PROGRESS, "scan-123", {"percent": 50}))
     """
-    
+
     def __init__(self):
         self._subscribers: Dict[ScanEventType, List[Callable[[ScanEvent], None]]] = {}
         self._lock = threading.Lock()
-    
-    def subscribe(
-        self,
-        event_type: ScanEventType,
-        callback: Callable[[ScanEvent], None]
-    ) -> Callable[[], None]:
+
+    def subscribe(self, event_type: ScanEventType, callback: Callable[[ScanEvent], None]) -> Callable[[], None]:
         """
         Subscribe to an event type.
-        
+
         Returns an unsubscribe function.
         """
         with self._lock:
             if event_type not in self._subscribers:
                 self._subscribers[event_type] = []
             self._subscribers[event_type].append(callback)
-        
+
         def unsubscribe():
             self.unsubscribe(event_type, callback)
-        
+
         return unsubscribe
-    
-    def unsubscribe(
-        self,
-        event_type: ScanEventType,
-        callback: Callable[[ScanEvent], None]
-    ):
+
+    def unsubscribe(self, event_type: ScanEventType, callback: Callable[[ScanEvent], None]):
         """Unsubscribe from an event type."""
         with self._lock:
             if event_type in self._subscribers:
@@ -127,25 +121,28 @@ class EventBus:
                     self._subscribers[event_type].remove(callback)
                 except ValueError:
                     pass
-    
+
     def publish(self, event: ScanEvent):
         """Publish an event to all subscribers."""
         callbacks = []
-        
+
         with self._lock:
             callbacks = self._subscribers.get(event.event_type, []).copy()
-        
+
         for callback in callbacks:
             try:
                 callback(event)
             except Exception as e:
                 import logging
+
                 logging.getLogger(__name__).warning(
                     "Event bus subscriber error (event_type=%s): %s",
-                    getattr(event, "event_type", "?"), e,
+                    getattr(event, "event_type", "?"),
+                    e,
                 )
                 try:
-                    from ..infrastructure.diagnostics import get_diagnostics_recorder, CATEGORY_CALLBACK
+                    from ..infrastructure.diagnostics import CATEGORY_CALLBACK, get_diagnostics_recorder
+
                     get_diagnostics_recorder().record(
                         CATEGORY_CALLBACK,
                         "Event subscriber failed",
@@ -163,7 +160,7 @@ _bus_lock = threading.Lock()
 def get_event_bus() -> EventBus:
     """Get the global event bus."""
     global _global_bus
-    
+
     with _bus_lock:
         if _global_bus is None:
             _global_bus = EventBus()

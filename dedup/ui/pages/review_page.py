@@ -23,31 +23,35 @@ UI Refactor (v2): Spacing, hierarchy, and visual polish pass.
   - Confirmation dialog: table-style summary rows, spacious footer.
   - Quick Look dialog: metadata grid replacing raw Text widget.
 """
-from __future__ import annotations
-import tkinter as tk
-from tkinter import ttk, messagebox
-from pathlib import Path
-from typing import Callable, Optional, List
-from datetime import datetime
 
-from ..controller.review_controller import ReviewController
+from __future__ import annotations
+
+import tkinter as tk
+from datetime import datetime
+from pathlib import Path
+from tkinter import messagebox, ttk
+from typing import Callable, Optional
+
+from ...engine.models import DeletionPlan, DeletionResult, ScanResult
+from ...orchestration.coordinator import ScanCoordinator
 from ..components import (
-    DataTable, SectionCard, SafetyPanel, ProvenanceRibbon,
-    EmptyState, FilterBar, StatusRibbon,
+    DataTable,
+    FilterBar,
+    ProvenanceRibbon,
+    SafetyPanel,
+    SectionCard,
 )
 from ..components.review_workspace import ReviewWorkspaceStack
-from ..viewmodels.review_vm import ReviewVM
-from ..utils.formatting import fmt_bytes, truncate_path
+from ..controller.review_controller import ReviewController
+from ..theme.design_system import font_tuple
+from ..utils.formatting import fmt_bytes
 from ..utils.icons import IC
-from ..theme.design_system import font_tuple, SPACING
-from ...orchestration.coordinator import ScanCoordinator
-from ...engine.models import ScanResult, DuplicateGroup, DeletionPlan, DeletionResult
-from ...engine.thumbnails import generate_thumbnails_async, get_cache_dir
-from ...engine.media_types import is_image_extension
+from ..viewmodels.review_vm import ReviewVM
 
 _THUMB_SIZE = (64, 64)
 # Bounded navigator for scale (Phase 3B): cap visible rows to avoid unbounded Treeview
 REVIEW_NAVIGATOR_MAX_ROWS = 2000
+
 
 # ---------------------------------------------------------------------------
 # Spacing helpers — 8-pt grid
@@ -59,28 +63,31 @@ def _S(n: int) -> int:
 
 
 # Semantic aliases (use these instead of bare integers throughout _build methods)
-_PAD_PAGE   = _S(6)   # 24px  outer page inset
-_PAD_CARD   = _S(4)   # 16px  inside SectionCard / panels
-_GAP_XS     = _S(1)   # 4px
-_GAP_SM     = _S(2)   # 8px
-_GAP_MD     = _S(4)   # 16px
-_GAP_LG     = _S(6)   # 24px
-_GAP_XL     = _S(8)   # 32px
-_BTN_PAD_X  = _S(4)   # 16px horizontal button padding
-_ROW_H      = _S(9)   # 36px  standard interactive row / button height
+_PAD_PAGE = _S(6)  # 24px  outer page inset
+_PAD_CARD = _S(4)  # 16px  inside SectionCard / panels
+_GAP_XS = _S(1)  # 4px
+_GAP_SM = _S(2)  # 8px
+_GAP_MD = _S(4)  # 16px
+_GAP_LG = _S(6)  # 24px
+_GAP_XL = _S(8)  # 32px
+_BTN_PAD_X = _S(4)  # 16px horizontal button padding
+_ROW_H = _S(9)  # 36px  standard interactive row / button height
 
 
 class ReviewPage(ttk.Frame):
     """Review & deletion planning page."""
 
-    def __init__(self, parent,
-                 on_delete_complete: Callable[[DeletionResult], None],
-                 on_new_scan: Optional[Callable[[], None]] = None,
-                 on_view_history: Optional[Callable[[], None]] = None,
-                 review_controller: Optional[ReviewController] = None,
-                 store=None,
-                 coordinator: Optional[ScanCoordinator] = None,
-                 **kwargs):
+    def __init__(
+        self,
+        parent,
+        on_delete_complete: Callable[[DeletionResult], None],
+        on_new_scan: Optional[Callable[[], None]] = None,
+        on_view_history: Optional[Callable[[], None]] = None,
+        review_controller: Optional[ReviewController] = None,
+        store=None,
+        coordinator: Optional[ScanCoordinator] = None,
+        **kwargs,
+    ):
         super().__init__(parent, **kwargs)
         self.coordinator = coordinator  # Optional: only for fallback when no controller
         self.on_delete_complete = on_delete_complete
@@ -145,9 +152,7 @@ class ReviewPage(ttk.Frame):
             font=font_tuple("page_subtitle"),
         ).pack(side="top", anchor="w", pady=(_GAP_XS, 0))
 
-        self._state_hint = tk.StringVar(
-            value="No review data yet. Run a scan, then return here to make decisions."
-        )
+        self._state_hint = tk.StringVar(value="No review data yet. Run a scan, then return here to make decisions.")
         ttk.Label(
             hdr,
             textvariable=self._state_hint,
@@ -158,8 +163,7 @@ class ReviewPage(ttk.Frame):
         # View-mode segmented control (right side, vertically centred in header)
         # Rendered as a framed group of radiobuttons with consistent width.
         self._mode_var = tk.StringVar(value="table")
-        mode_frame = ttk.Frame(hdr, style="Card.TFrame",
-                               padding=(_GAP_XS, _GAP_XS, _GAP_XS, _GAP_XS))
+        mode_frame = ttk.Frame(hdr, style="Card.TFrame", padding=(_GAP_XS, _GAP_XS, _GAP_XS, _GAP_XS))
         mode_frame.grid(row=0, column=2, rowspan=2, sticky="e", padx=(_GAP_MD, 0))
         for label, val in [("⊞ Table", "table"), ("⊟ Gallery", "gallery"), ("⧉ Compare", "compare")]:
             rb = ttk.Radiobutton(
@@ -176,15 +180,16 @@ class ReviewPage(ttk.Frame):
         # Added top gap to lift it off the header.
         self._prov = ProvenanceRibbon(self)
         self._prov.grid(
-            row=1, column=0, sticky="ew",
+            row=1,
+            column=0,
+            sticky="ew",
             padx=_PAD_PAGE,
             pady=(_GAP_XS, _GAP_MD),
         )
 
         # ── 3-pane body ───────────────────────────────────────────────
         body = ttk.Frame(self)
-        body.grid(row=2, column=0, sticky="nsew",
-                  padx=_PAD_PAGE, pady=(0, _PAD_PAGE))
+        body.grid(row=2, column=0, sticky="nsew", padx=_PAD_PAGE, pady=(0, _PAD_PAGE))
         body.rowconfigure(0, weight=1)
         # 25% / 50% / 25% column split
         body.columnconfigure(0, weight=1, minsize=220)
@@ -222,11 +227,11 @@ class ReviewPage(ttk.Frame):
         # ── Zero-state panel ──────────────────────────────────────────
         # Centred card with generous padding and a prominent icon line.
         self._zero_panel = ttk.Frame(
-            self, style="Panel.TFrame",
+            self,
+            style="Panel.TFrame",
             padding=(_PAD_PAGE, _GAP_LG, _PAD_PAGE, _GAP_LG),
         )
-        self._zero_panel.grid(row=3, column=0, sticky="ew",
-                              padx=_PAD_PAGE, pady=(0, _PAD_PAGE))
+        self._zero_panel.grid(row=3, column=0, sticky="ew", padx=_PAD_PAGE, pady=(0, _PAD_PAGE))
         self._zero_panel.columnconfigure(0, weight=1)
 
         # Icon line
@@ -256,31 +261,35 @@ class ReviewPage(ttk.Frame):
         zbtn = ttk.Frame(self._zero_panel, style="Panel.TFrame")
         zbtn.grid(row=3, column=0, sticky="w")
         ttk.Button(
-            zbtn, text="New Scan", style="Accent.TButton",
+            zbtn,
+            text="New Scan",
+            style="Accent.TButton",
             command=self._on_new_scan,
         ).pack(side="left", padx=(0, _GAP_SM))
         ttk.Button(
-            zbtn, text="View History", style="Ghost.TButton",
+            zbtn,
+            text="View History",
+            style="Ghost.TButton",
             command=self._on_view_history,
         ).pack(side="left")
         self._zero_panel.grid_remove()
 
         # Keyboard shortcuts (bindings stored for on_show / on_hide)
-        self._bind_key_next       = lambda e: self._on_key_next_group()
-        self._bind_key_prev       = lambda e: self._on_key_prev_group()
-        self._bind_mode_gallery   = lambda e: self._set_mode_shortcut("gallery")
-        self._bind_mode_table     = lambda e: self._set_mode_shortcut("table")
-        self._bind_mode_compare   = lambda e: self._set_mode_shortcut("compare")
-        self._bind_quick_look     = lambda e: self._quick_look()
-        self._bind_execute        = lambda e: self._on_execute_intent()
-        self._bind_set_keep       = lambda e: self._set_keep_selected()
-        self._bind_clear_keep     = lambda e: self._on_clear_keep()
-        self._bind_preview        = lambda e: self._on_preview_intent()
-        self._bind_undo_hint      = lambda e: self._on_undo_hint()
-        self._bind_apply_smart    = lambda e: self._on_apply_smart_rule_intent()
-        self._bind_compare_prev   = lambda e: self._workspace.compare_prev()
-        self._bind_compare_next   = lambda e: self._workspace.compare_next()
-        self._bind_quick_compare  = lambda e: self._workspace.open_quick_compare_overlay()
+        self._bind_key_next = lambda e: self._on_key_next_group()
+        self._bind_key_prev = lambda e: self._on_key_prev_group()
+        self._bind_mode_gallery = lambda e: self._set_mode_shortcut("gallery")
+        self._bind_mode_table = lambda e: self._set_mode_shortcut("table")
+        self._bind_mode_compare = lambda e: self._set_mode_shortcut("compare")
+        self._bind_quick_look = lambda e: self._quick_look()
+        self._bind_execute = lambda e: self._on_execute_intent()
+        self._bind_set_keep = lambda e: self._set_keep_selected()
+        self._bind_clear_keep = lambda e: self._on_clear_keep()
+        self._bind_preview = lambda e: self._on_preview_intent()
+        self._bind_undo_hint = lambda e: self._on_undo_hint()
+        self._bind_apply_smart = lambda e: self._on_apply_smart_rule_intent()
+        self._bind_compare_prev = lambda e: self._workspace.compare_prev()
+        self._bind_compare_next = lambda e: self._workspace.compare_next()
+        self._bind_quick_compare = lambda e: self._workspace.open_quick_compare_overlay()
 
     # ----------------------------------------------------------------
     # Sub-builders
@@ -296,8 +305,7 @@ class ReviewPage(ttk.Frame):
             filters=[],
             style="Panel.TFrame",
         )
-        self._filter_bar.grid(row=0, column=0, sticky="ew",
-                              pady=(0, _GAP_SM))
+        self._filter_bar.grid(row=0, column=0, sticky="ew", pady=(0, _GAP_SM))
 
         # ── State-filter chips ────────────────────────────────────────
         # Each chip gets equal width; active chip uses "Accent.TButton".
@@ -308,10 +316,10 @@ class ReviewPage(ttk.Frame):
         self._chip_buttons: dict[str, ttk.Button] = {}
         chip_specs = [
             ("unresolved", "Unresolved"),
-            ("ready",      "Ready"),
-            ("warning",    "Warning"),
-            ("skipped",    "Skipped"),
-            ("all",        "All"),
+            ("ready", "Ready"),
+            ("warning", "Warning"),
+            ("skipped", "Skipped"),
+            ("all", "All"),
         ]
         for i, (state_key, label) in enumerate(chip_specs):
             chips.columnconfigure(i, weight=1)
@@ -325,11 +333,13 @@ class ReviewPage(ttk.Frame):
                 command=lambda s=state_key: self._set_state_filter(s),
             )
             btn.grid(
-                row=0, column=i, sticky="ew",
+                row=0,
+                column=i,
+                sticky="ew",
                 padx=(0, _GAP_XS) if i < len(chip_specs) - 1 else 0,
                 ipady=_GAP_XS,
             )
-            self._chip_vars[state_key]   = var
+            self._chip_vars[state_key] = var
             self._chip_buttons[state_key] = btn
 
         # ── Sort row ──────────────────────────────────────────────────
@@ -368,11 +378,11 @@ class ReviewPage(ttk.Frame):
         self._group_table = DataTable(
             body,
             columns=[
-                ("idx",   "#",     32,  "center"),
+                ("idx", "#", 32, "center"),
                 ("state", "State", 120, "w"),
-                ("files", "Files", 40,  "center"),
-                ("size",  "Size",  70,  "e"),
-                ("conf",  "Conf",  40,  "center"),
+                ("files", "Files", 40, "center"),
+                ("size", "Size", 70, "e"),
+                ("conf", "Conf", 40, "center"),
             ],
             height=16,
             on_select=self._on_group_select,
@@ -388,7 +398,8 @@ class ReviewPage(ttk.Frame):
         # Increased padding for breathing room.
         # Two logical columns: left (group id + reason) | right (keep + reclaim + rule).
         band = ttk.Frame(
-            body, style="Panel.TFrame",
+            body,
+            style="Panel.TFrame",
             padding=(_GAP_MD, _GAP_SM, _GAP_MD, _GAP_SM),
         )
         band.grid(row=0, column=0, sticky="ew", pady=(0, _GAP_MD))
@@ -396,10 +407,10 @@ class ReviewPage(ttk.Frame):
         band.columnconfigure(1, weight=0)  # right info block: natural width
 
         self._group_summary_var = tk.StringVar(value="No group selected")
-        self._group_reason_var  = tk.StringVar(value="Reason: —")
-        self._group_keep_var    = tk.StringVar(value="Keep: not selected")
+        self._group_reason_var = tk.StringVar(value="Reason: —")
+        self._group_keep_var = tk.StringVar(value="Keep: not selected")
         self._group_reclaim_var = tk.StringVar(value="Reclaimable: —")
-        self._group_rule_var    = tk.StringVar(value="Rule: off")
+        self._group_rule_var = tk.StringVar(value="Rule: off")
 
         # Left column
         left_info = ttk.Frame(band, style="Panel.TFrame")
@@ -459,15 +470,14 @@ class ReviewPage(ttk.Frame):
             font=font_tuple("data_label"),
         ).grid(row=0, column=0, sticky="w", pady=(0, _GAP_XS))
 
-        self._smart_rule_var   = tk.StringVar(value="newest")
+        self._smart_rule_var = tk.StringVar(value="newest")
         self._smart_rule_combo = ttk.Combobox(
             body,
             textvariable=self._smart_rule_var,
             state="readonly",
             values=["newest", "oldest", "largest", "smallest", "first"],
         )
-        self._smart_rule_combo.grid(row=1, column=0, sticky="ew",
-                                    pady=(0, _GAP_MD))
+        self._smart_rule_combo.grid(row=1, column=0, sticky="ew", pady=(0, _GAP_MD))
 
         # ── Action buttons ────────────────────────────────────────────
         # Both full-width, stacked vertically — more readable than side-by-side
@@ -510,6 +520,7 @@ class ReviewPage(ttk.Frame):
             self._zero_panel.grid_remove()
         if self._store:
             from ..state.store import ReviewSelectionState
+
             self._store.set_review_selection(
                 ReviewSelectionState(
                     keep_selections={},
@@ -532,21 +543,21 @@ class ReviewPage(ttk.Frame):
         )
 
     def on_show(self):
-        self.bind_all("<Control-Right>",      self._bind_key_next,      add="+")
-        self.bind_all("<Control-Left>",       self._bind_key_prev,      add="+")
-        self.bind_all("<Key-g>",              self._bind_mode_gallery,  add="+")
-        self.bind_all("<Key-t>",              self._bind_mode_table,    add="+")
-        self.bind_all("<Key-c>",              self._bind_mode_compare,  add="+")
-        self.bind_all("<space>",              self._bind_quick_look,    add="+")
-        self.bind_all("<Control-Return>",     self._bind_execute,       add="+")
-        self.bind_all("<Key-k>",              self._bind_set_keep,      add="+")
-        self.bind_all("<Key-K>",              self._bind_clear_keep,    add="+")
-        self.bind_all("<Key-p>",              self._bind_preview,       add="+")
-        self.bind_all("<Key-u>",              self._bind_undo_hint,     add="+")
-        self.bind_all("<Key-a>",              self._bind_apply_smart,   add="+")
-        self.bind_all("<Key-bracketleft>",    self._bind_compare_prev,  add="+")
-        self.bind_all("<Key-bracketright>",   self._bind_compare_next,  add="+")
-        self.bind_all("<Key-x>",              self._bind_quick_compare, add="+")
+        self.bind_all("<Control-Right>", self._bind_key_next, add="+")
+        self.bind_all("<Control-Left>", self._bind_key_prev, add="+")
+        self.bind_all("<Key-g>", self._bind_mode_gallery, add="+")
+        self.bind_all("<Key-t>", self._bind_mode_table, add="+")
+        self.bind_all("<Key-c>", self._bind_mode_compare, add="+")
+        self.bind_all("<space>", self._bind_quick_look, add="+")
+        self.bind_all("<Control-Return>", self._bind_execute, add="+")
+        self.bind_all("<Key-k>", self._bind_set_keep, add="+")
+        self.bind_all("<Key-K>", self._bind_clear_keep, add="+")
+        self.bind_all("<Key-p>", self._bind_preview, add="+")
+        self.bind_all("<Key-u>", self._bind_undo_hint, add="+")
+        self.bind_all("<Key-a>", self._bind_apply_smart, add="+")
+        self.bind_all("<Key-bracketleft>", self._bind_compare_prev, add="+")
+        self.bind_all("<Key-bracketright>", self._bind_compare_next, add="+")
+        self.bind_all("<Key-x>", self._bind_quick_compare, add="+")
 
     def on_hide(self):
         self.unbind_all("<Control-Right>")
@@ -569,10 +580,11 @@ class ReviewPage(ttk.Frame):
     # Group list
     # ----------------------------------------------------------------
     def _refresh_group_list(self):
-        from ..components.decision_state import get_group_decision_state, get_decision_label
+        from ..components.decision_state import get_group_decision_state
+
         self._group_table.clear()
         groups = self.vm.filtered_groups
-        total  = len(groups)
+        total = len(groups)
         display = groups if total <= REVIEW_NAVIGATOR_MAX_ROWS else groups[:REVIEW_NAVIGATOR_MAX_ROWS]
         if total > REVIEW_NAVIGATOR_MAX_ROWS:
             self._group_count_var.set(f"Showing first {REVIEW_NAVIGATOR_MAX_ROWS} of {total} groups")
@@ -584,8 +596,7 @@ class ReviewPage(ttk.Frame):
             tag = "warn" if ge.has_risk else ("danger" if state == "unresolved" else "safe" if state == "ready" else "")
             self._group_table.insert_row(
                 ge.group_id,
-                (str(i + 1), state_label, str(ge.file_count),
-                 fmt_bytes(ge.reclaimable_bytes), ge.confidence_label),
+                (str(i + 1), state_label, str(ge.file_count), fmt_bytes(ge.reclaimable_bytes), ge.confidence_label),
                 tags=(tag,) if tag else (),
             )
         self._update_filter_chip_labels()
@@ -600,7 +611,6 @@ class ReviewPage(ttk.Frame):
 
     def _set_state_filter(self, state_key: str) -> None:
         # Update visual active state on chips
-        prev = self._active_chip_key
         self._active_chip_key = state_key
         for key, btn in self._chip_buttons.items():
             btn.configure(style="Accent.TButton" if key == state_key else "Ghost.TButton")
@@ -608,39 +618,41 @@ class ReviewPage(ttk.Frame):
         self._refresh_group_list()
 
     def _on_sort_change(self, *_):
-        label   = (self._sort_var.get() or "priority").strip().lower()
+        label = (self._sort_var.get() or "priority").strip().lower()
         mapping = {
-            "priority":         "priority",
+            "priority": "priority",
             "reclaimable size": "reclaimable",
-            "file count":       "files",
-            "confidence":       "confidence",
+            "file count": "files",
+            "confidence": "confidence",
         }
         self.vm.sort_by = mapping.get(label, "priority")
         self._refresh_group_list()
 
     def _decision_badge_text(self, state: str) -> str:
         icons = {
-            "unresolved":    "●",
-            "ready":         "✓",
-            "warning":       "⚠",
-            "skipped":       "—",
+            "unresolved": "●",
+            "ready": "✓",
+            "warning": "⚠",
+            "skipped": "—",
             "keep_selected": "◉",
         }
         from ..components.decision_state import get_decision_label
+
         return f"{icons.get(state, '•')} {get_decision_label(state)}"
 
     def _update_filter_chip_labels(self) -> None:
         from ..components.decision_state import get_group_decision_state
+
         counts = {"all": len(self.vm.groups), "unresolved": 0, "ready": 0, "warning": 0, "skipped": 0}
         for g in self.vm.groups:
             state = get_group_decision_state(g.group_id, self.vm.keep_selections, g.has_risk)
             counts[state] = counts.get(state, 0) + 1
         labels = {
             "unresolved": "Unresolved",
-            "ready":      "Ready",
-            "warning":    "Warning",
-            "skipped":    "Skipped",
-            "all":        "All",
+            "ready": "Ready",
+            "warning": "Warning",
+            "skipped": "Skipped",
+            "all": "All",
         }
         for key, var in getattr(self, "_chip_vars", {}).items():
             var.set(f"{labels[key]} ({counts.get(key, 0)})")
@@ -667,6 +679,7 @@ class ReviewPage(ttk.Frame):
         self.vm.selected_group_id = group_id
         if self._store:
             from ..state.store import ReviewSelectionState
+
             self._store.set_review_selection(
                 ReviewSelectionState(
                     keep_selections=dict(self.vm.keep_selections),
@@ -678,19 +691,17 @@ class ReviewPage(ttk.Frame):
     def _load_workspace(self, group_id: str):
         if not self._current_result:
             return
-        group    = next((g for g in self._current_result.duplicate_groups
-                         if g.group_id == group_id), None)
+        group = next((g for g in self._current_result.duplicate_groups if g.group_id == group_id), None)
         keep_path = self.vm.keep_selections.get(group_id, "")
-        mode      = self.vm.view_mode
+        mode = self.vm.view_mode
         self._workspace.load_group(group, keep_path=keep_path, mode=mode)
         if group:
             file_count = len(getattr(group, "files", []) or [])
             self._group_summary_var.set(f"Group {group.group_id} · {file_count} files")
             self._group_reason_var.set("Reason: hash-based duplicate group")
             self._group_keep_var.set(f"Keep: {Path(keep_path).name if keep_path else 'not selected'}")
-            reclaim = (
-                sum(getattr(f, "size", 0) for f in group.files)
-                - (next((f.size for f in group.files if f.path == keep_path), 0) if keep_path else 0)
+            reclaim = sum(getattr(f, "size", 0) for f in group.files) - (
+                next((f.size for f in group.files if f.path == keep_path), 0) if keep_path else 0
             )
             self._group_reclaim_var.set(f"Reclaimable: {fmt_bytes(max(0, reclaim))}")
             self._group_rule_var.set(f"Rule: {self._smart_rule_var.get() if keep_path else 'off'}")
@@ -714,13 +725,14 @@ class ReviewPage(ttk.Frame):
         if not self._store:
             return
         from ..state.selectors import review_selection
+
         state = self._store.state
-        sel   = review_selection(state)
+        sel = review_selection(state)
         if sel is None:
             return
         keep = getattr(sel, "keep_selections", None) or {}
         self.vm.keep_selections = dict(keep)
-        sid  = getattr(sel, "selected_group_id", None)
+        sid = getattr(sel, "selected_group_id", None)
         if sid is not None:
             self.vm.selected_group_id = sid
         gid = self.vm.selected_group_id
@@ -742,13 +754,13 @@ class ReviewPage(ttk.Frame):
         self._record_action_history(result)
         if result.deleted_files and self._current_result:
             from ...engine.models import DuplicateGroup
+
             deleted_set = set(result.deleted_files)
-            new_groups  = []
+            new_groups = []
             for g in self._current_result.duplicate_groups:
                 remaining = [f for f in g.files if f.path not in deleted_set]
                 if len(remaining) >= 2:
-                    new_groups.append(DuplicateGroup(
-                        group_id=g.group_id, group_hash=g.group_hash, files=remaining))
+                    new_groups.append(DuplicateGroup(group_id=g.group_id, group_hash=g.group_hash, files=remaining))
             self._current_result.duplicate_groups = new_groups
             self.load_result(self._current_result)
         else:
@@ -762,6 +774,7 @@ class ReviewPage(ttk.Frame):
             self._active_rule_var.set("Smart Rule: off")
         if self._store:
             from ..state.store import ReviewSelectionState
+
             self._store.set_review_selection(
                 ReviewSelectionState(
                     keep_selections=dict(self.vm.keep_selections),
@@ -770,11 +783,11 @@ class ReviewPage(ttk.Frame):
             )
 
     def _record_action_history(self, result: DeletionResult) -> None:
-        stamp      = datetime.now().strftime("%H:%M:%S")
-        deleted    = len(result.deleted_files)
-        failed     = len(result.failed_files)
-        bytes_txt  = fmt_bytes(getattr(result, "bytes_reclaimed", 0) or 0)
-        entry      = f"[{stamp}] execute -> deleted={deleted}, failed={failed}, reclaim={bytes_txt}"
+        stamp = datetime.now().strftime("%H:%M:%S")
+        deleted = len(result.deleted_files)
+        failed = len(result.failed_files)
+        bytes_txt = fmt_bytes(getattr(result, "bytes_reclaimed", 0) or 0)
+        entry = f"[{stamp}] execute -> deleted={deleted}, failed={failed}, reclaim={bytes_txt}"
         self._safety_panel.add_action_entry(entry)
         if deleted > 0:
             self._safety_panel.set_undo_message(
@@ -819,7 +832,7 @@ class ReviewPage(ttk.Frame):
         mode = self._mode_var.get()
         self.vm.view_mode = mode
         self._workspace.set_mode(mode)
-        gid  = self.vm.selected_group_id
+        gid = self.vm.selected_group_id
         if gid:
             self._load_workspace(gid)
 
@@ -838,11 +851,10 @@ class ReviewPage(ttk.Frame):
         gid = self.vm.selected_group_id
         if not gid:
             return
-        group  = next((g for g in self._current_result.duplicate_groups
-                       if g.group_id == gid), None)
+        group = next((g for g in self._current_result.duplicate_groups if g.group_id == gid), None)
         if not group:
             return
-        sel    = self._workspace.table_view.selection()
+        sel = self._workspace.table_view.selection()
         target = next((f for f in group.files if f.path == sel), None) if sel else None
         if target is None and group.files:
             target = group.files[0]
@@ -884,8 +896,7 @@ class ReviewPage(ttk.Frame):
                 font=font_tuple("caption"),
                 anchor="e",
                 width=12,
-            ).grid(row=r, column=0, sticky="e", padx=(0, _GAP_MD),
-                   pady=(_GAP_XS, 0))
+            ).grid(row=r, column=0, sticky="e", padx=(0, _GAP_MD), pady=(_GAP_XS, 0))
             ttk.Label(
                 meta_frame,
                 text=val,
@@ -893,30 +904,34 @@ class ReviewPage(ttk.Frame):
                 anchor="w",
             ).grid(row=r, column=1, sticky="w", pady=(_GAP_XS, 0))
 
-        _meta_row(0, "Path",     target.path)
-        _meta_row(1, "Size",     fmt_bytes(target.size))
+        _meta_row(0, "Path", target.path)
+        _meta_row(1, "Size", fmt_bytes(target.size))
         _meta_row(2, "Modified", str(getattr(target, "mtime_ns", 0)))
-        _meta_row(3, "Hash",     (target.file_hash or "—")[:32])
+        _meta_row(3, "Hash", (target.file_hash or "—")[:32])
 
         # ── Divider ───────────────────────────────────────────────────
-        ttk.Separator(dlg, orient="horizontal").pack(fill="x",
-                                                     padx=_GAP_LG,
-                                                     pady=(_GAP_MD, 0))
+        ttk.Separator(dlg, orient="horizontal").pack(fill="x", padx=_GAP_LG, pady=(_GAP_MD, 0))
 
         # ── Footer action bar ─────────────────────────────────────────
         # Danger action (Mark Keep) on the right; neutral actions on left.
         footer = ttk.Frame(dlg, padding=(_GAP_LG, _GAP_SM, _GAP_LG, _GAP_MD))
         footer.pack(fill="x")
         ttk.Button(
-            footer, text="Close", style="Ghost.TButton",
+            footer,
+            text="Close",
+            style="Ghost.TButton",
             command=dlg.destroy,
         ).pack(side="left")
         ttk.Button(
-            footer, text="Mark Delete", style="Ghost.TButton",
+            footer,
+            text="Mark Delete",
+            style="Ghost.TButton",
             command=dlg.destroy,
         ).pack(side="left", padx=(_GAP_SM, 0))
         ttk.Button(
-            footer, text="Mark Keep ✓", style="Accent.TButton",
+            footer,
+            text="Mark Keep ✓",
+            style="Accent.TButton",
             command=lambda p=target.path: [self._on_set_keep(p), dlg.destroy()],
         ).pack(side="right")
 
@@ -939,7 +954,7 @@ class ReviewPage(ttk.Frame):
             "1) Open your system Trash/Recycle Bin\n"
             "2) Sort by most recent\n"
             "3) Restore the files from the last execute action\n\n"
-            "Action history in the Safety Rail helps identify the latest batch."
+            "Action history in the Safety Rail helps identify the latest batch.",
         )
 
     def _on_apply_smart_rule_intent(self) -> None:
@@ -1017,9 +1032,11 @@ class ReviewPage(ttk.Frame):
             return
         try:
             from ...engine.deletion import preview_deletion
+
             prev = preview_deletion(plan)
             self._safety_panel.set_dry_run_result(
-                f"Preview Effects: {prev['total_files']} files → {prev['human_readable_size']}")
+                f"Preview Effects: {prev['total_files']} files → {prev['human_readable_size']}"
+            )
         except Exception as e:
             self._safety_panel.set_dry_run_result(f"Error: {e}")
 
@@ -1036,8 +1053,8 @@ class ReviewPage(ttk.Frame):
           - Footer bar: Cancel | Preview Effects  →  DELETE
         """
         result = {"choice": "cancel"}
-        root   = self.winfo_toplevel()
-        dlg    = tk.Toplevel(root)
+        root = self.winfo_toplevel()
+        dlg = tk.Toplevel(root)
         dlg.title("Confirm Deletion")
         dlg.transient(root)
         dlg.grab_set()
@@ -1053,27 +1070,25 @@ class ReviewPage(ttk.Frame):
             outer,
             text="⚠  Confirm Deletion",
             font=font_tuple("section_title"),
-        ).grid(row=0, column=0, columnspan=2, sticky="w",
-               pady=(0, _GAP_XS))
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, _GAP_XS))
         ttk.Label(
             outer,
             text="Review the summary below before proceeding. This action moves files to Trash.",
             style="Muted.TLabel",
             font=font_tuple("body"),
-        ).grid(row=1, column=0, columnspan=2, sticky="w",
-               pady=(0, _GAP_LG))
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, _GAP_LG))
 
         # ── Summary rows ──────────────────────────────────────────────
         total_files = prev.get("total_files", "?")
-        human_size  = prev.get("human_readable_size", "?")
+        human_size = prev.get("human_readable_size", "?")
         rows = [
-            ("Files to delete",   str(total_files)),
-            ("Files kept",        str(self.vm.keep_count)),
-            ("Duplicate groups",  str(len(plan.groups))),
+            ("Files to delete", str(total_files)),
+            ("Files kept", str(self.vm.keep_count)),
+            ("Duplicate groups", str(len(plan.groups))),
             ("Reclaimable space", str(human_size)),
-            ("Delete mode",       "Trash"),
-            ("Revalidation",      "ON"),
-            ("Audit logging",     "ACTIVE"),
+            ("Delete mode", "Trash"),
+            ("Revalidation", "ON"),
+            ("Audit logging", "ACTIVE"),
         ]
         for r_idx, (key, val) in enumerate(rows):
             base_row = r_idx + 2  # offset past title rows
@@ -1084,8 +1099,7 @@ class ReviewPage(ttk.Frame):
                 font=font_tuple("body"),
                 anchor="e",
                 width=18,
-            ).grid(row=base_row, column=0, sticky="e",
-                   padx=(0, _GAP_MD), pady=(_GAP_XS, 0))
+            ).grid(row=base_row, column=0, sticky="e", padx=(0, _GAP_MD), pady=(_GAP_XS, 0))
             ttk.Label(
                 outer,
                 text=val,
@@ -1094,9 +1108,7 @@ class ReviewPage(ttk.Frame):
             ).grid(row=base_row, column=1, sticky="w", pady=(_GAP_XS, 0))
 
         # ── Divider ───────────────────────────────────────────────────
-        ttk.Separator(dlg, orient="horizontal").pack(
-            fill="x", padx=_GAP_LG, pady=(_GAP_LG, 0)
-        )
+        ttk.Separator(dlg, orient="horizontal").pack(fill="x", padx=_GAP_LG, pady=(_GAP_LG, 0))
 
         # ── Footer bar ────────────────────────────────────────────────
         # Cancel / Preview  ←→  DELETE
@@ -1108,15 +1120,20 @@ class ReviewPage(ttk.Frame):
         footer = ttk.Frame(dlg, padding=(_GAP_LG, _GAP_SM, _GAP_LG, _GAP_MD))
         footer.pack(fill="x")
         ttk.Button(
-            footer, text="Cancel",
+            footer,
+            text="Cancel",
             command=lambda: _done("cancel"),
         ).pack(side="left")
         ttk.Button(
-            footer, text="Preview Effects", style="Ghost.TButton",
+            footer,
+            text="Preview Effects",
+            style="Ghost.TButton",
             command=lambda: _done("preview"),
         ).pack(side="left", padx=(_GAP_SM, 0))
         ttk.Button(
-            footer, text="DELETE", style="Danger.TButton",
+            footer,
+            text="DELETE",
+            style="Danger.TButton",
             command=lambda: _done("delete"),
         ).pack(side="right")
 
@@ -1136,6 +1153,7 @@ class ReviewPage(ttk.Frame):
             return
         try:
             from ...engine.deletion import preview_deletion
+
             prev = preview_deletion(plan)
         except Exception:
             prev = {"total_files": "?", "human_readable_size": "?"}

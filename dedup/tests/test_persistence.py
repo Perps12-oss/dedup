@@ -4,11 +4,11 @@ Persistence tests: save/load scan, hash cache, recovery.
 
 from __future__ import annotations
 
-import pytest
-from pathlib import Path
 from datetime import datetime
 
-from dedup.engine.models import ScanResult, ScanConfig, DuplicateGroup, FileMetadata
+import pytest
+
+from dedup.engine.models import DuplicateGroup, FileMetadata, ScanConfig, ScanResult
 from dedup.infrastructure.persistence import Persistence
 
 
@@ -32,10 +32,14 @@ def test_save_and_load_scan(persistence):
         completed_at=datetime.now(),
         files_scanned=10,
         duplicate_groups=[
-            DuplicateGroup(group_id="g1", group_hash="h1", files=[
-                FileMetadata(path="/a", size=5, mtime_ns=0),
-                FileMetadata(path="/b", size=5, mtime_ns=0),
-            ]),
+            DuplicateGroup(
+                group_id="g1",
+                group_hash="h1",
+                files=[
+                    FileMetadata(path="/a", size=5, mtime_ns=0),
+                    FileMetadata(path="/b", size=5, mtime_ns=0),
+                ],
+            ),
         ],
         total_duplicates=1,
         total_reclaimable_bytes=5,
@@ -64,6 +68,7 @@ def test_list_scans(persistence):
 
 def test_hash_cache_set_get(persistence):
     from dedup.engine.models import FileMetadata
+
     m = FileMetadata(path="/some/path", size=100, mtime_ns=123, hash_partial="abc", hash_full="def")
     assert persistence.set_hash_cache(m) is True
     cached = persistence.get_hash_cache("/some/path")
@@ -86,7 +91,7 @@ def test_shadow_session_and_checkpoint_writes(persistence):
     assert row["config_hash"] == "cfg-hash"
     assert row["discovery_config_hash"] == "disc-hash"
 
-    from dedup.engine.models import ScanPhase, PhaseStatus
+    from dedup.engine.models import PhaseStatus, ScanPhase
 
     persistence.shadow_write_checkpoint(
         session_id="session-1",
@@ -148,7 +153,6 @@ def test_list_scans_includes_session_metadata_and_verification_summary(persisten
 
 def test_persistence_wal_and_synchronous_applied(db_path):
     """Persistence applies WAL and synchronous pragmas; env can override synchronous."""
-    import os
     from dedup.infrastructure.persistence import Persistence
 
     p = Persistence(db_path=db_path)

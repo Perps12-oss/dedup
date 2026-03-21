@@ -10,11 +10,11 @@ Features:
 
 Usage:
     from dedup.engine import ScanConfig, ScanPipeline
-    
+
     config = ScanConfig(roots=[Path("/data")])
     pipeline = ScanPipeline(config)
     result = pipeline.run()
-    
+
     print(f"Found {len(result.duplicate_groups)} duplicate groups")
 """
 
@@ -22,23 +22,23 @@ __version__ = "1.0.0"
 __author__ = "DEDUP Project"
 
 from .engine import (
-    FileMetadata,
-    DuplicateGroup,
-    ScanConfig,
-    ScanProgress,
-    ScanResult,
+    DeletionEngine,
     DeletionPlan,
+    DeletionPolicy,
     DeletionResult,
-    PipelineMode,
-    FileStatus,
-    FileDiscovery,
     DiscoveryOptions,
+    DuplicateGroup,
+    FileDiscovery,
+    FileMetadata,
+    FileStatus,
+    GroupingEngine,
     HashEngine,
     HashStrategy,
-    GroupingEngine,
-    DeletionEngine,
-    DeletionPolicy,
+    PipelineMode,
+    ScanConfig,
     ScanPipeline,
+    ScanProgress,
+    ScanResult,
 )
 
 __all__ = [

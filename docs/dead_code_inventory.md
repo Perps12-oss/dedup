@@ -2,12 +2,7 @@
 
 ## Automated (Vulture, confidence ≥ 80)
 
-See `docs/vulture_report.txt`:
-
-| Location | Finding | Recommendation |
-|----------|---------|----------------|
-| `ui/components/review_workspace.py` | `is_left` unused in nested preview | Prefix `_is_left` or remove param if safe |
-| `ui/shell/status_strip.py` | `fg_key` unused | Remove binding or use for theming |
+See `docs/vulture_report.txt` — **latest run: no issues** (unused preview arg and `fg_key` removed in Phase 1 completion pass).
 
 ## Manual / policy
 

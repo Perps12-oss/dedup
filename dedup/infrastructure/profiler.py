@@ -7,13 +7,14 @@ Usage:
     with measure("discovery.stat"):
         st = entry.stat()
 """
+
 from __future__ import annotations
 
 import os
 import time
 from contextlib import contextmanager
 from threading import Lock
-from typing import Dict, Any
+from typing import Any, Dict
 
 _ENABLED = os.environ.get("DEDUP_PROFILE") == "1"
 _TIMERS: Dict[str, list] = {}

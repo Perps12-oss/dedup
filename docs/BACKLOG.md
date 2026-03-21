@@ -2,6 +2,8 @@
 
 Small items worth tracking. Not scheduled.
 
+**Living implementation status:** `docs/ENGINEERING_STATUS.md` — keep in sync when closing backlog items.
+
 ---
 
 ## ~~Clear Keep UI control~~ ✅ Implemented

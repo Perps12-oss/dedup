@@ -10,51 +10,53 @@ States per phase:
   rebuilt   — phase was rebuilt (warning)
   skipped   — phase was skipped (muted)
 """
+
 from __future__ import annotations
+
 import tkinter as tk
 from tkinter import ttk
-from typing import List, Dict, Optional, Callable
+from typing import Dict, List, Optional
 
-from ..theme.theme_manager import get_theme_manager
 from ..theme.design_system import font_tuple
+from ..theme.theme_manager import get_theme_manager
 from ..utils.icons import IC
 
 PHASE_LABELS = [
-    ("discovery",   "Discovery"),
-    ("size",        "Size"),
-    ("partial",     "Partial Hash"),
-    ("full",        "Full Hash"),
-    ("results",     "Results"),
+    ("discovery", "Discovery"),
+    ("size", "Size"),
+    ("partial", "Partial Hash"),
+    ("full", "Full Hash"),
+    ("results", "Results"),
 ]
 
 _KEY_ALIASES = {
-    "size_reduction":  "size",
-    "partial_hash":    "partial",
-    "full_hash":       "full",
+    "size_reduction": "size",
+    "partial_hash": "partial",
+    "full_hash": "full",
     "result_assembly": "results",
     "hashing_partial": "partial",
-    "hashing_full":    "full",
-    "complete":        "results",
+    "hashing_full": "full",
+    "complete": "results",
 }
 
 STATE_ICONS = {
-    "pending":   IC.PENDING,
-    "active":    IC.ACTIVE,
+    "pending": IC.PENDING,
+    "active": IC.ACTIVE,
     "completed": IC.DONE,
-    "resumed":   IC.RESUME,
-    "failed":    IC.ERROR,
-    "rebuilt":   IC.REBUILD,
-    "skipped":   IC.SKIPPED,
+    "resumed": IC.RESUME,
+    "failed": IC.ERROR,
+    "rebuilt": IC.REBUILD,
+    "skipped": IC.SKIPPED,
 }
 
 STATE_STYLE = {
-    "pending":   "Panel.Muted.TLabel",
-    "active":    "Panel.Accent.TLabel",
+    "pending": "Panel.Muted.TLabel",
+    "active": "Panel.Accent.TLabel",
     "completed": "Panel.Success.TLabel",
-    "resumed":   "Panel.TLabel",
-    "failed":    "Panel.Danger.TLabel",
-    "rebuilt":   "Panel.Warning.TLabel",
-    "skipped":   "Panel.Muted.TLabel",
+    "resumed": "Panel.TLabel",
+    "failed": "Panel.Danger.TLabel",
+    "rebuilt": "Panel.Warning.TLabel",
+    "skipped": "Panel.Muted.TLabel",
 }
 
 
@@ -77,16 +79,12 @@ class PhaseTimeline(ttk.Frame):
             cell.grid(row=0, column=col * 2, sticky="ew")
 
             icon_var = tk.StringVar(value=STATE_ICONS.get("pending", "○"))
-            lbl_var  = tk.StringVar(value=label)
+            lbl_var = tk.StringVar(value=label)
 
-            icon_lbl = ttk.Label(cell, textvariable=icon_var,
-                                 style="Panel.Muted.TLabel",
-                                 font=font_tuple("body_bold"))
+            icon_lbl = ttk.Label(cell, textvariable=icon_var, style="Panel.Muted.TLabel", font=font_tuple("body_bold"))
             icon_lbl.pack(side="left", padx=(0, 4))
 
-            name_lbl = ttk.Label(cell, textvariable=lbl_var,
-                                 style="Panel.Muted.TLabel",
-                                 font=font_tuple("caption"))
+            name_lbl = ttk.Label(cell, textvariable=lbl_var, style="Panel.Muted.TLabel", font=font_tuple("caption"))
             name_lbl.pack(side="left")
 
             self._cells[key] = {
@@ -99,8 +97,9 @@ class PhaseTimeline(ttk.Frame):
 
             # Arrow between phases
             if col < len(self._phases) - 1:
-                ttk.Label(self, text="→", style="Panel.Muted.TLabel",
-                          font=font_tuple("caption")).grid(row=0, column=col * 2 + 1, padx=2)
+                ttk.Label(self, text="→", style="Panel.Muted.TLabel", font=font_tuple("caption")).grid(
+                    row=0, column=col * 2 + 1, padx=2
+                )
 
     def set_phase_state(self, phase_key: str, state: str, label_override: str = ""):
         phase_key = _KEY_ALIASES.get(phase_key, phase_key)

@@ -1,8 +1,9 @@
 """Display-formatting helpers for CEREBRO UI."""
+
 from __future__ import annotations
+
 from pathlib import Path
 from typing import Union
-import datetime
 
 
 def fmt_bytes(n: int) -> str:
@@ -62,6 +63,6 @@ def truncate_path(path: Union[str, Path], max_len: int = 55) -> str:
         return s
     name = Path(s).name
     if len(name) >= max_len - 3:
-        return "…" + name[-(max_len - 1):]
+        return "…" + name[-(max_len - 1) :]
     prefix = s[: max_len - len(name) - 4]
     return f"{prefix}…/{name}"

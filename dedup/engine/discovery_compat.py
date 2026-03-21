@@ -8,8 +8,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Optional
 
-from .models import FileMetadata, ScanConfig, ScanPhase
 from ..infrastructure.resume_support import is_phase_complete
+from .models import FileMetadata, ScanConfig, ScanPhase
 
 
 def normalize_discovery_path(path: str) -> str:
@@ -137,9 +137,7 @@ def find_compatible_prior_session(
             report.reason = "root_fingerprint_mismatch"
             continue
 
-        report.discovery_config_match = (
-            (session.get("discovery_config_hash") or "") == current_disc_hash
-        )
+        report.discovery_config_match = (session.get("discovery_config_hash") or "") == current_disc_hash
         if not report.discovery_config_match:
             report.reason = "discovery_config_hash_mismatch"
             continue

@@ -4,16 +4,16 @@ Deletion safety: plan matches selection; keep file never deleted.
 
 from __future__ import annotations
 
-import pytest
-from pathlib import Path
-
+from dedup.engine.deletion import DeletionEngine, DeletionVerifier
 from dedup.engine.models import (
-    FileMetadata, DuplicateGroup, DeletionPlan, DeletionResult,
+    DeletionPlan,
     DeletionPolicy,
+    DeletionResult,
     DeletionVerificationGroupStatus,
     DeletionVerificationTargetStatus,
+    DuplicateGroup,
+    FileMetadata,
 )
-from dedup.engine.deletion import DeletionEngine, DeletionVerifier, preview_deletion
 from dedup.infrastructure.persistence import Persistence
 
 
@@ -74,11 +74,13 @@ def test_execute_plan_never_deletes_keep(temp_dir):
     plan = DeletionPlan(
         scan_id="s1",
         policy=DeletionPolicy.TRASH,
-        groups=[{
-            "group_id": "g1",
-            "keep": str(keep_file.resolve()),
-            "delete": [str(del_file.resolve())],
-        }],
+        groups=[
+            {
+                "group_id": "g1",
+                "keep": str(keep_file.resolve()),
+                "delete": [str(del_file.resolve())],
+            }
+        ],
     )
     engine = DeletionEngine(dry_run=True)
     result = engine.execute_plan(plan)
@@ -130,16 +132,20 @@ def test_post_delete_verification_marks_deleted_targets(temp_dir):
     plan = DeletionPlan(
         scan_id="scan-verify-1",
         policy=DeletionPolicy.TRASH,
-        groups=[{
-            "group_id": "g1",
-            "keep": str(temp_dir / "keep.txt"),
-            "delete": [str(deleted_path)],
-            "delete_details": [{
-                "path": str(deleted_path),
-                "expected_size": deleted_path.stat().st_size,
-                "expected_mtime_ns": deleted_path.stat().st_mtime_ns,
-            }],
-        }],
+        groups=[
+            {
+                "group_id": "g1",
+                "keep": str(temp_dir / "keep.txt"),
+                "delete": [str(deleted_path)],
+                "delete_details": [
+                    {
+                        "path": str(deleted_path),
+                        "expected_size": deleted_path.stat().st_size,
+                        "expected_mtime_ns": deleted_path.stat().st_mtime_ns,
+                    }
+                ],
+            }
+        ],
     )
     result = DeletionResult(
         scan_id=plan.scan_id,
@@ -165,16 +171,20 @@ def test_post_delete_verification_marks_changed_after_plan(temp_dir):
     plan = DeletionPlan(
         scan_id="scan-verify-2",
         policy=DeletionPolicy.TRASH,
-        groups=[{
-            "group_id": "g1",
-            "keep": str(temp_dir / "keep.txt"),
-            "delete": [str(changed_path)],
-            "delete_details": [{
-                "path": str(changed_path),
-                "expected_size": expected_size,
-                "expected_mtime_ns": expected_mtime_ns,
-            }],
-        }],
+        groups=[
+            {
+                "group_id": "g1",
+                "keep": str(temp_dir / "keep.txt"),
+                "delete": [str(changed_path)],
+                "delete_details": [
+                    {
+                        "path": str(changed_path),
+                        "expected_size": expected_size,
+                        "expected_mtime_ns": expected_mtime_ns,
+                    }
+                ],
+            }
+        ],
     )
 
     verification = DeletionEngine().verify_plan_result(
@@ -194,16 +204,20 @@ def test_post_delete_verification_persists_summary(temp_dir):
         plan = DeletionPlan(
             scan_id="scan-verify-3",
             policy=DeletionPolicy.TRASH,
-            groups=[{
-                "group_id": "g1",
-                "keep": str(temp_dir / "keep.txt"),
-                "delete": [str(target)],
-                "delete_details": [{
-                    "path": str(target),
-                    "expected_size": target.stat().st_size,
-                    "expected_mtime_ns": target.stat().st_mtime_ns,
-                }],
-            }],
+            groups=[
+                {
+                    "group_id": "g1",
+                    "keep": str(temp_dir / "keep.txt"),
+                    "delete": [str(target)],
+                    "delete_details": [
+                        {
+                            "path": str(target),
+                            "expected_size": target.stat().st_size,
+                            "expected_mtime_ns": target.stat().st_mtime_ns,
+                        }
+                    ],
+                }
+            ],
         )
         verification = DeletionEngine(persistence=persistence).verify_plan_result(
             plan,

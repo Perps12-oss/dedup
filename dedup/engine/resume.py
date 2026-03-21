@@ -11,6 +11,12 @@ import hashlib
 import json
 from typing import Any, Optional
 
+from ..infrastructure.resume_support import (
+    PHASE_ORDER,
+    get_phase_artifact_stats,
+    validate_artifact_integrity,
+)
+from .discovery_compat import root_fingerprint
 from .models import (
     PhaseCompatibilityReport,
     ResumeDecision,
@@ -19,14 +25,6 @@ from .models import (
     ScanConfig,
     ScanPhase,
 )
-from .discovery_compat import root_fingerprint
-from ..infrastructure.resume_support import (
-    PHASE_ORDER,
-    get_phase_artifact_stats,
-    is_phase_complete,
-    validate_artifact_integrity,
-)
-
 
 # Phase implementation version; bump when phase semantics change.
 PHASE_VERSION = "v1"
@@ -42,9 +40,7 @@ def _root_fingerprint(config: ScanConfig) -> str:
 
 
 def _hash_strategy_fingerprint(config: ScanConfig) -> str:
-    return hashlib.sha256(
-        f"{config.hash_algorithm}:{config.partial_hash_bytes}".encode("utf-8")
-    ).hexdigest()
+    return hashlib.sha256(f"{config.hash_algorithm}:{config.partial_hash_bytes}".encode("utf-8")).hexdigest()
 
 
 class ResumeResolver:
@@ -84,7 +80,7 @@ class ResumeResolver:
 
         current_config_hash = _config_hash(config)
         current_root = _root_fingerprint(config)
-        current_hash_strategy = _hash_strategy_fingerprint(config)
+        _hash_strategy_fingerprint(config)
         session_config_hash = session.get("config_hash") or ""
         session_root = session.get("root_fingerprint") or ""
 
@@ -102,7 +98,10 @@ class ResumeResolver:
                 first_runnable_phase=ScanPhase.DISCOVERY,
                 reason=ResumeReason.CONFIG_HASH_MISMATCH.value,
                 compatibility_reports=[],
-                cursor_or_context={"session_config_hash": session_config_hash, "current_config_hash": current_config_hash},
+                cursor_or_context={
+                    "session_config_hash": session_config_hash,
+                    "current_config_hash": current_config_hash,
+                },
             )
 
         if session_root != current_root:

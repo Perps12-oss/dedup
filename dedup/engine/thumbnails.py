@@ -11,13 +11,14 @@ import hashlib
 import os
 import threading
 from pathlib import Path
-from typing import Optional, Callable, Tuple
+from typing import Callable, Optional, Tuple
 
 from .media_types import is_image_extension
 
 _PILLOW_AVAILABLE = False
 try:
     from PIL import Image  # type: ignore
+
     _PILLOW_AVAILABLE = True
 except ImportError:
     Image = None  # type: ignore
@@ -93,10 +94,7 @@ def generate_thumbnails_async(
     (caller should schedule UI updates with after() if needed).
     If cancel_event is set, worker stops and skips any pending callbacks.
     """
-    image_paths = [
-        p for p in file_paths
-        if is_image_extension(Path(p).suffix.lower().lstrip("."))
-    ][:max_count]
+    image_paths = [p for p in file_paths if is_image_extension(Path(p).suffix.lower().lstrip("."))][:max_count]
 
     def work():
         for p in image_paths:

@@ -1,6 +1,7 @@
 """
 Tests for PhaseTimeline key aliasing — ensures canonical and alias keys resolve.
 """
+
 from __future__ import annotations
 
 from dedup.ui.components.phase_timeline import _KEY_ALIASES, PHASE_LABELS
@@ -15,9 +16,7 @@ class TestPhaseTimelineAliases:
     def test_canonical_keys_not_aliased(self):
         known_keys = {k for k, _ in PHASE_LABELS}
         for key in known_keys:
-            assert key not in _KEY_ALIASES, (
-                f"Canonical key {key!r} should not appear in _KEY_ALIASES"
-            )
+            assert key not in _KEY_ALIASES, f"Canonical key {key!r} should not appear in _KEY_ALIASES"
 
     def test_expected_aliases(self):
         assert _KEY_ALIASES["size_reduction"] == "size"

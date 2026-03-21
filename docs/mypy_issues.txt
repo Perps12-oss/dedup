@@ -1,43 +1,41 @@
-dedup\engine\media_types.py:58: error: Item "None" of "set[str] | None" has no attribute "copy"  [union-attr]
+dedup\engine\media_types.py:116: error: Item "None" of "set[str] | None" has no attribute "copy"  [union-attr]
+dedup\infrastructure\logger.py:95: error: Incompatible types in assignment (expression has type "dict[str, Any]", target has type "str")  [assignment]
+dedup\engine\thumbnails.py:20: error: Unused "type: ignore" comment  [unused-ignore]
 dedup\infrastructure\repositories\inventory_repo.py:28: error: No overload variant of "int" matches argument type "object"  [call-overload]
 dedup\infrastructure\repositories\inventory_repo.py:28: note: Possible overload variants:
-dedup\infrastructure\repositories\inventory_repo.py:28: note:     def __new__(cls, str | Buffer | SupportsInt | SupportsIndex | SupportsTrunc = ..., /) -> int
-dedup\infrastructure\repositories\inventory_repo.py:28: note:     def __new__(cls, str | bytes | bytearray, /, base: SupportsIndex) -> int
+dedup\infrastructure\repositories\inventory_repo.py:28: note:     def int(str | Buffer | SupportsInt | SupportsIndex | SupportsTrunc = ..., /) -> int
+dedup\infrastructure\repositories\inventory_repo.py:28: note:     def int(str | bytes | bytearray, /, base: SupportsIndex) -> int
 dedup\infrastructure\repositories\inventory_repo.py:29: error: No overload variant of "int" matches argument type "object"  [call-overload]
 dedup\infrastructure\repositories\inventory_repo.py:29: note: Possible overload variants:
-dedup\infrastructure\repositories\inventory_repo.py:29: note:     def __new__(cls, str | Buffer | SupportsInt | SupportsIndex | SupportsTrunc = ..., /) -> int
-dedup\infrastructure\repositories\inventory_repo.py:29: note:     def __new__(cls, str | bytes | bytearray, /, base: SupportsIndex) -> int
+dedup\infrastructure\repositories\inventory_repo.py:29: note:     def int(str | Buffer | SupportsInt | SupportsIndex | SupportsTrunc = ..., /) -> int
+dedup\infrastructure\repositories\inventory_repo.py:29: note:     def int(str | bytes | bytearray, /, base: SupportsIndex) -> int
 dedup\infrastructure\repositories\inventory_repo.py:30: error: No overload variant of "int" matches argument type "object"  [call-overload]
 dedup\infrastructure\repositories\inventory_repo.py:30: note: Possible overload variants:
-dedup\infrastructure\repositories\inventory_repo.py:30: note:     def __new__(cls, str | Buffer | SupportsInt | SupportsIndex | SupportsTrunc = ..., /) -> int
-dedup\infrastructure\repositories\inventory_repo.py:30: note:     def __new__(cls, str | bytes | bytearray, /, base: SupportsIndex) -> int
-dedup\infrastructure\repositories\inventory_repo.py:191: error: Unsupported operand types for + ("list[str]" and "list[int]")  [operator]
-dedup\infrastructure\logger.py:96: error: Incompatible types in assignment (expression has type "dict[str, Any]", target has type "str")  [assignment]
+dedup\infrastructure\repositories\inventory_repo.py:30: note:     def int(str | Buffer | SupportsInt | SupportsIndex | SupportsTrunc = ..., /) -> int
+dedup\infrastructure\repositories\inventory_repo.py:30: note:     def int(str | bytes | bytearray, /, base: SupportsIndex) -> int
+dedup\infrastructure\repositories\inventory_repo.py:189: error: Unsupported operand types for + ("list[str]" and "list[int]")  [operator]
+dedup\engine\hashing.py:112: error: Incompatible types in assignment (expression has type "None", variable has type "dict[str, tuple[int, int, str]]")  [assignment]
+dedup\engine\hashing.py:113: error: Incompatible types in assignment (expression has type "None", variable has type "LockType")  [assignment]
+dedup\engine\hashing.py:114: error: Incompatible types in assignment (expression has type "None", variable has type "dict[str, int]")  [assignment]
+dedup\engine\bench.py:51: error: Incompatible default for argument "enabled" (default has type "None", argument has type "bool")  [assignment]
+dedup\engine\bench.py:51: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+dedup\engine\bench.py:51: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+dedup\orchestration\events.py:97: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+dedup\engine\deletion.py:395: error: Incompatible types in assignment (expression has type "CompletedProcess[bytes]", variable has type "CompletedProcess[str]")  [assignment]
 dedup\infrastructure\repositories\hash_repo.py:222: error: Argument 1 to "int" has incompatible type "int | None"; expected "str | Buffer | SupportsInt | SupportsIndex | SupportsTrunc"  [arg-type]
-dedup\engine\bench.py:50: error: Incompatible default for argument "enabled" (default has type "None", argument has type "bool")  [assignment]
-dedup\engine\bench.py:50: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
-dedup\engine\bench.py:50: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
-dedup\orchestration\events.py:95: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
-dedup\engine\deletion.py:408: error: Incompatible types in assignment (expression has type "CompletedProcess[bytes]", variable has type "CompletedProcess[str]")  [assignment]
-dedup\engine\thumbnails.py:20: error: Unused "type: ignore" comment  [unused-ignore]
-dedup\infrastructure\persistence.py:80: error: Incompatible types in assignment (expression has type "None", variable has type "LockType")  [assignment]
-dedup\infrastructure\persistence.py:392: error: Need type annotation for "roots" (hint: "roots: list[<type>] = ...")  [var-annotated]
-dedup\engine\discovery.py:28: error: Incompatible types in assignment (expression has type "Callable[[str], nullcontext[None]]", variable has type "Callable[[str], _GeneratorContextManager[Any, None, None]]")  [assignment]
-dedup\engine\discovery.py:28: error: Incompatible return value type (got "nullcontext[None]", expected "_GeneratorContextManager[Any, None, None]")  [return-value]
-dedup\engine\hashing.py:108: error: Incompatible types in assignment (expression has type "None", variable has type "dict[str, tuple[int, int, str]]")  [assignment]
-dedup\engine\hashing.py:109: error: Incompatible types in assignment (expression has type "None", variable has type "LockType")  [assignment]
-dedup\engine\hashing.py:110: error: Incompatible types in assignment (expression has type "None", variable has type "dict[str, int]")  [assignment]
-dedup\engine\grouping.py:205: error: Incompatible types in assignment (expression has type "list[FileMetadata]", variable has type "Iterator[FileMetadata]")  [assignment]
-dedup\engine\grouping.py:205: note: "list" is missing following "Iterator" protocol member:
-dedup\engine\grouping.py:205: note:     __next__
-dedup\engine\grouping.py:209: error: Incompatible types in assignment (expression has type "DuplicateGroup", variable has type "list[FileMetadata]")  [assignment]
-dedup\engine\grouping.py:212: error: Argument "files" to "DuplicateGroup" has incompatible type "Iterator[FileMetadata]"; expected "list[FileMetadata]"  [arg-type]
-dedup\engine\grouping.py:217: error: "list[FileMetadata]" has no attribute "reclaimable_size"  [attr-defined]
-dedup\engine\grouping.py:223: error: Generator has incompatible item type "int"; expected "bool"  [misc]
-dedup\engine\grouping.py:223: error: "list[FileMetadata]" has no attribute "files"  [attr-defined]
-dedup\engine\grouping.py:226: error: Incompatible return value type (got "list[list[FileMetadata]]", expected "list[DuplicateGroup]")  [return-value]
+dedup\engine\grouping.py:212: error: Incompatible types in assignment (expression has type "list[FileMetadata]", variable has type "Iterator[FileMetadata]")  [assignment]
+dedup\engine\grouping.py:212: note: "list" is missing following "Iterator" protocol member:
+dedup\engine\grouping.py:212: note:     __next__
+dedup\engine\grouping.py:216: error: Incompatible types in assignment (expression has type "DuplicateGroup", variable has type "list[FileMetadata]")  [assignment]
+dedup\engine\grouping.py:219: error: Argument "files" to "DuplicateGroup" has incompatible type "Iterator[FileMetadata]"; expected "list[FileMetadata]"  [arg-type]
+dedup\engine\grouping.py:224: error: "list[FileMetadata]" has no attribute "reclaimable_size"  [attr-defined]
+dedup\engine\grouping.py:231: error: Generator has incompatible item type "int"; expected "bool"  [misc]
+dedup\engine\grouping.py:231: error: "list[FileMetadata]" has no attribute "files"  [attr-defined]
+dedup\engine\grouping.py:235: error: Incompatible return value type (got "list[list[FileMetadata]]", expected "list[DuplicateGroup]")  [return-value]
+dedup\infrastructure\persistence.py:79: error: Incompatible types in assignment (expression has type "None", variable has type "LockType")  [assignment]
+dedup\infrastructure\persistence.py:387: error: Need type annotation for "roots" (hint: "roots: list[<type>] = ...")  [var-annotated]
 dedup\engine\pipeline.py:124: error: Incompatible types in assignment (expression has type "dict[str, Any]", target has type "int")  [assignment]
 dedup\engine\pipeline.py:126: error: Incompatible types in assignment (expression has type "dict[str, Any]", target has type "int")  [assignment]
-dedup\engine\pipeline.py:948: error: Incompatible types in assignment (expression has type "float", variable has type "int")  [assignment]
-dedup\orchestration\worker.py:172: error: Incompatible types in assignment (expression has type "float", variable has type "int")  [assignment]
-Found 28 errors in 13 files (checked 35 source files)
+dedup\engine\pipeline.py:950: error: Incompatible types in assignment (expression has type "float", variable has type "int")  [assignment]
+dedup\orchestration\worker.py:176: error: Incompatible types in assignment (expression has type "float", variable has type "int")  [assignment]
+Found 26 errors in 12 files (checked 35 source files)

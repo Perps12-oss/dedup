@@ -5,28 +5,27 @@ This module contains the pure scanning, analysis, and duplicate detection logic.
 It has no UI dependencies and is designed for datasets up to 1,000,000 files.
 """
 
+from .deletion import DeletionEngine, DeletionPolicy
+from .discovery import DiscoveryOptions, FileDiscovery
+from .grouping import GroupingEngine
+from .hashing import HashEngine, HashStrategy
 from .models import (
-    FileMetadata,
+    DeletionPlan,
+    DeletionResult,
     DuplicateGroup,
+    FileMetadata,
+    FileStatus,
+    PipelineMode,
     ScanConfig,
     ScanProgress,
     ScanResult,
-    DeletionPlan,
-    DeletionResult,
-    PipelineMode,
-    FileStatus,
 )
-
-from .discovery import FileDiscovery, DiscoveryOptions
-from .hashing import HashEngine, HashStrategy
-from .grouping import GroupingEngine
-from .deletion import DeletionEngine, DeletionPolicy
 from .pipeline import ScanPipeline
 
 __all__ = [
     # Models
     "FileMetadata",
-    "DuplicateGroup", 
+    "DuplicateGroup",
     "ScanConfig",
     "ScanProgress",
     "ScanResult",

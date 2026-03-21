@@ -9,7 +9,7 @@ Provides:
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Tuple
 
 from ..engine.models import PhaseStatus, ScanPhase
 from .repositories.checkpoint_repo import CheckpointRepository
@@ -21,8 +21,6 @@ from .repositories.hash_repo import (
     SizeCandidateRepository,
 )
 from .repositories.inventory_repo import InventoryRepository
-from .repositories.session_repo import SessionRepository
-
 
 # Canonical phase order for resume.
 PHASE_ORDER = [

@@ -14,12 +14,13 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Dict, Optional, List, Any
+from typing import Any, Dict, Optional
 
 
 @dataclass
 class PhaseMetrics:
     """Per-phase timing and counts."""
+
     phase: str
     start_time: float = 0.0
     end_time: float = 0.0
@@ -130,6 +131,7 @@ def log_bench_summary(collector: Optional[BenchCollector]):
         return
     try:
         from ..infrastructure.logger import get_logger
+
         summary = collector.get_summary()
         get_logger().debug("bench_summary", **summary)
     except Exception:

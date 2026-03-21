@@ -10,14 +10,16 @@ Content varies by page:
   - safety hints
   - developer diagnostics
 """
+
 from __future__ import annotations
+
 import tkinter as tk
 from tkinter import ttk
-from typing import Optional, List, Tuple
+from typing import List, Tuple
 
-from ..utils.icons import IC
+from ..theme.design_system import SPACING, font_tuple
 from ..theme.theme_manager import get_theme_manager
-from ..theme.design_system import font_tuple, SPACING
+from ..utils.icons import IC
 
 DRAWER_WIDTH = 220
 
@@ -41,13 +43,11 @@ class InsightDrawer(tk.Frame):
         self._header = tk.Frame(self, height=36)
         self._header.pack(fill="x")
         self._header.pack_propagate(False)
-        self._title_lbl = tk.Label(
-            self._header, text=f"{IC.INFO}  Insights",
-            font=font_tuple("card_title"), anchor="w")
+        self._title_lbl = tk.Label(self._header, text=f"{IC.INFO}  Insights", font=font_tuple("card_title"), anchor="w")
         self._title_lbl.pack(side="left", fill="both", padx=SPACING["lg"])
         close_lbl = tk.Label(
-            self._header, text=IC.DRAWER_CLOSE,
-            font=font_tuple("body"), cursor="hand2", padx=SPACING["md"])
+            self._header, text=IC.DRAWER_CLOSE, font=font_tuple("body"), cursor="hand2", padx=SPACING["md"]
+        )
         close_lbl.pack(side="right")
         close_lbl.bind("<Button-1>", lambda e: self.hide())
         self._close_lbl = close_lbl
@@ -63,8 +63,7 @@ class InsightDrawer(tk.Frame):
         self._scroll.pack(side="right", fill="y")
 
         self._body = tk.Frame(self._canvas)
-        self._body_window = self._canvas.create_window(
-            (0, 0), window=self._body, anchor="nw")
+        self._body_window = self._canvas.create_window((0, 0), window=self._body, anchor="nw")
         self._body.bind("<Configure>", self._on_body_configure)
         self._canvas.bind("<Configure>", self._on_canvas_configure)
 
@@ -107,7 +106,7 @@ class InsightDrawer(tk.Frame):
     def _apply_colors(self, t: dict):
         bg = t["bg_sidebar"]
         fg = t["text_primary"]
-        fg2 = t["text_secondary"]
+        t["text_secondary"]
         self.configure(background=bg)
         self._header.configure(background=bg)
         self._title_lbl.configure(background=bg, foreground=fg)
@@ -124,8 +123,9 @@ class _DrawerSection(tk.Frame):
         super().__init__(parent)
         self.title = title
         self._vars: dict[str, tk.StringVar] = {}
-        tk.Label(self, text=title.upper(),
-                 font=font_tuple("strip")).pack(anchor="w", pady=(SPACING["sm"], SPACING["xs"]))
+        tk.Label(self, text=title.upper(), font=font_tuple("strip")).pack(
+            anchor="w", pady=(SPACING["sm"], SPACING["xs"])
+        )
         tk.Frame(self, height=1).pack(fill="x", pady=(0, SPACING["sm"]))
         self._grid = tk.Frame(self)
         self._grid.pack(fill="x")
@@ -135,11 +135,11 @@ class _DrawerSection(tk.Frame):
     def _add_row(self, key: str, value: str):
         row = tk.Frame(self._grid)
         row.pack(fill="x", pady=1)
-        tk.Label(row, text=key + ":", font=font_tuple("strip"),
-                 anchor="w", width=12).pack(side="left")
+        tk.Label(row, text=key + ":", font=font_tuple("strip"), anchor="w", width=12).pack(side="left")
         var = tk.StringVar(value=value)
-        tk.Label(row, textvariable=var, font=font_tuple("data_value"),
-                 anchor="w", wraplength=110).pack(side="left", fill="x", expand=True)
+        tk.Label(row, textvariable=var, font=font_tuple("data_value"), anchor="w", wraplength=110).pack(
+            side="left", fill="x", expand=True
+        )
         self._vars[key] = var
 
     def set_kv(self, key: str, value: str):
@@ -150,9 +150,9 @@ class _DrawerSection(tk.Frame):
 
     def apply_colors(self, t: dict):
         bg = t["bg_sidebar"]
-        fg = t["text_primary"]
+        t["text_primary"]
         fg2 = t["text_secondary"]
-        fgm = t["text_muted"]
+        t["text_muted"]
         self.configure(background=bg)
         self._grid.configure(background=bg)
         for w in self.winfo_children():

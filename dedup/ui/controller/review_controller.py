@@ -8,11 +8,11 @@ and uses coordinator for plan/execute. UI refresh is via a single callbacks inte
 
 from __future__ import annotations
 
-from typing import Any, Optional, Protocol
+from typing import Any, Protocol
 
 from ...orchestration.coordinator import ScanCoordinator
-from ..state.store import UIStateStore, ReviewSelectionState
 from ..state.selectors import review_selection
+from ..state.store import ReviewSelectionState, UIStateStore
 
 
 class IReviewCallbacks(Protocol):
@@ -63,9 +63,7 @@ class ReviewController:
         state = self._store.state
         sel = review_selection(state)
         selected_id = getattr(sel, "selected_group_id", None)
-        self._store.set_review_selection(
-            ReviewSelectionState(keep_selections=keep_map, selected_group_id=selected_id)
-        )
+        self._store.set_review_selection(ReviewSelectionState(keep_selections=keep_map, selected_group_id=selected_id))
         self._cb.set_preview_result(f"Smart rule applied: {rule} ({len(keep_map)} groups).")
         self._cb.refresh_review_ui()
 
@@ -74,9 +72,7 @@ class ReviewController:
         state = self._store.state
         sel = review_selection(state)
         selected_id = getattr(sel, "selected_group_id", None)
-        self._store.set_review_selection(
-            ReviewSelectionState(keep_selections={}, selected_group_id=selected_id)
-        )
+        self._store.set_review_selection(ReviewSelectionState(keep_selections={}, selected_group_id=selected_id))
         self._cb.set_preview_result("Keep selections cleared.")
         self._cb.refresh_review_ui()
 
@@ -104,9 +100,7 @@ class ReviewController:
         new_keep = dict(current)
         new_keep[group_id] = path
         selected_id = getattr(sel, "selected_group_id", None)
-        self._store.set_review_selection(
-            ReviewSelectionState(keep_selections=new_keep, selected_group_id=selected_id)
-        )
+        self._store.set_review_selection(ReviewSelectionState(keep_selections=new_keep, selected_group_id=selected_id))
         self._cb.refresh_review_ui()
 
     def handle_clear_keep(self, group_id: str) -> None:
@@ -121,9 +115,7 @@ class ReviewController:
         new_keep = dict(current)
         del new_keep[group_id]
         selected_id = getattr(sel, "selected_group_id", None)
-        self._store.set_review_selection(
-            ReviewSelectionState(keep_selections=new_keep, selected_group_id=selected_id)
-        )
+        self._store.set_review_selection(ReviewSelectionState(keep_selections=new_keep, selected_group_id=selected_id))
         self._cb.refresh_review_ui()
 
     def handle_preview_deletion(self) -> None:
@@ -145,16 +137,16 @@ class ReviewController:
             return
         try:
             from ...engine.deletion import preview_deletion
+
             prev = preview_deletion(plan)
-            self._cb.set_preview_result(
-                f"Preview Effects: {prev['total_files']} files → {prev['human_readable_size']}"
-            )
+            self._cb.set_preview_result(f"Preview Effects: {prev['total_files']} files → {prev['human_readable_size']}")
         except Exception as e:
             self._cb.set_preview_result(f"Error: {e}")
 
     def handle_execute_deletion(self) -> None:
         """Apply ExecuteDeletion intent: confirm via callback, run coordinator.execute_deletion, callback."""
         from tkinter import messagebox
+
         result = self._cb.get_current_result()
         state = self._store.state
         sel = review_selection(state)
@@ -172,6 +164,7 @@ class ReviewController:
             return
         try:
             from ...engine.deletion import preview_deletion
+
             prev = preview_deletion(plan)
         except Exception:
             prev = {"total_files": "?", "human_readable_size": "?"}

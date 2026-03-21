@@ -16,10 +16,10 @@ _root = Path(__file__).resolve().parent.parent
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
+from dedup.engine.benchmark_metrics import format_operator_summary
 from dedup.engine.models import ScanConfig
 from dedup.engine.pipeline import ScanPipeline
 from dedup.infrastructure.persistence import Persistence
-from dedup.engine.benchmark_metrics import format_operator_summary
 
 
 def _make_config(root: Path, workers: int, resolve_paths: bool, include_hidden: bool) -> ScanConfig:
@@ -175,7 +175,9 @@ def main() -> int:
         "runs": args.runs,
         "path": str(root),
         "second_discovery_elapsed_ms_mean": statistics.mean(second_discovery_ms),
-        "second_discovery_elapsed_ms_stdev": statistics.stdev(second_discovery_ms) if len(second_discovery_ms) > 1 else 0.0,
+        "second_discovery_elapsed_ms_stdev": statistics.stdev(second_discovery_ms)
+        if len(second_discovery_ms) > 1
+        else 0.0,
         "second_total_elapsed_ms_mean": statistics.mean(second_total_ms),
         "second_total_elapsed_ms_stdev": statistics.stdev(second_total_ms) if len(second_total_ms) > 1 else 0.0,
         "speedup_mean": statistics.mean(speedups),

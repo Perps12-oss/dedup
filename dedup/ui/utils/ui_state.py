@@ -2,12 +2,14 @@
 Global UI state and settings for CEREBRO shell.
 AppSettings is persisted alongside the main Config.
 """
+
 from __future__ import annotations
+
 import json
 import os
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional, List, Any, Callable
+from typing import Any, Callable, List, Optional
 
 from ..theme.theme_registry import DEFAULT_THEME
 
@@ -15,8 +17,9 @@ from ..theme.theme_registry import DEFAULT_THEME
 @dataclass
 class AppSettings:
     """Persisted UI preferences."""
+
     theme_key: str = DEFAULT_THEME
-    density: str = "comfortable"    # "comfortable" | "cozy" | "compact"
+    density: str = "comfortable"  # "comfortable" | "cozy" | "compact"
     advanced_mode: bool = False
     reduced_motion: bool = False
     reduced_gradients: bool = False
@@ -79,6 +82,7 @@ class UIState:
     """
     Lightweight observable state container for the running app session.
     """
+
     def __init__(self):
         self.settings: AppSettings = load_settings()
         self._callbacks: dict[str, List[Callable]] = {}

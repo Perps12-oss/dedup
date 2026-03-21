@@ -23,6 +23,7 @@ One place that states **who is the authority** for reads and commands. Avoid dup
 | **Mission** | Store (mission slice) where used; coordinator for history/resumable. | App / coordinator (start scan, resume). |
 | **History** | VM + coordinator (load sessions, load_scan). | Coordinator; page calls coordinator, app does not call page-private methods for actions. |
 | **Diagnostics** | UIStateStore (documented as store-rendered with hub upstream). | Page refresh; coordinator/hub for data. |
+| **Themes** | ThemeManager + `AppSettings.theme_key`; swatches call app `on_theme_change`. | Same as Settings theme apply path (no separate controller). |
 | **Settings** | Theme/settings state. | Page + theme manager. |
 
 ## Rules

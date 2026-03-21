@@ -12,14 +12,15 @@ Usage:
 
 from __future__ import annotations
 
-import sys
 import argparse
+import sys
 from pathlib import Path
 
 
 def run_gui():
     """Run the graphical interface."""
     from dedup.ui import DedupApp
+
     app = DedupApp()
     app.run()
 
@@ -28,19 +29,19 @@ def run_cli_scan(path: Path, min_size: int = 1, verbose: bool = False):
     """Run a quick CLI scan."""
     from dedup.engine import ScanConfig, ScanPipeline
     from dedup.infrastructure.utils import format_bytes
-    
+
     print(f"Scanning: {path}")
     print("-" * 50)
-    
+
     config = ScanConfig(roots=[path], min_size_bytes=min_size)
     pipeline = ScanPipeline(config)
-    
+
     def on_progress(progress):
         if verbose:
             print(f"\r{progress.phase}: {progress.files_found:,} files", end="", flush=True)
-    
+
     result = pipeline.run(progress_cb=on_progress if verbose else None)
-    
+
     print()  # New line after progress
     print("-" * 50)
     print(f"Scan complete in {result.duration_seconds:.1f}s")
@@ -48,7 +49,7 @@ def run_cli_scan(path: Path, min_size: int = 1, verbose: bool = False):
     print(f"Duplicate groups: {len(result.duplicate_groups)}")
     print(f"Duplicate files: {result.total_duplicates}")
     print(f"Reclaimable space: {format_bytes(result.total_reclaimable_bytes)}")
-    
+
     if result.duplicate_groups:
         print("\nDuplicate groups:")
         for i, group in enumerate(result.duplicate_groups[:10], 1):
@@ -57,7 +58,7 @@ def run_cli_scan(path: Path, min_size: int = 1, verbose: bool = False):
             print(f"    Files: {len(group.files)}")
             for file in group.files:
                 print(f"      - {file.path}")
-        
+
         if len(result.duplicate_groups) > 10:
             print(f"\n  ... and {len(result.duplicate_groups) - 10} more groups")
 
@@ -73,37 +74,19 @@ Examples:
   %(prog)s /data              Quick scan of /data
   %(prog)s /data --min-size 1M  Skip files smaller than 1MB
   %(prog)s /data -v           Verbose scan output
-        """
+        """,
     )
-    
-    parser.add_argument(
-        "path",
-        nargs="?",
-        type=Path,
-        help="Path to scan (if not provided, launches GUI)"
-    )
-    
-    parser.add_argument(
-        "--min-size",
-        type=str,
-        default="1",
-        help="Minimum file size to consider (e.g., 1K, 1M, 1G)"
-    )
-    
-    parser.add_argument(
-        "-v", "--verbose",
-        action="store_true",
-        help="Verbose output"
-    )
-    
-    parser.add_argument(
-        "--version",
-        action="version",
-        version="%(prog)s 1.0.0"
-    )
-    
+
+    parser.add_argument("path", nargs="?", type=Path, help="Path to scan (if not provided, launches GUI)")
+
+    parser.add_argument("--min-size", type=str, default="1", help="Minimum file size to consider (e.g., 1K, 1M, 1G)")
+
+    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+
+    parser.add_argument("--version", action="version", version="%(prog)s 1.0.0")
+
     args = parser.parse_args()
-    
+
     # Parse min size
     min_size = 1
     if args.min_size:
@@ -120,7 +103,7 @@ Examples:
         except ValueError:
             print(f"Error: Invalid size format: {args.min_size}")
             sys.exit(1)
-    
+
     # Run appropriate mode
     if args.path:
         run_cli_scan(args.path, min_size, args.verbose)

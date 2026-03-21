@@ -1,39 +1,44 @@
 """
 Tests for the UI projection layer — dataclasses, builders, and contracts.
 """
+
 from __future__ import annotations
 
 import pytest
 
-from dedup.ui.projections.session_projection import (
-    SessionProjection, EMPTY_SESSION, build_session_from_event,
-)
-from dedup.ui.projections.phase_projection import (
-    PhaseProjection, PHASE_ORDER, PHASE_LABELS, canonical_phase,
-    initial_phase_map, build_phase_from_checkpoint,
-)
-from dedup.ui.projections.metrics_projection import (
-    MetricsProjection, EMPTY_METRICS, build_metrics_from_progress, merge_metrics,
-)
 from dedup.ui.projections.compatibility_projection import (
-    CompatibilityProjection, EMPTY_COMPAT,
-)
-from dedup.ui.projections.review_projection import (
-    ReviewGroupProjection, build_review_group_from_duplicate_group,
-    build_review_groups_from_result,
+    EMPTY_COMPAT,
 )
 from dedup.ui.projections.deletion_projection import (
-    DeletionReadinessProjection, EMPTY_DELETION, build_deletion_from_review_vm,
+    EMPTY_DELETION,
 )
 from dedup.ui.projections.history_projection import (
-    HistoryProjection, HistorySessionProjection, EMPTY_HISTORY,
-    build_history_from_coordinator,
+    EMPTY_HISTORY,
+    HistorySessionProjection,
 )
-
+from dedup.ui.projections.metrics_projection import (
+    EMPTY_METRICS,
+    merge_metrics,
+)
+from dedup.ui.projections.phase_projection import (
+    PHASE_ORDER,
+    build_phase_from_checkpoint,
+    canonical_phase,
+    initial_phase_map,
+)
+from dedup.ui.projections.review_projection import (
+    build_review_group_from_duplicate_group,
+)
+from dedup.ui.projections.session_projection import (
+    EMPTY_SESSION,
+    SessionProjection,
+    build_session_from_event,
+)
 
 # ---------------------------------------------------------------------------
 # Session projection
 # ---------------------------------------------------------------------------
+
 
 class TestSessionProjection:
     def test_empty_session_defaults(self):
@@ -44,11 +49,20 @@ class TestSessionProjection:
 
     def test_is_active(self):
         s = SessionProjection(
-            session_id="abc", status="running", created_at="", updated_at="",
-            current_phase="discovery", phase_status="running",
-            resume_policy="", resume_reason="", is_resumable=False,
-            engine_health="healthy", warnings_count=0,
-            config_hash="", schema_version=1, scan_root="",
+            session_id="abc",
+            status="running",
+            created_at="",
+            updated_at="",
+            current_phase="discovery",
+            phase_status="running",
+            resume_policy="",
+            resume_reason="",
+            is_resumable=False,
+            engine_health="healthy",
+            warnings_count=0,
+            config_hash="",
+            schema_version=1,
+            scan_root="",
         )
         assert s.is_active
 
@@ -65,6 +79,7 @@ class TestSessionProjection:
 # ---------------------------------------------------------------------------
 # Phase projection
 # ---------------------------------------------------------------------------
+
 
 class TestPhaseProjection:
     def test_canonical_phase_known(self):
@@ -93,6 +108,7 @@ class TestPhaseProjection:
 # Metrics projection
 # ---------------------------------------------------------------------------
 
+
 class TestMetricsProjection:
     def test_empty_metrics(self):
         m = EMPTY_METRICS
@@ -114,6 +130,7 @@ class TestMetricsProjection:
 # Compatibility projection
 # ---------------------------------------------------------------------------
 
+
 class TestCompatibilityProjection:
     def test_empty_compat(self):
         c = EMPTY_COMPAT
@@ -124,6 +141,7 @@ class TestCompatibilityProjection:
 # ---------------------------------------------------------------------------
 # Review projection
 # ---------------------------------------------------------------------------
+
 
 class _FakeFile:
     def __init__(self, path, size):
@@ -170,6 +188,7 @@ class TestReviewProjection:
 # History projection
 # ---------------------------------------------------------------------------
 
+
 class TestHistoryProjection:
     def test_empty_history(self):
         h = EMPTY_HISTORY
@@ -178,11 +197,20 @@ class TestHistoryProjection:
 
     def test_session_projection_fields(self):
         s = HistorySessionProjection(
-            scan_id="s1", status="completed", started_at="2025-01-01",
-            duration_s=120.0, files_scanned=500, duplicates_found=10,
-            reclaimable_bytes=2048, roots=("/tmp",), warning_count=0,
-            is_resumable=False, resume_outcome="", resume_reason="",
-            config_hash="abc", phase_summary="5/5 completed",
+            scan_id="s1",
+            status="completed",
+            started_at="2025-01-01",
+            duration_s=120.0,
+            files_scanned=500,
+            duplicates_found=10,
+            reclaimable_bytes=2048,
+            roots=("/tmp",),
+            warning_count=0,
+            is_resumable=False,
+            resume_outcome="",
+            resume_reason="",
+            config_hash="abc",
+            phase_summary="5/5 completed",
         )
         assert s.scan_id == "s1"
         assert s.status == "completed"
@@ -192,6 +220,7 @@ class TestHistoryProjection:
 # ---------------------------------------------------------------------------
 # Deletion projection
 # ---------------------------------------------------------------------------
+
 
 class TestDeletionProjection:
     def test_empty_deletion(self):

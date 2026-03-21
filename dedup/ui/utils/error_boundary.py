@@ -1,6 +1,7 @@
 """
 Safe invocation helper for UI callbacks (Tk commands).
 """
+
 from __future__ import annotations
 
 import logging

@@ -4,10 +4,11 @@ ReviewProjection — normalized group data for the review page.
 The review page must not infer verification level, risk flags, or confidence labels
 locally.  Those come from the engine truth model and are projected here.
 """
+
 from __future__ import annotations
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import List, Tuple, Optional
+
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -15,17 +16,18 @@ class ReviewGroupProjection:
     """
     Immutable per-group snapshot for the group navigator and review workspace.
     """
+
     group_id: str
-    group_size: int             # bytes per individual file
+    group_size: int  # bytes per individual file
     file_count: int
-    verification_level: str     # "full_hash" | "partial_hash" | "size_only"
-    confidence_label: str       # "Exact" | "High" | "Probable"
+    verification_level: str  # "full_hash" | "partial_hash" | "size_only"
+    confidence_label: str  # "Exact" | "High" | "Probable"
     reclaimable_bytes: int
-    review_status: str          # "unreviewed" | "reviewed" | "risky"
+    review_status: str  # "unreviewed" | "reviewed" | "risky"
     risk_flags: Tuple[str, ...]
-    keeper_candidate: str       # path of suggested keeper (first file by default)
-    thumbnail_capable: bool     # True if at least one file is a renderable image
-    metadata_summary: str       # human-readable one-liner, e.g. "4 × 12.4 MB JPG"
+    keeper_candidate: str  # path of suggested keeper (first file by default)
+    thumbnail_capable: bool  # True if at least one file is a renderable image
+    metadata_summary: str  # human-readable one-liner, e.g. "4 × 12.4 MB JPG"
 
     @property
     def has_risk(self) -> bool:
@@ -34,8 +36,8 @@ class ReviewGroupProjection:
     @property
     def confidence_variant(self) -> str:
         return {
-            "Exact":    "positive",
-            "High":     "positive",
+            "Exact": "positive",
+            "High": "positive",
             "Probable": "warning",
         }.get(self.confidence_label, "neutral")
 
@@ -51,7 +53,14 @@ def build_review_group_from_duplicate_group(
     from pathlib import Path as _Path
 
     IMAGE_EXTS = thumbnail_extensions or {
-        "jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "heic",
+        "jpg",
+        "jpeg",
+        "png",
+        "gif",
+        "webp",
+        "bmp",
+        "tiff",
+        "heic",
     }
 
     files = getattr(group, "files", [])
@@ -61,9 +70,7 @@ def build_review_group_from_duplicate_group(
     ext = _Path(files[0].path).suffix.lower().lstrip(".") if files else ""
     keeper = files[0].path if files else ""
 
-    thumb_capable = any(
-        _Path(f.path).suffix.lower().lstrip(".") in IMAGE_EXTS for f in files
-    )
+    thumb_capable = any(_Path(f.path).suffix.lower().lstrip(".") in IMAGE_EXTS for f in files)
 
     risk: List[str] = []
     if file_count > 10:
@@ -72,6 +79,7 @@ def build_review_group_from_duplicate_group(
     meta_parts = []
     if file_count:
         from ..utils.formatting import fmt_bytes
+
         meta_parts.append(f"{file_count} × {fmt_bytes(group_size)}")
     if ext:
         meta_parts.append(ext.upper())

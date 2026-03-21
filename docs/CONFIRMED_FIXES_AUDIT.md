@@ -6,6 +6,8 @@ Every “confirmed and fixed” claim is backed below by file path, exact change
 **Merge status:** **Branch only** — not merged into `main`.  
 (`git log main..feature/ui-store-intents-migration` shows 12 commits ahead of main.)
 
+**Later evolution:** The shell gained a **Themes** page (seven NavRail destinations). Current narrative: `docs/ENGINEERING_STATUS.md`.
+
 ---
 
 ## 1. Direct page/backend coupling — Review actions

@@ -6,9 +6,10 @@ Every page that shows session identity, health, or resumability reads from here.
 
 Consumers: TopBar, StatusStrip, MissionPage, HistoryPage, DiagnosticsPage.
 """
+
 from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -17,20 +18,21 @@ class SessionProjection:
     Immutable snapshot of the active (or most-recent) session state.
     Replaced atomically when any field changes — never mutated in place.
     """
+
     session_id: str
-    status: str              # idle | pending | running | completed | cancelled | failed
+    status: str  # idle | pending | running | completed | cancelled | failed
     created_at: str
     updated_at: str
-    current_phase: str       # discovery | size_reduction | partial_hash | full_hash | result_assembly | idle
-    phase_status: str        # pending | running | completed | failed
-    resume_policy: str       # safe | rebuild_phase | restart_required | none
-    resume_reason: str       # human-readable reason string
+    current_phase: str  # discovery | size_reduction | partial_hash | full_hash | result_assembly | idle
+    phase_status: str  # pending | running | completed | failed
+    resume_policy: str  # safe | rebuild_phase | restart_required | none
+    resume_reason: str  # human-readable reason string
     is_resumable: bool
-    engine_health: str       # Healthy | Warning | Degraded
+    engine_health: str  # Healthy | Warning | Degraded
     warnings_count: int
     config_hash: str
     schema_version: int
-    scan_root: str           # display-friendly root summary
+    scan_root: str  # display-friendly root summary
 
     # Convenience properties
     @property
@@ -44,10 +46,10 @@ class SessionProjection:
     @property
     def resume_outcome_label(self) -> str:
         labels = {
-            "safe":              "Safe Resume",
-            "rebuild_phase":     "Rebuild Phase",
-            "restart_required":  "Restart Required",
-            "none":              "",
+            "safe": "Safe Resume",
+            "rebuild_phase": "Rebuild Phase",
+            "restart_required": "Restart Required",
+            "none": "",
         }
         return labels.get(self.resume_policy, self.resume_policy)
 
@@ -55,8 +57,8 @@ class SessionProjection:
     def health_variant(self) -> str:
         """Maps engine_health to a StatusRibbon / MetricCard variant string."""
         return {
-            "Healthy":  "positive",
-            "Warning":  "warning",
+            "Healthy": "positive",
+            "Warning": "warning",
             "Degraded": "danger",
         }.get(self.engine_health, "neutral")
 
@@ -100,6 +102,7 @@ def build_session_from_event(
     All optional fields have safe defaults so callers only supply what they know.
     """
     import time
+
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     return SessionProjection(
         session_id=session_id,

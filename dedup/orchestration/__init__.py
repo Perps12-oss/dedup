@@ -8,9 +8,9 @@ Coordinates between the engine and UI:
 - Event flow
 """
 
-from .worker import ScanWorker, ScanWorkerCallbacks
 from .coordinator import ScanCoordinator
 from .events import EventBus, ScanEvent
+from .worker import ScanWorker, ScanWorkerCallbacks
 
 __all__ = [
     "ScanWorker",
