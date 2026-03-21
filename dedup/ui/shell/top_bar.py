@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Callable, List, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from ..theme.design_system import SPACING, font_tuple
 from ..theme.theme_manager import get_theme_manager
@@ -32,6 +32,7 @@ class TopBar(tk.Frame):
         on_density_toggle: Callable[[], None],
         on_advanced_toggle: Callable[[], None],
         on_settings: Callable[[], None],
+        on_drawer_toggle: Optional[Callable[[], None]] = None,
         **kwargs,
     ):
         super().__init__(parent, height=self.BAR_HEIGHT, **kwargs)
@@ -41,7 +42,9 @@ class TopBar(tk.Frame):
         self._on_density_toggle = on_density_toggle
         self._on_advanced_toggle = on_advanced_toggle
         self._on_settings = on_settings
+        self._on_drawer_toggle = on_drawer_toggle
         self._action_widgets: List[tk.Widget] = []
+        self._adv_active = False
         self._build()
         self._tm.subscribe(self._apply_colors)
         self._apply_colors(self._tm.tokens)
@@ -69,6 +72,19 @@ class TopBar(tk.Frame):
         # Mode chip
         self._mode_chip = tk.Label(left, text="Idle", font=font_tuple("strip"), padx=SPACING["md"], pady=SPACING["xs"])
         self._mode_chip.pack(side="left", padx=(SPACING["sm"], 0))
+
+        if self._on_drawer_toggle:
+            self._drawer_btn = tk.Label(
+                left,
+                text=IC.DRAWER_OPEN,
+                font=font_tuple("body"),
+                padx=SPACING["sm"],
+                cursor="hand2",
+            )
+            self._drawer_btn.pack(side="left", padx=(SPACING["md"], 0))
+            self._drawer_btn.bind("<Button-1>", lambda e: self._on_drawer_toggle())
+        else:
+            self._drawer_btn = None
 
         # ---- CENTER section (contextual actions) ----
         self._center_frame = tk.Frame(self)
@@ -138,9 +154,10 @@ class TopBar(tk.Frame):
         self._density_btn.configure(text=f"⊞ {density.title()}")
 
     def set_advanced(self, active: bool):
+        self._adv_active = bool(active)
         t = self._tm.tokens
-        bg = t["nav_active_bg"] if active else t["bg_elevated"]
-        fg = t["nav_active_fg"] if active else t["text_secondary"]
+        bg = t["nav_active_bg"] if self._adv_active else t["bg_elevated"]
+        fg = t["nav_active_fg"] if self._adv_active else t["text_secondary"]
         self._adv_btn.configure(background=bg, foreground=fg)
 
     def subscribe_to_hub(self, hub) -> None:
@@ -173,10 +190,16 @@ class TopBar(tk.Frame):
         fg2 = t["text_secondary"]
         for frame in (self, self._left_frame, self._center_frame, self._right_frame):
             frame.configure(background=bg)
-        self._title_lbl.configure(background=bg, foreground=t["accent_primary"])
-        self._subtitle_lbl.configure(background=bg, foreground=fg2)
-        self._session_chip.configure(background=t["bg_elevated"], foreground=fg2)
-        self._mode_chip.configure(background=t["bg_elevated"], foreground=fg2)
-        self._density_btn.configure(background=t["bg_elevated"], foreground=fg2)
-        self._adv_btn.configure(background=t["bg_elevated"], foreground=fg2)
-        self._settings_lbl.configure(background=bg, foreground=fg2)
+        self._title_lbl.configure(
+            background=bg, foreground=t["accent_primary"], font=font_tuple("section_title")
+        )
+        self._subtitle_lbl.configure(background=bg, foreground=fg2, font=font_tuple("caption"))
+        self._session_chip.configure(background=t["bg_elevated"], foreground=fg2, font=font_tuple("strip"))
+        self._mode_chip.configure(background=t["bg_elevated"], foreground=fg2, font=font_tuple("strip"))
+        if self._drawer_btn is not None:
+            self._drawer_btn.configure(background=bg, foreground=fg2)
+        self._density_btn.configure(background=t["bg_elevated"], foreground=fg2, font=font_tuple("strip"))
+        self._adv_btn.configure(font=font_tuple("strip"))
+        self._settings_lbl.configure(background=bg, foreground=fg2, font=font_tuple("body"))
+        # Re-apply Advanced chip (theme refresh must not flatten active state)
+        self.set_advanced(self._adv_active)

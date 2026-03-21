@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-from typing import Tuple
+from typing import List, Optional, Sequence, Tuple
 
 
 def hex_to_rgb(hex_color: str) -> Tuple[int, int, int]:
@@ -13,6 +13,51 @@ def hex_to_rgb(hex_color: str) -> Tuple[int, int, int]:
 
 def rgb_to_hex(r: int, g: int, b: int) -> str:
     return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def color_at_gradient_position(stops: Sequence[Tuple[float, str]], u: float) -> str:
+    """Piecewise-linear color along sorted stops (positions in [0, 1])."""
+    if not stops:
+        return "#000000"
+    if len(stops) == 1:
+        return stops[0][1]
+    s = sorted(stops, key=lambda x: x[0])
+    u = max(0.0, min(1.0, float(u)))
+    if u <= s[0][0]:
+        return s[0][1]
+    if u >= s[-1][0]:
+        return s[-1][1]
+    for i in range(len(s) - 1):
+        t0, c0 = s[i]
+        t1, c1 = s[i + 1]
+        if t0 <= u <= t1:
+            if t1 <= t0:
+                return c0
+            local = (u - t0) / (t1 - t0)
+            return lerp_color(c0, c1, local)
+    return s[-1][1]
+
+
+def draw_horizontal_multi_stop(
+    canvas: tk.Canvas,
+    width: int,
+    height: int,
+    stops: Sequence[Tuple[float, str]],
+    segments: int = 96,
+) -> None:
+    """Horizontal strip: color is piecewise-linear between stops."""
+    canvas.delete("gradient")
+    if len(stops) < 2:
+        return
+    s = sorted(stops, key=lambda x: x[0])
+    step_w = max(1, width // max(8, segments))
+    n = max(2, width // step_w)
+    for i in range(n):
+        u = i / (n - 1) if n > 1 else 0.0
+        color = color_at_gradient_position(s, u)
+        x0 = i * step_w
+        x1 = x0 + step_w + 1
+        canvas.create_rectangle(x0, 0, x1, height, fill=color, outline="", tags="gradient")
 
 
 def lerp_color(c1: str, c2: str, t: float) -> str:
@@ -67,14 +112,40 @@ class GradientBar(tk.Canvas):
         super().__init__(parent, height=height, highlightthickness=0, borderwidth=0, **kwargs)
         self._c_start = color_start
         self._c_end = color_end
+        self._multi_stops: Optional[List[Tuple[float, str]]] = None
         self.bind("<Configure>", self._on_resize)
 
     def _on_resize(self, event=None):
         w = self.winfo_width() or 100
         h = self.winfo_height() or 3
-        draw_horizontal_gradient(self, w, h, self._c_start, self._c_end)
+        if self._multi_stops and len(self._multi_stops) >= 2:
+            draw_horizontal_multi_stop(self, w, h, self._multi_stops)
+        else:
+            draw_horizontal_gradient(self, w, h, self._c_start, self._c_end)
 
     def update_colors(self, c_start: str, c_end: str):
+        self._multi_stops = None
         self._c_start = c_start
         self._c_end = c_end
+        self._on_resize()
+
+    def update_from_tokens(self, tokens: dict) -> None:
+        stops = tokens.get("_multi_gradient_stops")
+        if isinstance(stops, list) and len(stops) >= 2:
+            norm: List[Tuple[float, str]] = []
+            for item in stops:
+                if isinstance(item, (list, tuple)) and len(item) >= 2:
+                    try:
+                        norm.append((float(item[0]), str(item[1])))
+                    except (TypeError, ValueError):
+                        continue
+            if len(norm) >= 2:
+                self._multi_stops = sorted(norm, key=lambda x: x[0])
+                self._c_start = self._multi_stops[0][1]
+                self._c_end = self._multi_stops[-1][1]
+                self._on_resize()
+                return
+        self._multi_stops = None
+        self._c_start = tokens.get("gradient_start", self._c_start)
+        self._c_end = tokens.get("gradient_end", self._c_end)
         self._on_resize()

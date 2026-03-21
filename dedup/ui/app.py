@@ -40,7 +40,7 @@ from .shell.app_shell import AppShell
 from .shell.shortcut_registry import ShortcutRegistry
 from .state.hub_adapter import ProjectionHubStoreAdapter
 from .state.store import LastScanSummaryState, MissionState, UIStateStore
-from .theme.theme_manager import get_theme_manager
+from .theme.theme_manager import get_theme_manager, parse_gradient_stops_from_raw
 from .theme.theme_registry import get_theme
 from .utils.formatting import fmt_bytes
 from .utils.ui_state import UIState
@@ -67,8 +67,34 @@ class CerebroApp:
 
     APP_NAME = "CEREBRO"
     APP_VERSION = "2.1.0"
-    MIN_WIDTH = 900
-    MIN_HEIGHT = 560
+
+    # Minimum window (56px nav + Review three-pane mins + page padding); users can resize down to here.
+    MIN_WIDTH = 580
+    MIN_HEIGHT = 320
+    # Default first paint ≈ screenshot reference: ~45% × ~65% of primary monitor.
+    STARTUP_WIDTH_FRAC = 0.45
+    STARTUP_HEIGHT_FRAC = 0.65
+    # Avoid absurd defaults on ultra-wide / 5K while staying "small vs screen".
+    STARTUP_MAX_W_CAP = 1600
+    STARTUP_MAX_H_CAP = 1000
+    # If persisted width/height exceeds this fraction of the screen, it was almost certainly
+    # maximize / large snap / full-height tile — do not restore (see also _on_close zoomed).
+    SAVED_GEOMETRY_LARGE_FRAC = 0.74
+
+    @classmethod
+    def _default_startup_geometry(cls, sw: int, sh: int) -> tuple[int, int]:
+        """~45% × ~65% of primary monitor (visual reference), clamped to mins, caps, and safe margins."""
+        w = int(sw * cls.STARTUP_WIDTH_FRAC)
+        h = int(sh * cls.STARTUP_HEIGHT_FRAC)
+        w = max(cls.MIN_WIDTH, w)
+        h = max(cls.MIN_HEIGHT, h)
+        w = min(w, sw - 32)
+        h = min(h, sh - 48)
+        w = min(w, cls.STARTUP_MAX_W_CAP)
+        h = min(h, cls.STARTUP_MAX_H_CAP)
+        w = max(cls.MIN_WIDTH, w)
+        h = max(cls.MIN_HEIGHT, h)
+        return w, h
 
     def __init__(self):
         # ── Root window ──────────────────────────────────────────────
@@ -91,16 +117,53 @@ class CerebroApp:
         self.config = load_config()
         sw = max(1, int(self.root.winfo_screenwidth()))
         sh = max(1, int(self.root.winfo_screenheight()))
-        default_w = max(self.MIN_WIDTH, sw // 2)  # ~1/4 screen area
-        default_h = max(self.MIN_HEIGHT, sh // 2)
+        default_w, default_h = self._default_startup_geometry(sw, sh)
         w = getattr(self.state.settings, "window_width", 0) or 0
         h = getattr(self.state.settings, "window_height", 0) or 0
         if w <= 0 or h <= 0:
             w, h = default_w, default_h
-        # If persisted value is legacy large default, prefer the new compact default.
+        else:
+            lw = int(sw * self.SAVED_GEOMETRY_LARGE_FRAC)
+            lh = int(sh * self.SAVED_GEOMETRY_LARGE_FRAC)
+            if w >= lw or h >= lh:
+                w, h = default_w, default_h
+        # Migrate legacy installer / old auto defaults to proportional startup.
         if (w, h) == (1280, 820):
             w, h = default_w, default_h
-        self.root.geometry(f"{max(int(w), self.MIN_WIDTH)}x{max(int(h), self.MIN_HEIGHT)}")
+        old_style_w = max(900, sw // 2)
+        old_style_h = max(560, sh // 2)
+        if (w, h) == (old_style_w, old_style_h):
+            w, h = default_w, default_h
+        prev_compact_w = max(860, sw // 4)
+        prev_compact_h = max(480, sh // 4)
+        prev_v2_w = max(720, min(sw // 6, 760))
+        prev_v2_h = max(380, min(sh // 5, 480))
+        prev_v3_w = max(600, min(sw // 8, 640))
+        prev_v3_h = max(320, min(sh // 6, 400))
+        if (w, h) in (
+            (prev_compact_w, prev_compact_h),
+            (860, 480),
+            (prev_v2_w, prev_v2_h),
+            (720, 380),
+            (760, 480),
+            (prev_v3_w, prev_v3_h),
+            (600, 320),
+            (640, 400),
+        ):
+            w, h = default_w, default_h
+        # Upgrade prior "tiny default" iterations to the screenshot-based default.
+        if 0 < w <= 660 and 0 < h <= 420:
+            w, h = default_w, default_h
+        geom_w = max(int(w), self.MIN_WIDTH)
+        geom_h = max(int(h), self.MIN_HEIGHT)
+        sx = int(getattr(self.state.settings, "window_x", -1) or -1)
+        sy = int(getattr(self.state.settings, "window_y", -1) or -1)
+        if sx >= 0 and sy >= 0:
+            x, y = sx, sy
+        else:
+            x = max(0, (sw - geom_w) // 2)
+            y = max(0, (sh - geom_h) // 2)
+        self.root.geometry(f"{geom_w}x{geom_h}+{x}+{y}")
 
         self._toast = ToastManager(self.root)
         self._last_scan_toast_id: str | None = None
@@ -108,9 +171,12 @@ class CerebroApp:
         # ── Coordinator ───────────────────────────────────────────────
         self.coordinator = ScanCoordinator()
 
-        # ── Apply initial theme ───────────────────────────────────────
+        # ── Apply initial theme (density affects ttk font sizes / Treeview row height)
+        from .theme import design_system
+
+        design_system.set_ui_density(self.state.settings.density or "comfortable")
         tm = get_theme_manager()
-        tm.apply(self.state.settings.theme_key, self.root)
+        tm.apply(self.state.settings.theme_key, self.root, gradient_stops=parse_gradient_stops_from_raw(self.state.settings.custom_gradient_stops))
 
         # ── Build shell ───────────────────────────────────────────────
         self.root.columnconfigure(0, weight=1)
@@ -142,6 +208,7 @@ class CerebroApp:
 
         # ── Register app-level state listeners ───────────────────────
         self.state.on("advanced_mode_changed", self._on_advanced_mode)
+        self.state.on("density_changed", lambda _d=None: self._apply_preferences())
 
         # ── Navigate home ─────────────────────────────────────────────
         self._navigate("mission")
@@ -293,8 +360,11 @@ class CerebroApp:
         reg.register("<Control-Key-1>", "Mission Control", lambda e: self._navigate("mission"))
         reg.register("<Control-Key-2>", "Live Scan Studio", lambda e: self._navigate("scan"))
         reg.register("<Control-Key-3>", "Decision Studio", lambda e: self._navigate("review"))
+        reg.register("<Control-Key-4>", "History", lambda e: self._navigate("history"))
+        reg.register("<Control-Key-5>", "Diagnostics", lambda e: self._navigate("diagnostics"))
         reg.register("<Control-Key-7>", "Themes", lambda e: self._navigate("themes"))
         reg.register("<Control-comma>", "Settings", lambda e: self._navigate("settings"))
+        reg.register("<Control-backslash>", "Insights drawer", lambda e: self.shell.toggle_drawer())
         reg.register("?", "Shortcut help", lambda e: self._show_shortcuts_help())
         self._shortcut_registry = reg
 
@@ -325,7 +395,7 @@ class CerebroApp:
                 ("Resume", "Ghost.TButton", self._on_resume_latest),
             ],
             "scan": [
-                ("Pause", "Ghost.TButton", self._on_scan_pause),
+                ("Stop for later", "Ghost.TButton", self._on_scan_pause),
                 ("Cancel", "Ghost.TButton", lambda: self._on_scan_cancel()),
                 ("Copy Diag", "Ghost.TButton", self._copy_diagnostics),
             ],
@@ -565,7 +635,7 @@ class CerebroApp:
     def _on_theme_change(self, key: str):
         self.state.settings.theme_key = key
         tm = get_theme_manager()
-        tm.apply(key, self.root)
+        tm.apply(key, self.root, gradient_stops=parse_gradient_stops_from_raw(self.state.settings.custom_gradient_stops))
         self.shell.top_bar.set_current_theme(key)
         try:
             label = get_theme(key).get("name", key)
@@ -579,6 +649,14 @@ class CerebroApp:
 
     def _apply_preferences(self) -> None:
         """Apply UI preferences from state.settings to shell, store ui_mode, and gated chrome."""
+        from .theme import design_system
+
+        design_system.set_ui_density(self.state.settings.density or "comfortable")
+        get_theme_manager().apply(
+            self.state.settings.theme_key,
+            self.root,
+            gradient_stops=parse_gradient_stops_from_raw(self.state.settings.custom_gradient_stops),
+        )
         self.shell.apply_preferences()
         m = "advanced" if self.state.settings.advanced_mode else "simple"
         self.store.set_ui_mode(m)
@@ -615,10 +693,23 @@ class CerebroApp:
             self.hub.shutdown()
         except Exception:
             pass
-        # Persist geometry
+        # Persist geometry (do not save maximize / full-screen client size — that caused huge restarts)
         try:
-            self.state.settings.window_width = self.root.winfo_width()
-            self.state.settings.window_height = self.root.winfo_height()
+            st = ""
+            try:
+                st = str(self.root.state() or "")
+            except Exception:
+                pass
+            if st.lower() == "zoomed":
+                self.state.settings.window_width = 0
+                self.state.settings.window_height = 0
+                self.state.settings.window_x = -1
+                self.state.settings.window_y = -1
+            else:
+                self.state.settings.window_width = self.root.winfo_width()
+                self.state.settings.window_height = self.root.winfo_height()
+                self.state.settings.window_x = self.root.winfo_x()
+                self.state.settings.window_y = self.root.winfo_y()
             self.state.save()
         except Exception:
             pass

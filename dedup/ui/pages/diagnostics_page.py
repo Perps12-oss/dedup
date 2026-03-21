@@ -232,9 +232,10 @@ class DiagnosticsPage(ttk.Frame):
                 ("message", "Message", 280, "w"),
                 ("detail", "Detail", 200, "w"),
             ],
-            height=5,
+            height=4,
         )
         self._warn_table.grid(row=1, column=0, sticky="nsew")
+        self._warn_table.bind_height_to_parent(body, min_lines=3, max_lines=12, reserve_px=56)
 
     def apply_ui_mode(self, mode: str) -> None:
         """Simple mode: Phases tab only. Advanced: all notebook tabs."""
@@ -294,9 +295,10 @@ class DiagnosticsPage(ttk.Frame):
                 ("ckpt", "Checkpoint", 140, "w"),
                 ("resume", "Resume", 90, "w"),
             ],
-            height=14,
+            height=8,
         )
         self._phases_table.grid(row=0, column=0, sticky="nsew", padx=_GAP_SM, pady=_GAP_SM)
+        self._phases_table.bind_height_to_parent(tab, min_lines=5, max_lines=28, reserve_px=24)
 
     def _build_artifacts_tab(self):
         tab = self._tab_arts
@@ -309,9 +311,10 @@ class DiagnosticsPage(ttk.Frame):
                 ("count", "Rows", 80, "e"),
                 ("desc", "Description", 280, "w"),
             ],
-            height=14,
+            height=8,
         )
         self._arts_table.grid(row=0, column=0, sticky="nsew", padx=_GAP_SM, pady=_GAP_SM)
+        self._arts_table.bind_height_to_parent(tab, min_lines=5, max_lines=28, reserve_px=24)
 
     def _build_compat_tab(self):
         tab = self._tab_compat
@@ -327,9 +330,10 @@ class DiagnosticsPage(ttk.Frame):
                 ("artifact", "Artifacts", 60, "center"),
                 ("action", "Resume Action", 120, "w"),
             ],
-            height=14,
+            height=8,
         )
         self._compat_table.grid(row=0, column=0, sticky="nsew", padx=_GAP_SM, pady=_GAP_SM)
+        self._compat_table.bind_height_to_parent(tab, min_lines=5, max_lines=28, reserve_px=24)
 
     def _build_events_tab(self):
         tab = self._tab_events
@@ -363,9 +367,10 @@ class DiagnosticsPage(ttk.Frame):
                 ("sev", "Severity", 60, "w"),
                 ("detail", "Detail", 300, "w"),
             ],
-            height=14,
+            height=8,
         )
         self._events_table.grid(row=1, column=0, sticky="nsew", padx=_GAP_SM, pady=(_GAP_XS, _GAP_SM))
+        self._events_table.bind_height_to_parent(tab, min_lines=5, max_lines=28, reserve_px=52)
 
     def _build_integrity_tab(self):
         tab = self._tab_integ
@@ -378,9 +383,10 @@ class DiagnosticsPage(ttk.Frame):
                 ("status", "Status", 80, "w"),
                 ("detail", "Detail", 320, "w"),
             ],
-            height=14,
+            height=8,
         )
         self._integ_table.grid(row=0, column=0, sticky="nsew", padx=_GAP_SM, pady=_GAP_SM)
+        self._integ_table.bind_height_to_parent(tab, min_lines=5, max_lines=28, reserve_px=24)
 
     # ----------------------------------------------------------------
     # Public API — unchanged logic

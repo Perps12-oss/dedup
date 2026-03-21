@@ -1,7 +1,15 @@
 """
-Lightweight non-modal toast using a borderless Toplevel.
+Toast notifications — short-lived, non-modal messages in the bottom-right of the window.
 
-Phase 3 stub: call sites can be added incrementally (scan complete, theme applied, etc.).
+Attach once to the root window (e.g. ``CerebroApp`` uses ``ToastManager(self.root)``).
+
+Usage::
+
+    toast = ToastManager(root)
+    toast.show("Scan complete.", ms=4500)
+
+``show`` queues a single visible toast at a time; a new ``show`` cancels the
+previous dismiss timer. The window does not steal keyboard focus.
 """
 
 from __future__ import annotations

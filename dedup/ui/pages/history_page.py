@@ -76,6 +76,7 @@ class HistoryPage(ttk.Frame):
 
     def _build(self):
         self.columnconfigure(0, weight=1)
+        # Table expands; detail strip stays natural height at bottom.
         self.rowconfigure(2, weight=1)
 
         # ── Page header ───────────────────────────────────────────────
@@ -185,10 +186,11 @@ class HistoryPage(ttk.Frame):
                 ("reclaim", "Reclaimable", 90, "e"),
                 ("warnings", "Warns", 50, "center"),
             ],
-            height=12,
+            height=6,
             on_select=self._on_session_select,
         )
         self._table.grid(row=2, column=0, sticky="nsew")
+        self._table.bind_height_to_parent(body, min_lines=4, max_lines=24, reserve_px=160)
 
         # Action buttons below table — Load/Resume on left, Delete on right
         act = ttk.Frame(body, style="Panel.TFrame")

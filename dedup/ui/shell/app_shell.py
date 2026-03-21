@@ -64,6 +64,7 @@ class AppShell(ttk.Frame):
             on_density_toggle=self._do_density_toggle,
             on_advanced_toggle=self._do_advanced_toggle,
             on_settings=lambda: self._on_navigate("settings"),
+            on_drawer_toggle=self.toggle_drawer,
         )
         self.top_bar.grid(row=0, column=0, sticky="ew")
 
@@ -84,7 +85,11 @@ class AppShell(ttk.Frame):
         middle.grid_columnconfigure(1, minsize=1)  # 1px separator only
         middle.grid_columnconfigure(2, weight=1)
 
-        self.nav_rail = NavRail(middle, on_navigate=self._handle_navigate)
+        self.nav_rail = NavRail(
+            middle,
+            on_navigate=self._handle_navigate,
+            on_density_toggle=self._do_density_toggle,
+        )
         self.nav_rail.grid(row=0, column=0, sticky="ns")
 
         # Thin separator after nav rail (no extra gap)
@@ -104,7 +109,7 @@ class AppShell(ttk.Frame):
         self.content.bind("<Configure>", self._on_content_resize, add="+")
 
         # Insight drawer
-        self.insight_drawer = InsightDrawer(middle)
+        self.insight_drawer = InsightDrawer(middle, on_close=self.toggle_drawer)
         self.insight_drawer.grid(row=0, column=3, sticky="ns")
 
         # ---- Status strip ----
@@ -169,6 +174,10 @@ class AppShell(ttk.Frame):
             self.insight_drawer.show()
             self.insight_drawer.grid(row=0, column=3, sticky="ns", in_=self.content.master)
             self._state.settings.show_insight_drawer = True
+        try:
+            self._state.save()
+        except Exception:
+            pass
 
     def _handle_navigate(self, page: str):
         self._on_navigate(page)
@@ -182,6 +191,11 @@ class AppShell(ttk.Frame):
         cycle = {"comfortable": "cozy", "cozy": "compact", "compact": "comfortable"}
         s.density = cycle.get(s.density, "cozy")
         self.top_bar.set_density_label(s.density)
+        try:
+            self._state.save()
+        except Exception:
+            pass
+        self._state.emit("density_changed", s.density)
 
     def _do_advanced_toggle(self):
         s = self._state.settings
@@ -194,7 +208,7 @@ class AppShell(ttk.Frame):
             pass
 
     def _on_theme_applied(self, tokens: dict):
-        self._grad_bar.update_colors(tokens["gradient_start"], tokens["gradient_end"])
+        self._grad_bar.update_from_tokens(tokens)
         # Re-set theme combo
         self.top_bar.set_current_theme(self._state.settings.theme_key)
 

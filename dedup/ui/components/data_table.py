@@ -4,8 +4,11 @@ DataTable — styled Treeview wrapper with sticky headers, sort, and density sup
 
 from __future__ import annotations
 
+import tkinter as tk
 from tkinter import ttk
 from typing import Callable, List, Optional, Tuple
+
+OptionalCallback = Optional[Callable[[], None]]
 
 ColumnSpec = Tuple[str, str, int, str]  # (key, heading, width, anchor)
 
@@ -85,6 +88,39 @@ class DataTable(ttk.Frame):
         self.tree.tag_configure("safe", background="")
         self.tree.tag_configure("warn", background="")
         self.tree.tag_configure("danger", background="")
+
+    def set_height(self, lines: int) -> None:
+        """Set visible Treeview rows (ttk does not auto-expand height with the frame)."""
+        lines = max(3, min(48, int(lines)))
+        self.tree.configure(height=lines)
+
+    def bind_height_to_parent(
+        self,
+        parent: tk.Widget,
+        *,
+        min_lines: int = 4,
+        max_lines: int = 28,
+        reserve_px: int = 0,
+        line_px: int = 22,
+        after_change: OptionalCallback = None,
+    ) -> None:
+        """Resize visible row count when `parent` is resized so the table fills available space."""
+
+        def _on_cfg(event: tk.Event) -> None:
+            if event.widget is not parent:
+                return
+            h = int(event.height) - int(reserve_px)
+            if h < 48:
+                return
+            n = max(min_lines, min(max_lines, h // max(16, line_px)))
+            self.set_height(n)
+            if after_change:
+                try:
+                    after_change()
+                except Exception:
+                    pass
+
+        parent.bind("<Configure>", _on_cfg, add="+")
 
     def clear(self):
         for item in self.tree.get_children():

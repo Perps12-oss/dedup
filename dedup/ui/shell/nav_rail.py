@@ -36,9 +36,16 @@ class NavRail(tk.Frame):
     background colour that isn't overridden by the platform theme.
     """
 
-    def __init__(self, parent, on_navigate: Callable[[str], None], **kwargs):
+    def __init__(
+        self,
+        parent,
+        on_navigate: Callable[[str], None],
+        on_density_toggle: Optional[Callable[[], None]] = None,
+        **kwargs,
+    ):
         super().__init__(parent, **kwargs)
         self._on_navigate = on_navigate
+        self._on_density_toggle = on_density_toggle
         self._buttons: Dict[str, tk.Frame] = {}
         self._active: Optional[str] = None
         self._tm = get_theme_manager()
@@ -83,6 +90,8 @@ class NavRail(tk.Frame):
 
         self._compact_lbl = tk.Label(self, text="⇔", font=font_tuple("body"), cursor="hand2")
         self._compact_lbl.pack(pady=SPACING["md"])
+        if self._on_density_toggle:
+            self._compact_lbl.bind("<Button-1>", lambda e: self._on_density_toggle())
 
     def _add_nav_cell(self, key: str, icon: str, label: str) -> None:
         cell = tk.Frame(self, cursor="hand2")

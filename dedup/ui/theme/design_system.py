@@ -16,6 +16,14 @@ from typing import Any, Dict
 # ---------------------------------------------------------------------------
 FONT_FAMILY = "Segoe UI"
 
+# Display density (TopBar ⊞ control + Settings). Scales default font sizes in font_tuple().
+_DENSITY_FONT_SCALE: Dict[str, float] = {
+    "comfortable": 1.0,
+    "cozy": 0.94,
+    "compact": 0.88,
+}
+_UI_DENSITY: str = "comfortable"
+
 TYPOGRAPHY: Dict[str, Any] = {
     # Page-level: hero and primary headings
     "page_title": {"size": 32, "weight": "bold"},
@@ -41,10 +49,26 @@ TYPOGRAPHY: Dict[str, Any] = {
 }
 
 
+def set_ui_density(density: str) -> None:
+    """Called when AppSettings.density changes (TopBar or Settings)."""
+    global _UI_DENSITY
+    _UI_DENSITY = density if density in _DENSITY_FONT_SCALE else "comfortable"
+
+
+def get_ui_density() -> str:
+    return _UI_DENSITY
+
+
+def get_font_scale() -> float:
+    return float(_DENSITY_FONT_SCALE.get(_UI_DENSITY, 1.0))
+
+
 def font_tuple(style_name: str) -> tuple:
     """Return (family, size, weight) for tkinter font=."""
     s = TYPOGRAPHY.get(style_name, TYPOGRAPHY["body"])
-    return (FONT_FAMILY, s["size"], s["weight"])
+    scale = get_font_scale()
+    size = max(8, min(44, int(round(s["size"] * scale))))
+    return (FONT_FAMILY, size, s["weight"])
 
 
 # ---------------------------------------------------------------------------

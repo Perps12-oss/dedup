@@ -20,11 +20,11 @@ class ThemeSwatchGrid(ttk.Frame):
         self._build()
 
     def _build(self):
-        col = 0
-        for key, t in THEMES.items():
+        cols = 5
+        for i, (key, t) in enumerate(THEMES.items()):
             swatch = self._make_swatch(key, t)
-            swatch.grid(row=0, column=col, padx=4, pady=4)
-            col += 1
+            row, col = i // cols, i % cols
+            swatch.grid(row=row, column=col, padx=4, pady=4, sticky="nw")
 
     def _make_swatch(self, key: str, t: dict) -> tk.Frame:
         outer = tk.Frame(self, bg=t["border_strong"], padx=1, pady=1)

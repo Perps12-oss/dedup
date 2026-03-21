@@ -799,7 +799,7 @@ class ScanPage(ttk.Frame):
         crit_wrap.rowconfigure(0, weight=1)
         self._events_critical = tk.Listbox(
             crit_wrap,
-            height=3,
+            height=2,
             selectmode="browse",
             font=font_tuple("data_value"),
             borderwidth=0,
@@ -824,7 +824,7 @@ class ScanPage(ttk.Frame):
         prog_wrap.rowconfigure(0, weight=1)
         self._events_progress = tk.Listbox(
             prog_wrap,
-            height=3,
+            height=2,
             selectmode="browse",
             font=font_tuple("data_value"),
             borderwidth=0,
@@ -854,7 +854,7 @@ class ScanPage(ttk.Frame):
         self._detail_wrap.rowconfigure(0, weight=1)
         self._events_detail = tk.Listbox(
             self._detail_wrap,
-            height=4,
+            height=2,
             selectmode="browse",
             font=font_tuple("data_value"),
             borderwidth=0,

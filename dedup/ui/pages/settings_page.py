@@ -91,7 +91,7 @@ class SettingsPage(ttk.Frame):
 
     def _build(self):
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(3, weight=1)
+        self.rowconfigure(1, weight=1)
 
         # ── Page header ───────────────────────────────────────────────
         # Title and subtitle stacked vertically (standard pattern).
@@ -112,19 +112,31 @@ class SettingsPage(ttk.Frame):
             font=font_tuple("page_subtitle"),
         ).pack(side="top", anchor="w", pady=(_GAP_XS, 0))
 
-        # ── APPEARANCE ────────────────────────────────────────────────
-        appearance = SectionCard(self, title=f"{IC.THEMES}  Appearance")
-        appearance.grid(row=1, column=0, sticky="ew", padx=_PAD_PAGE, pady=(0, _GAP_MD))
+        # ── Tabbed sections (fits default window without scrolling) ───
+        nb = ttk.Notebook(self)
+        nb.grid(row=1, column=0, sticky="nsew", padx=_PAD_PAGE, pady=(0, _PAD_PAGE))
+
+        tab_app = ttk.Frame(nb)
+        tab_beh = ttk.Frame(nb)
+        tab_adv = ttk.Frame(nb)
+        for t in (tab_app, tab_beh, tab_adv):
+            t.columnconfigure(0, weight=1)
+            t.rowconfigure(0, weight=1)
+
+        nb.add(tab_app, text=f" {IC.THEMES} Appearance ")
+        nb.add(tab_beh, text=f" {IC.INFO} Behavior ")
+        nb.add(tab_adv, text=f" {IC.SHIELD} Advanced ")
+
+        appearance = SectionCard(tab_app, title=f"{IC.THEMES}  Appearance")
+        appearance.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
         self._build_appearance(appearance.body)
 
-        # ── BEHAVIOR ──────────────────────────────────────────────────
-        behavior = SectionCard(self, title=f"{IC.INFO}  Behavior")
-        behavior.grid(row=2, column=0, sticky="ew", padx=_PAD_PAGE, pady=(0, _GAP_MD))
+        behavior = SectionCard(tab_beh, title=f"{IC.INFO}  Behavior")
+        behavior.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
         self._build_behavior(behavior.body)
 
-        # ── ADVANCED ──────────────────────────────────────────────────
-        advanced = SectionCard(self, title=f"{IC.SHIELD}  Advanced")
-        advanced.grid(row=3, column=0, sticky="nsew", padx=_PAD_PAGE, pady=(0, _PAD_PAGE))
+        advanced = SectionCard(tab_adv, title=f"{IC.SHIELD}  Advanced")
+        advanced.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
         self._build_advanced(advanced.body)
 
     def _build_appearance(self, body: ttk.Frame):

@@ -199,10 +199,10 @@ class ReviewPage(ttk.Frame):
         body = ttk.Frame(self)
         body.grid(row=2, column=0, sticky="nsew", padx=_PAD_PAGE, pady=(0, _PAD_PAGE))
         body.rowconfigure(0, weight=1)
-        # 25% / 50% / 25% column split
-        body.columnconfigure(0, weight=1, minsize=220)
-        body.columnconfigure(1, weight=2, minsize=400)
-        body.columnconfigure(2, weight=1, minsize=220)
+        # 25% / 50% / 25% column split (mins fit MIN_WIDTH 540 + 56px nav + page padding)
+        body.columnconfigure(0, weight=1, minsize=110)
+        body.columnconfigure(1, weight=2, minsize=220)
+        body.columnconfigure(2, weight=1, minsize=110)
 
         # Left: Group Navigator
         left = SectionCard(body, title=f"{IC.GROUPS}  Group Navigator")
@@ -394,12 +394,19 @@ class ReviewPage(ttk.Frame):
                 ("size", "Size", 70, "e"),
                 ("conf", "Conf", 40, "center"),
             ],
-            height=16,
+            height=8,
             sortable=False,
             on_select=self._dispatch_group_select,
         )
         self._group_table.grid(row=4, column=0, sticky="nsew")
         body.rowconfigure(4, weight=1)
+        self._group_table.bind_height_to_parent(
+            body,
+            min_lines=5,
+            max_lines=22,
+            reserve_px=200,
+            after_change=self._refresh_group_list,
+        )
 
     def _build_workspace(self, body: ttk.Frame):
         body.columnconfigure(0, weight=1)

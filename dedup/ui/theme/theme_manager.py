@@ -9,13 +9,48 @@ from __future__ import annotations
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Callable, List, Optional
+from typing import Any, Callable, List, Optional, Tuple
 
-from .design_system import font_tuple
+from .design_system import font_tuple, get_font_scale
+from .gradients import lerp_color
 from .theme_registry import DEFAULT_THEME, get_theme
 from .theme_tokens import ThemeDict
 
 _INSTANCE: Optional["ThemeManager"] = None
+
+
+def parse_gradient_stops_from_raw(raw: Any) -> Optional[List[Tuple[float, str]]]:
+    """Normalize AppSettings.custom_gradient_stops (JSON lists) into sorted stops."""
+    if not raw:
+        return None
+    out: List[Tuple[float, str]] = []
+    for item in raw:
+        if isinstance(item, (list, tuple)) and len(item) >= 2:
+            try:
+                pos = float(item[0])
+                col = str(item[1]).strip()
+                if col and not col.startswith("#"):
+                    col = "#" + col
+                if len(col) == 7:
+                    out.append((max(0.0, min(1.0, pos)), col))
+            except (TypeError, ValueError):
+                continue
+    out.sort(key=lambda x: x[0])
+    return out if len(out) >= 2 else None
+
+
+def merge_gradient_into_tokens(base: ThemeDict, stops: List[Tuple[float, str]]) -> ThemeDict:
+    """Copy preset tokens and override gradient_* + multi-stop strip data."""
+    s = sorted(stops, key=lambda x: x[0])
+    t = dict(base)
+    t["gradient_start"] = s[0][1]
+    t["gradient_end"] = s[-1][1]
+    if len(s) >= 3:
+        t["gradient_mid"] = s[len(s) // 2][1]
+    else:
+        t["gradient_mid"] = lerp_color(s[0][1], s[-1][1], 0.5)
+    t["_multi_gradient_stops"] = s
+    return t
 
 
 def get_theme_manager() -> "ThemeManager":
@@ -50,9 +85,19 @@ class ThemeManager:
     def unsubscribe(self, callback: Callable[[ThemeDict], None]) -> None:
         self._observers = [o for o in self._observers if o is not callback]
 
-    def apply(self, theme_key: str, root: tk.Tk) -> None:
+    def apply(
+        self,
+        theme_key: str,
+        root: tk.Tk,
+        *,
+        gradient_stops: Optional[List[Tuple[float, str]]] = None,
+    ) -> None:
         self._current_key = theme_key
-        self._tokens = get_theme(theme_key)
+        base = get_theme(theme_key)
+        if gradient_stops and len(gradient_stops) >= 2:
+            self._tokens = merge_gradient_into_tokens(base, gradient_stops)
+        else:
+            self._tokens = dict(base)
         self._configure_styles(root)
         self._apply_tk_defaults(root)
         for cb in self._observers:
@@ -218,13 +263,15 @@ class ThemeManager:
         )
 
         # ---- Treeview (DataTable) ----
+        scale = get_font_scale()
+        row_h = max(22, int(round(36 * scale)))
         style.configure(
             "Treeview",
             background=panel,
             foreground=fg,
             fieldbackground=panel,
             bordercolor=bsoft,
-            rowheight=36,
+            rowheight=row_h,
             font=font_tuple("body"),
         )
         style.configure(

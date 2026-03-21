@@ -94,12 +94,13 @@ class MissionPage(ttk.Frame):
 
     def _build(self):
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(4, weight=1)
+        self.rowconfigure(0, weight=1)
 
         content = ttk.Frame(self, padding=(_PAD_PAGE, _PAD_PAGE, _PAD_PAGE, _PAD_PAGE))
         content.grid(row=0, column=0, sticky="nsew")
         content.columnconfigure(0, weight=1)
-        content.rowconfigure(4, weight=1)
+        # Recent Sessions fills remaining height between readiness row and Quick Scan.
+        content.rowconfigure(2, weight=1)
 
         # ── Hero zone ────────────────────────────────────────────────
         # Title block + subtitle stacked; CTAs on same row below.
@@ -182,6 +183,7 @@ class MissionPage(ttk.Frame):
         # ── Recent Sessions ───────────────────────────────────────────
         self._recent_card = SectionCard(content, title=f"{IC.HISTORY}  Recent Sessions")
         self._recent_card.grid(row=2, column=0, sticky="nsew", pady=(0, _GAP_LG))
+        self._recent_card.columnconfigure(0, weight=1)
         self._build_recent_sessions(self._recent_card.body)
 
         # ── Quick Scan ────────────────────────────────────────────────
@@ -386,6 +388,7 @@ class MissionPage(ttk.Frame):
 
     def _build_recent_sessions(self, body: ttk.Frame):
         body.columnconfigure(0, weight=1)
+        body.rowconfigure(0, weight=1)
         self._recent_cards = ttk.Frame(body, style="Panel.TFrame")
         self._recent_cards.grid(row=0, column=0, sticky="nsew")
         self._empty_recent = ttk.Label(
@@ -550,7 +553,7 @@ class MissionPage(ttk.Frame):
             return
         self._empty_recent.grid_remove()
         self._welcome_var.set("")
-        max_cards = 6
+        max_cards = 3
         cols = 3
         for i, item in enumerate(self.vm.recent_sessions[:max_cards]):
             scan_id = item.get("scan_id", "")

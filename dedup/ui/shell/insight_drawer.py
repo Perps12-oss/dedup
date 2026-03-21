@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from tkinter import ttk
-from typing import List, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from ..theme.design_system import SPACING, font_tuple
 from ..theme.theme_manager import get_theme_manager
@@ -27,8 +27,9 @@ DRAWER_WIDTH = 220
 class InsightDrawer(tk.Frame):
     """Right-side contextual insight drawer."""
 
-    def __init__(self, parent, **kwargs):
+    def __init__(self, parent, on_close: Optional[Callable[[], None]] = None, **kwargs):
         super().__init__(parent, width=DRAWER_WIDTH, **kwargs)
+        self._on_close = on_close
         self.pack_propagate(False)
         self.grid_propagate(False)
         self._tm = get_theme_manager()
@@ -90,6 +91,12 @@ class InsightDrawer(tk.Frame):
             if sec.title == title:
                 sec.set_kv(key, value)
                 return
+
+    def _handle_close_click(self) -> None:
+        if self._on_close:
+            self._on_close()
+        else:
+            self.hide()
 
     def hide(self):
         self._visible = False

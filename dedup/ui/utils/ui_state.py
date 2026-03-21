@@ -39,9 +39,14 @@ class AppSettings:
     history_show_audit: bool = False
     diag_show_integrity: bool = True
     diag_show_events: bool = False
-    # Window geometry
-    window_width: int = 1280
-    window_height: int = 820
+    # Window geometry (0×0 = use proportional default on next launch; also written when closing maximized)
+    window_width: int = 0
+    window_height: int = 0
+    # Position (-1 = center on primary monitor next launch)
+    window_x: int = -1
+    window_y: int = -1
+    # Optional multi-stop accent gradient [[0.0, "#hex"], ...] for top bar strip (2+ stops)
+    custom_gradient_stops: Optional[list] = None
 
     def to_dict(self):
         return asdict(self)
