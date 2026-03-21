@@ -98,10 +98,11 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 - Startup sync from `AppSettings.advanced_mode`.
 - `_on_advanced_mode` updates store; advanced toggle **persists** via `UIState.save()` in `AppShell`.
 - **Simple-mode gates:** contextual **Export** / **Copy Diag**; Diagnostics notebook (Phases-only) + drawer **Compat** row; Review **Compare** control + shortcuts; `_apply_preferences()` keeps Settings ↔ TopBar ↔ store in sync.
+- **Mission / Scan:** Simple = compact Mission + Scan left rail; Advanced = `mission_show_*` / `scan_show_*` + new Settings checkboxes; `sync_chrome()` on preference apply.
 
 ### Skipped / why
 
-- **Per-page conditional layouts** driven only by `ui_mode` (vs existing granular `AppSettings` flags): broader reflow (Mission / Scan sections) still optional.
+- Deeper per-page reflows beyond Mission/Scan (e.g. History column sets) — only if product asks.
 
 ### Sub-phase
 
@@ -150,5 +151,5 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 2. Phase 2 follow-up: JSON theme export/import (no draggable editor yet).  
 3. Phase 3 follow-up: Toast wiring + remove/hide Export stubs.  
 4. ~~Phase 4 follow-up~~ **Done (spike):** Virtual windowed navigator + `BENCHMARK_BASELINE` snapshot row. *Remaining:* broader VirtualTree, incremental bench rows.  
-5. ~~Phase 5 follow-up~~ **Done:** `ui_mode` gates for Export, Copy Diag, diagnostics tabs/drawer, Review Compare. *Remaining:* optional Mission/Scan section gates.  
+5. ~~Phase 5 follow-up~~ **Done:** `ui_mode` gates + Mission/Scan layout (`sync_chrome`, Settings toggles for mission/scan panels).  
 6. Phase 7: contrast remediation for failing presets.

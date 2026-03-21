@@ -26,6 +26,14 @@
 
 - Full tabs, Export / Copy Diag actions, Compare UI, and drawer Compat block.
 
-## Optional later
+## Mission & Scan layout
 
-- Further gates (Mission / Scan density) driven by `AppSettings` flags such as `scan_show_phase_metrics`.
+- **Simple `ui_mode`:** Mission shows **Last Scan** only (full-width), hides **Engine** / **Trash Protection** cards, **Recent Sessions**, and **Watch Tour**. Scan hides the right column (**Live Metrics**, **Health & Compatibility**, **Activity Feed**) — target + timeline + phase detail only.
+- **Advanced `ui_mode`:** Uses `AppSettings` flags (Settings → Behavior):
+  - `mission_show_capabilities` — Engine card
+  - `mission_show_warnings` — Trash Protection card
+  - `scan_show_phase_metrics` — Live Metrics
+  - `scan_show_saved_work` — Health & Compatibility
+  - `scan_show_events` — Activity Feed (unchanged; default off)
+
+`CerebroApp._apply_preferences()` calls `MissionPage.sync_chrome()` and `ScanPage.sync_chrome()` so toggles apply without restart.

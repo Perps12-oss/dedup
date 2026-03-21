@@ -211,6 +211,7 @@ class CerebroApp:
             coordinator=self.coordinator,
             on_request_refresh=self._refresh_mission_state,
             on_open_last_review=lambda: self._navigate("review"),
+            ui_state=self.state,
         )
         self.shell.register_page("mission", self._mission)
         self._mission.attach_store(self.store)
@@ -222,6 +223,7 @@ class CerebroApp:
             on_cancel=self._on_scan_cancel,
             on_go_to_review=self._go_to_review_after_scan,
             scan_controller=self._scan_controller,
+            ui_state=self.state,
         )
         self.shell.register_page("scan", self._scan)
 
@@ -585,6 +587,8 @@ class CerebroApp:
         if ap:
             self._update_page_actions(ap)
             self._update_drawer_content(ap)
+        self._mission.sync_chrome()
+        self._scan.sync_chrome()
 
     def _copy_diagnostics(self):
         try:

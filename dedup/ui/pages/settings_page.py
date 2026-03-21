@@ -276,15 +276,39 @@ class SettingsPage(ttk.Frame):
             ).grid(row=i, column=0, sticky="w", pady=(_GAP_XS, 0))
             self._pref_vars[attr] = var
 
+        # Mission dashboard (Advanced mode layout)
+        ttk.Label(
+            body,
+            text="Mission dashboard",
+            style="Panel.Secondary.TLabel",
+            font=font_tuple("body_bold"),
+        ).grid(row=2, column=0, sticky="w", pady=(0, _GAP_XS))
+        mission_frame = ttk.Frame(body, style="Panel.TFrame")
+        mission_frame.grid(row=3, column=0, sticky="w", pady=(0, _GAP_MD))
+        for i, (attr, label) in enumerate(
+            [
+                ("mission_show_capabilities", "Show Engine status card"),
+                ("mission_show_warnings", "Show Trash Protection card"),
+            ]
+        ):
+            mvar = tk.BooleanVar(value=getattr(self._state.settings, attr, True))
+            ttk.Checkbutton(
+                mission_frame,
+                text=label,
+                variable=mvar,
+                command=lambda a=attr, v=mvar: self._on_pref(a, v.get()),
+            ).grid(row=i, column=0, sticky="w", pady=(_GAP_XS, 0))
+            self._pref_vars[attr] = mvar
+
         # Scan & Performance sub-section
         ttk.Label(
             body,
             text="Scan & Performance",
             style="Panel.Secondary.TLabel",
             font=font_tuple("body_bold"),
-        ).grid(row=2, column=0, sticky="w", pady=(0, _GAP_XS))
+        ).grid(row=4, column=0, sticky="w", pady=(0, _GAP_XS))
         scan_frame = ttk.Frame(body, style="Panel.TFrame")
-        scan_frame.grid(row=3, column=0, sticky="w")
+        scan_frame.grid(row=5, column=0, sticky="w")
 
         # Row: scan events toggle + tooltip
         scan_row = ttk.Frame(scan_frame, style="Panel.TFrame")
@@ -325,6 +349,23 @@ class SettingsPage(ttk.Frame):
         )
         info2.pack(side="left", padx=(_GAP_XS, 0))
         _tooltip(info2, "Displays live metrics and health in the right drawer.")
+
+        for si, (attr, label) in enumerate(
+            [
+                ("scan_show_phase_metrics", "Show Live Metrics panel (Scan page)"),
+                ("scan_show_saved_work", "Show Health & Compatibility panel (Scan page)"),
+            ]
+        ):
+            scan_opt = ttk.Frame(scan_frame, style="Panel.TFrame")
+            scan_opt.grid(row=2 + si, column=0, sticky="w", pady=(_GAP_XS, 0))
+            sv = tk.BooleanVar(value=getattr(self._state.settings, attr, True))
+            ttk.Checkbutton(
+                scan_opt,
+                text=label,
+                variable=sv,
+                command=lambda a=attr, v=sv: self._on_pref(a, v.get()),
+            ).pack(side="left")
+            self._pref_vars[attr] = sv
 
     def _build_advanced(self, body: ttk.Frame):
         body.columnconfigure(0, weight=1)

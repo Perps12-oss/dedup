@@ -43,6 +43,7 @@ from ..projections.session_projection import SessionProjection
 from ..theme.design_system import font_tuple
 from ..utils.formatting import fmt_bytes, fmt_duration, fmt_int, truncate_path
 from ..utils.icons import IC
+from ..utils.ui_state import UIState
 from ..viewmodels.scan_vm import ScanVM
 
 if TYPE_CHECKING:
@@ -80,10 +81,12 @@ class ScanPage(ttk.Frame):
         scan_controller=None,
         coordinator: Optional[ScanCoordinator] = None,
         hub=None,
+        ui_state: Optional[UIState] = None,
         **kwargs,
     ):
         super().__init__(parent, **kwargs)
         self.coordinator = coordinator
+        self._ui_state = ui_state
         self.on_complete = on_complete
         self.on_cancel = on_cancel
         self.on_go_to_review = on_go_to_review
@@ -212,6 +215,7 @@ class ScanPage(ttk.Frame):
             self._defer(self._render_phase_detail, "phase_detail")
             self._defer(self._render_work_saved, "work_saved")
             self._defer(self._render_events, "events")
+            self._sync_scan_layout()
 
         self._unsub_store = store.subscribe(on_state, fire_immediately=True)
 
@@ -223,6 +227,45 @@ class ScanPage(ttk.Frame):
                 pass
             self._unsub_store = None
         self._store = None
+
+    def _sync_scan_layout(self) -> None:
+        """Simple ui_mode: left column only. Advanced: honor scan_show_* flags."""
+        if not hasattr(self, "_metrics_card"):
+            return
+        if self._store is None:
+            return
+        mode = getattr(self._store.state, "ui_mode", "simple")
+        s = self._ui_state.settings if self._ui_state else None
+        simple = mode != "advanced"
+        if simple:
+            show_m = show_w = show_e = False
+        else:
+            show_m = s.scan_show_phase_metrics if s else True
+            show_w = s.scan_show_saved_work if s else True
+            show_e = s.scan_show_events if s else False
+
+        if show_m:
+            self._metrics_card.grid()
+        else:
+            self._metrics_card.grid_remove()
+        if show_w:
+            self._work_card.grid()
+        else:
+            self._work_card.grid_remove()
+        if show_e:
+            self._events_card.grid()
+        else:
+            self._events_card.grid_remove()
+
+        main = self._scan_main
+        if show_m or show_w or show_e:
+            main.columnconfigure(1, weight=3)
+        else:
+            main.columnconfigure(1, weight=0)
+
+    def sync_chrome(self) -> None:
+        """Re-apply Scan layout from `ui_mode` + `AppSettings`."""
+        self._sync_scan_layout()
 
     # ------------------------------------------------------------------
     # Projection callbacks
@@ -527,7 +570,8 @@ class ScanPage(ttk.Frame):
         self._error_panel.hide()
 
         # ── Main two-column dashboard ─────────────────────────────────
-        main = ttk.Frame(self, padding=(_PAD_PAGE, _GAP_MD, _PAD_PAGE, _PAD_PAGE))
+        self._scan_main = ttk.Frame(self, padding=(_PAD_PAGE, _GAP_MD, _PAD_PAGE, _PAD_PAGE))
+        main = self._scan_main
         main.grid(row=3, column=0, sticky="nsew")
         main.columnconfigure(0, weight=2)
         main.columnconfigure(1, weight=3)
@@ -548,17 +592,17 @@ class ScanPage(ttk.Frame):
         self._build_phase_detail(phase_card.body)
 
         # Right rail
-        metrics_card = SectionCard(main, title=f"{IC.SPEED}  Live Metrics")
-        metrics_card.grid(row=0, column=1, sticky="ew", pady=(0, _GAP_MD))
-        self._build_live_metrics(metrics_card.body)
+        self._metrics_card = SectionCard(main, title=f"{IC.SPEED}  Live Metrics")
+        self._metrics_card.grid(row=0, column=1, sticky="ew", pady=(0, _GAP_MD))
+        self._build_live_metrics(self._metrics_card.body)
 
         self._work_card = SectionCard(main, title=f"{IC.SHIELD}  Health & Compatibility")
         self._work_card.grid(row=1, column=1, sticky="ew", pady=(0, _GAP_MD))
         self._build_work_saved(self._work_card.body)
 
-        events_card = SectionCard(main, title=f"{IC.INFO}  Activity Feed")
-        events_card.grid(row=2, column=1, sticky="nsew")
-        self._build_events(events_card.body)
+        self._events_card = SectionCard(main, title=f"{IC.INFO}  Activity Feed")
+        self._events_card.grid(row=2, column=1, sticky="nsew")
+        self._build_events(self._events_card.body)
 
     def _build_scan_target(self, body: ttk.Frame):
         body.columnconfigure(0, weight=1)
@@ -1046,7 +1090,7 @@ class ScanPage(ttk.Frame):
             self._after_id = None
 
     def on_show(self) -> None:
-        pass
+        self._sync_scan_layout()
 
     def _show_interruption_banner(self, text: str) -> None:
         self._interrupt_msg.set(text)

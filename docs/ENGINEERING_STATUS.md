@@ -25,10 +25,17 @@
 | **Theme JSON + toasts** | Implemented | Themes page `cerebro_theme_config_v1` import/export; `ToastManager` for scan complete, theme change, export |
 | **Phase 4 spike** | Opt-in | `CEREBRO_VIRTUAL_NAV=1` → Review Group Navigator uses windowed Treeview rows; `BENCHMARK_BASELINE.md` snapshot table |
 | **Simple `ui_mode` gates** | Wired | Export / Copy Diag hidden; Diagnostics Phases-only + drawer; Review Compare hidden + shortcuts gated |
+| **Mission / Scan simple layout** | Wired | Simple: last-scan–only Mission, Scan left column only; Advanced honors `mission_show_*` / `scan_show_*` + Settings checkboxes |
 
 ---
 
 ## Changelog (append newest first)
+
+### 2026-03-21 — Phase 5: Mission & Scan `ui_mode` + settings-driven panels
+
+- `MissionPage` / `ScanPage`: `ui_state` + `sync_chrome()`; store-driven Mission layout; Scan layout after store attach.
+- `AppSettings.scan_show_phase_metrics` default **True** (matches prior Scan UI); Settings Behavior: Mission dashboard + Scan panel toggles.
+- `_apply_preferences` refreshes mission/scan chrome.
 
 ### 2026-03-21 — Phase 5 follow-up: simple-mode UI gates
 

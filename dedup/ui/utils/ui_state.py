@@ -30,7 +30,8 @@ class AppSettings:
     mission_show_warnings: bool = True
     scan_show_saved_work: bool = True
     scan_show_events: bool = False
-    scan_show_phase_metrics: bool = False
+    # Live Metrics card on Scan page; default True matches pre-gating behavior.
+    scan_show_phase_metrics: bool = True
     review_show_preview: bool = True
     review_show_thumbnails: bool = True
     review_show_risk_flags: bool = True

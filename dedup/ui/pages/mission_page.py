@@ -22,6 +22,8 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import TYPE_CHECKING, Callable, Optional
 
+from ..utils.ui_state import UIState
+
 if TYPE_CHECKING:
     from ..state.store import UIStateStore
 
@@ -74,6 +76,7 @@ class MissionPage(ttk.Frame):
         coordinator,
         on_request_refresh: Optional[Callable[[], None]] = None,
         on_open_last_review: Optional[Callable[[], None]] = None,
+        ui_state: Optional[UIState] = None,
         **kwargs,
     ):
         super().__init__(parent, **kwargs)
@@ -82,8 +85,10 @@ class MissionPage(ttk.Frame):
         self.coordinator = coordinator
         self._on_request_refresh = on_request_refresh
         self._on_open_last_review = on_open_last_review or (lambda: None)
+        self._ui_state = ui_state
         self.vm = MissionVM()
         self._selected_path: Optional[Path] = None
+        self._store: Optional["UIStateStore"] = None
         self._store_unsub: Optional[Callable[[], None]] = None
         self._build()
 
@@ -175,9 +180,9 @@ class MissionPage(ttk.Frame):
         self._build_safety_card()
 
         # ── Recent Sessions ───────────────────────────────────────────
-        recent_card = SectionCard(content, title=f"{IC.HISTORY}  Recent Sessions")
-        recent_card.grid(row=2, column=0, sticky="nsew", pady=(0, _GAP_LG))
-        self._build_recent_sessions(recent_card.body)
+        self._recent_card = SectionCard(content, title=f"{IC.HISTORY}  Recent Sessions")
+        self._recent_card.grid(row=2, column=0, sticky="nsew", pady=(0, _GAP_LG))
+        self._build_recent_sessions(self._recent_card.body)
 
         # ── Quick Scan ────────────────────────────────────────────────
         quick_card = SectionCard(content, title=f"{IC.SCAN}  Quick Scan")
@@ -397,8 +402,10 @@ class MissionPage(ttk.Frame):
     def attach_store(self, store: "UIStateStore") -> None:
         if self._store_unsub:
             self._store_unsub()
+        self._store = store
 
         def on_state(state):
+            self._sync_mission_layout()
             mission = getattr(state, "mission", None)
             if mission is not None:
                 self.vm.refresh_from_mission_state(state)
@@ -410,12 +417,61 @@ class MissionPage(ttk.Frame):
                 has_resumable = bool(self.vm.resumable_scan_ids)
                 self._resume_btn.configure(state="normal" if has_resumable else "disabled")
 
-        self._store_unsub = store.subscribe(on_state, fire_immediately=False)
+        self._store_unsub = store.subscribe(on_state, fire_immediately=True)
 
     def detach_store(self) -> None:
         if self._store_unsub:
             self._store_unsub()
             self._store_unsub = None
+        self._store = None
+
+    def _sync_mission_layout(self) -> None:
+        """Simple ui_mode: last-scan only + no recent sessions / tour. Advanced: honor mission_show_*."""
+        mode = "simple"
+        if self._store is not None:
+            mode = getattr(self._store.state, "ui_mode", "simple")
+        s = self._ui_state.settings if self._ui_state else None
+        simple = mode != "advanced"
+        if simple:
+            show_engine = show_safety = False
+            show_recent = False
+            show_tour = False
+        else:
+            show_engine = s.mission_show_capabilities if s else True
+            show_safety = s.mission_show_warnings if s else True
+            show_recent = True
+            show_tour = True
+
+        self._layout_mission_readiness_row(show_engine, show_safety)
+        if show_recent:
+            self._recent_card.grid()
+        else:
+            self._recent_card.grid_remove()
+        if show_tour:
+            self._tour_btn.grid(row=0, column=3, sticky="w")
+        else:
+            self._tour_btn.grid_remove()
+
+    def _layout_mission_readiness_row(self, show_engine: bool, show_safety: bool) -> None:
+        ec, lc, sc = self._engine_card, self._last_scan_card, self._safety_card
+        if show_engine and show_safety:
+            ec.grid(row=0, column=0, sticky="nsew", padx=(0, _GAP_SM))
+            lc.grid(row=0, column=1, sticky="nsew", padx=(_GAP_SM // 2, _GAP_SM // 2))
+            sc.grid(row=0, column=2, sticky="nsew", padx=(_GAP_SM, 0))
+            return
+        if show_engine and not show_safety:
+            ec.grid(row=0, column=0, sticky="nsew", padx=(0, _GAP_SM))
+            lc.grid(row=0, column=1, columnspan=2, sticky="nsew", padx=(_GAP_SM // 2, 0))
+            sc.grid_remove()
+            return
+        if not show_engine and show_safety:
+            ec.grid_remove()
+            lc.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=(0, _GAP_SM))
+            sc.grid(row=0, column=2, sticky="nsew", padx=(_GAP_SM, 0))
+            return
+        ec.grid_remove()
+        sc.grid_remove()
+        lc.grid(row=0, column=0, columnspan=3, sticky="nsew", padx=(0, 0))
 
     # ----------------------------------------------------------------
     # Logic
@@ -425,6 +481,11 @@ class MissionPage(ttk.Frame):
             self._on_request_refresh()
         else:
             self._refresh()
+        self._sync_mission_layout()
+
+    def sync_chrome(self) -> None:
+        """Re-apply Mission layout from `ui_mode` + `AppSettings` (after Settings or Advanced toggle)."""
+        self._sync_mission_layout()
 
     def _refresh(self):
         self.vm.refresh_from_coordinator(self.coordinator)
@@ -441,6 +502,7 @@ class MissionPage(ttk.Frame):
             )
         )
         self._resume_btn.configure(state="normal" if has_resumable else "disabled")
+        self._sync_mission_layout()
 
     def _update_engine_card(self):
         e = self.vm.engine_status
