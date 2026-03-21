@@ -1149,6 +1149,7 @@ class ReviewPage(ttk.Frame):
         self.update()
         result = self.coordinator.execute_deletion(plan)
         self._safety_panel._delete_btn.configure(state="normal", text="DELETE")
+        self._on_execute_done(result)
         if result.failed_files:
             messagebox.showwarning(
                 "Deletion Complete",
@@ -1159,15 +1160,3 @@ class ReviewPage(ttk.Frame):
                 "Deletion Complete",
                 f"Deleted {len(result.deleted_files)} files.",
             )
-        self.on_delete_complete(result)
-        if result.deleted_files and self._current_result:
-            deleted_set = set(result.deleted_files)
-            new_groups  = []
-            for g in self._current_result.duplicate_groups:
-                remaining = [f for f in g.files if f.path not in deleted_set]
-                if len(remaining) >= 2:
-                    from ...engine.models import DuplicateGroup
-                    new_groups.append(DuplicateGroup(
-                        group_id=g.group_id, group_hash=g.group_hash, files=remaining))
-            self._current_result.duplicate_groups = new_groups
-            self.load_result(self._current_result)

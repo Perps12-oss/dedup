@@ -277,7 +277,7 @@ def test_keep_compare_pair_index_mapping(tk_root):
     assert "/f1.jpg" in received
 
     received.clear()
-    stack._compare._pair_index = 1  # showing f1 vs f2
+    stack._compare._next_pair()  # showing f1 vs f2 (syncs _pair_index, _left_idx, _right_idx)
     stack._keep_compare(0)  # Keep Left
     assert "/f1.jpg" in received
     received.clear()
@@ -412,7 +412,11 @@ def test_on_execute_delete_calls_executor(tk_root):
     page.vm.groups[0].file_count = 2
     page.vm.keep_selections = {"g1": "/a/file.jpg"}
 
-    with patch.object(page, "_show_delete_confirmation") as mock_conf:
+    with (
+        patch.object(page, "_show_delete_confirmation") as mock_conf,
+        patch("dedup.ui.pages.review_page.messagebox.showinfo"),
+        patch("dedup.ui.pages.review_page.messagebox.showwarning"),
+    ):
         mock_conf.return_value = "delete"
         page._on_execute()
 
