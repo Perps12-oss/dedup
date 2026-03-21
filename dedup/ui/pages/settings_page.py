@@ -199,9 +199,11 @@ class SettingsPage(ttk.Frame):
         self._pref_vars: dict[str, tk.BooleanVar] = {}
         appearance_prefs = [
             ("review_show_thumbnails", "Show thumbnails in Review"),
+            ("sun_valley_shell", "Sun Valley (Fluent) shell — pip install sv-ttk"),
             ("reduced_motion", "Reduced motion"),
             ("high_contrast", "High contrast (system follows)"),
             ("reduced_gradients", "Reduced gradients"),
+            ("win_mica_backdrop", "Windows Mica backdrop (Win11 — pip install pywinstyles)"),
         ]
         for i, (attr, label) in enumerate(appearance_prefs):
             var = tk.BooleanVar(value=getattr(self._state.settings, attr, False))

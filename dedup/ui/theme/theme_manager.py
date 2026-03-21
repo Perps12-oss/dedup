@@ -13,6 +13,7 @@ from typing import Any, Callable, List, Optional, Tuple
 
 from .design_system import font_tuple, get_font_scale
 from .gradients import lerp_color
+from .sv_bridge import set_sun_valley_theme
 from .theme_registry import DEFAULT_THEME, get_theme
 from .theme_tokens import ThemeDict
 
@@ -70,6 +71,8 @@ class ThemeManager:
         self._current_key: str = DEFAULT_THEME
         self._tokens: ThemeDict = get_theme(DEFAULT_THEME)
         self._observers: List[Callable[[ThemeDict], None]] = []
+        self._sun_valley_enabled: bool = True
+        self._sun_valley_dark: bool = True
 
     @property
     def tokens(self) -> ThemeDict:
@@ -91,6 +94,7 @@ class ThemeManager:
         root: tk.Tk,
         *,
         gradient_stops: Optional[List[Tuple[float, str]]] = None,
+        sun_valley: bool = True,
     ) -> None:
         self._current_key = theme_key
         base = get_theme(theme_key)
@@ -98,6 +102,8 @@ class ThemeManager:
             self._tokens = merge_gradient_into_tokens(base, gradient_stops)
         else:
             self._tokens = dict(base)
+        self._sun_valley_enabled = bool(sun_valley)
+        self._sun_valley_dark = str(base.get("mode", "dark")).lower() != "light"
         self._configure_styles(root)
         self._apply_tk_defaults(root)
         for cb in self._observers:
@@ -109,7 +115,11 @@ class ThemeManager:
     def _configure_styles(self, root: tk.Tk) -> None:
         t = self._tokens
         style = ttk.Style(root)
-        style.theme_use("clam")
+        if self._sun_valley_enabled:
+            if not set_sun_valley_theme(root, self._sun_valley_dark):
+                style.theme_use("clam")
+        else:
+            style.theme_use("clam")
 
         bg = t["bg_base"]
         panel = t["bg_panel"]
@@ -163,7 +173,8 @@ class ThemeManager:
 
         style.map("TNotebook.Tab", background=[("selected", elev)], foreground=[("selected", fg)])
         style.map("TCheckbutton", indicatorcolor=[("selected", acc)])
-        style.map("TEntry", bordercolor=[("focus", acc)])
+        focus_ring = t.get("focus_ring", acc)
+        style.map("TEntry", bordercolor=[("focus", focus_ring), ("!focus", bstrong)])
 
         # ---- Panel frames ----
         style.configure("Panel.TFrame", background=panel, relief="solid", borderwidth=1, bordercolor=bsoft)
