@@ -14,9 +14,13 @@ UI Refactor (v2): Aligned to shared 8px design system.
 
 from __future__ import annotations
 
+import json
 import logging
 import tkinter as tk
-from tkinter import ttk
+from dataclasses import asdict
+from datetime import datetime, timezone
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Optional
 
 from ...infrastructure.diagnostics import get_diagnostics_recorder
@@ -351,6 +355,60 @@ class DiagnosticsPage(ttk.Frame):
 
     def refresh(self):
         self._refresh()
+
+    def export_report_json(self) -> None:
+        """Snapshot current diagnostics view (session, phases, artifacts, events, etc.) to JSON."""
+        path = filedialog.asksaveasfilename(
+            parent=self.winfo_toplevel(),
+            title="Export diagnostics",
+            defaultextension=".json",
+            filetypes=[("JSON", "*.json"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        phases = [
+            {
+                "phase": r.phase,
+                "integrity": r.integrity,
+                "finalized": r.finalized,
+                "rows": r.rows,
+                "duration_s": r.duration_s,
+                "checkpoint_ts": r.checkpoint_ts,
+                "resume_action": r.resume_action,
+            }
+            for r in self.vm.phases_table
+        ]
+        compat = [
+            {
+                "phase": c.phase,
+                "schema_match": c.schema_match,
+                "config_match": c.config_match,
+                "phase_version_match": c.phase_version_match,
+                "artifact_complete": c.artifact_complete,
+                "resume_action": c.resume_action,
+            }
+            for c in self.vm.compatibility
+        ]
+        payload = {
+            "export_format": "cerebro_diagnostics_v1",
+            "exported_at_utc": datetime.now(timezone.utc).isoformat(),
+            "session_id": self._session_var.get(),
+            "overview": {k: v.get() for k, v in self._ov_vars.items()},
+            "warnings_summary": self._warn_summary_var.get(),
+            "phases": phases,
+            "artifacts": [asdict(a) for a in self.vm.artifacts],
+            "compatibility": compat,
+            "events_log": list(self.vm.events_log),
+            "integrity": [asdict(row) for row in self.vm.integrity],
+        }
+        try:
+            Path(path).write_text(
+                json.dumps(payload, indent=2, default=lambda o: list(o) if isinstance(o, tuple) else o),
+                encoding="utf-8",
+            )
+            messagebox.showinfo("Export", f"Diagnostics saved to:\n{path}")
+        except OSError as ex:
+            messagebox.showerror("Export failed", str(ex))
 
     def _refresh(self):
         self._populate_warnings()

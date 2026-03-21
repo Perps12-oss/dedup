@@ -19,9 +19,12 @@ UI Refactor (v2): Aligned to shared 8px design system.
 
 from __future__ import annotations
 
+import json
 import tkinter as tk
+from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 from typing import TYPE_CHECKING, Callable, Optional
 
 if TYPE_CHECKING:
@@ -289,6 +292,43 @@ class HistoryPage(ttk.Frame):
 
     def refresh(self):
         self._refresh()
+
+    def export_sessions_json(self) -> None:
+        """Write filtered session rows to JSON (save-as dialog)."""
+        sessions = self.vm.filtered_sessions
+        if not sessions:
+            messagebox.showinfo(
+                "Export",
+                "No sessions to export — the list is empty or current filters exclude all rows.",
+            )
+            return
+        path = filedialog.asksaveasfilename(
+            parent=self.winfo_toplevel(),
+            title="Export session history",
+            defaultextension=".json",
+            filetypes=[("JSON", "*.json"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        payload = {
+            "export_format": "cerebro_history_v1",
+            "exported_at_utc": datetime.now(timezone.utc).isoformat(),
+            "session_count": len(sessions),
+            "filters": {
+                "resumable_only": self.vm.show_resumable_only,
+                "failed_only": self.vm.show_failed_only,
+                "search_text": self.vm.search_text,
+            },
+            "sessions": [asdict(e) for e in sessions],
+        }
+        try:
+            Path(path).write_text(
+                json.dumps(payload, indent=2, default=lambda o: list(o) if isinstance(o, tuple) else o),
+                encoding="utf-8",
+            )
+            messagebox.showinfo("Export", f"Exported {len(sessions)} session(s) to:\n{path}")
+        except OSError as ex:
+            messagebox.showerror("Export failed", str(ex))
 
     def _refresh(self):
         self.vm.refresh(self.coordinator)

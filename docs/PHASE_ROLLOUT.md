@@ -54,7 +54,8 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 
 - `dedup/ui/shell/shortcut_registry.py` + `CerebroApp` refactored to use it; help dialog lists registered shortcuts.
 - `dedup/ui/components/toast_manager.py` (stub API; no call sites yet).
-- Button audit doc started (known Export stubs called out).
+- Button audit doc (`button_functionality_audit.md`) maintained with shell + page actions.
+- **History / Diagnostics Export:** `HistoryPage.export_sessions_json`, `DiagnosticsPage.export_report_json` wired from TopBar (JSON save-as).
 
 ### Skipped / why
 
@@ -64,8 +65,8 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 ### Sub-phase
 
 - Wire `ToastManager` after scan complete / theme apply.
-- Replace `lambda: None` Export buttons or hide in Simple mode.
-- Finish button inventory rows for each page.
+- Optionally hide Export in **Simple** `ui_mode` if product wants a leaner bar.
+- Finish deeper per-widget button inventory if needed.
 
 ---
 
@@ -102,7 +103,7 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 
 ### Sub-phase
 
-- Gate “Export”, diagnostics tiles, and compare mode entry points when `ui_mode == "simple"`.
+- Gate **Export** (optional), diagnostics tiles, and compare mode entry points when `ui_mode == "simple"`.
 
 ---
 

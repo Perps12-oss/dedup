@@ -328,11 +328,11 @@ class CerebroApp:
             ],
             "history": [
                 ("Refresh", "Ghost.TButton", lambda: self._history.refresh()),
-                ("Export", "Ghost.TButton", lambda: None),
+                ("Export", "Ghost.TButton", lambda: self._history.export_sessions_json()),
             ],
             "diagnostics": [
                 ("Refresh", "Ghost.TButton", lambda: self._diagnostics.refresh()),
-                ("Export", "Ghost.TButton", lambda: None),
+                ("Export", "Ghost.TButton", lambda: self._diagnostics.export_report_json()),
             ],
             "settings": [],
             "themes": [],

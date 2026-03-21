@@ -16,9 +16,9 @@
 | review | Preview Effects | Ghost | `ReviewController.handle_preview_deletion` | OK |
 | review | DELETE | Danger | `ReviewController.handle_execute_deletion` | OK |
 | history | Refresh | Ghost | `_history.refresh` | OK |
-| history | Export | Ghost | `lambda: None` | **Stub** — implement or hide (Phase 3) |
+| history | Export | Ghost | `HistoryPage.export_sessions_json` | OK — JSON save-as (filtered rows) |
 | diagnostics | Refresh | Ghost | `_diagnostics.refresh` | OK |
-| diagnostics | Export | Ghost | `lambda: None` | **Stub** |
+| diagnostics | Export | Ghost | `DiagnosticsPage.export_report_json` | OK — JSON snapshot of current view |
 | settings | — | — | — | In-page only |
 | themes | — | — | — | Swatches only |
 
@@ -72,5 +72,5 @@ Swatch grid only; selection calls `on_theme_change` (app `_on_theme_change`). **
 
 ## Follow-ups
 
-1. Replace **Export** stubs on History / Diagnostics or hide in Simple mode.
+1. Optional: CSV export, or **Simple mode** hiding Export if product wants a leaner bar.
 2. Re-audit after any new page or toolbar action.

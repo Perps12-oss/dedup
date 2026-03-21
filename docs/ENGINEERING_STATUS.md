@@ -20,11 +20,17 @@
 | **UI shell** | 7 nav destinations | Mission, Scan, Review, History, Diagnostics, **Themes**, Settings |
 | **Store `ui_mode`** | Wired | `simple` / `advanced` synced with `AppSettings.advanced_mode` |
 | **Shortcuts** | Registry | `dedup/ui/shell/shortcut_registry.py`; Ctrl+7 → Themes |
-| **Button audit** | Living | `docs/button_functionality_audit.md` (Export stubs on History/Diagnostics still TODO) |
+| **Button audit** | Living | `docs/button_functionality_audit.md` |
+| **History / Diagnostics Export** | Implemented | Top bar **Export** → JSON save-as (`export_sessions_json`, `export_report_json`) |
 
 ---
 
 ## Changelog (append newest first)
+
+### 2026-03-21 — History & Diagnostics export (Phase 3 follow-up)
+
+- Shell **Export** on History and Diagnostics calls real exporters: filtered sessions → `cerebro_history_v1` JSON; diagnostics view → `cerebro_diagnostics_v1` JSON (overview, phases, artifacts, compat, events_log, integrity).
+- `docs/button_functionality_audit.md` and this file updated.
 
 ### 2026-03-21 — Phase 1 completion
 
