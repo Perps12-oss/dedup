@@ -100,6 +100,10 @@ class ReviewPage(ttk.Frame):
         self._thumbnail_refs: list = []
         # Track which state-filter chip is active so we can style it
         self._active_chip_key: str = "all"
+        self._nav_top = 0
+        self._nav_slot_group_ids: list[str] = []
+        self._nav_scroll_virtual: bool | None = None
+        self._nav_wheel_bound = False
         self._build()
 
     # --- IReviewCallbacks: public contract for ReviewController ---
@@ -385,7 +389,8 @@ class ReviewPage(ttk.Frame):
                 ("conf", "Conf", 40, "center"),
             ],
             height=16,
-            on_select=self._on_group_select,
+            sortable=False,
+            on_select=self._dispatch_group_select,
         )
         self._group_table.grid(row=4, column=0, sticky="nsew")
         body.rowconfigure(4, weight=1)
@@ -581,8 +586,33 @@ class ReviewPage(ttk.Frame):
     # ----------------------------------------------------------------
     def _refresh_group_list(self):
         from ..components.decision_state import get_group_decision_state
+        from ..components.virtual_navigator import (
+            clamp_top,
+            scrollbar_fracs,
+            virtual_navigator_enabled,
+        )
 
+        groups = self.vm.filtered_groups
+        total = len(groups)
+        tree = self._group_table.tree
+        vis = max(1, int(tree.cget("height")))
+        use_virtual = virtual_navigator_enabled() and total > vis
+
+        self._bind_group_nav_scroll(use_virtual)
+
+        if use_virtual:
+            self._nav_top = clamp_top(self._nav_top, total, vis)
+            self._fill_virtual_group_rows(groups, total, vis, get_group_decision_state)
+            lo, hi = scrollbar_fracs(self._nav_top, total, vis)
+            self._group_table.vsb.set(lo, hi)
+        else:
+            self._refresh_group_list_legacy(get_group_decision_state)
+
+        self._update_filter_chip_labels()
+
+    def _refresh_group_list_legacy(self, get_group_decision_state):
         self._group_table.clear()
+        self._nav_slot_group_ids = []
         groups = self.vm.filtered_groups
         total = len(groups)
         display = groups if total <= REVIEW_NAVIGATOR_MAX_ROWS else groups[:REVIEW_NAVIGATOR_MAX_ROWS]
@@ -599,7 +629,160 @@ class ReviewPage(ttk.Frame):
                 (str(i + 1), state_label, str(ge.file_count), fmt_bytes(ge.reclaimable_bytes), ge.confidence_label),
                 tags=(tag,) if tag else (),
             )
-        self._update_filter_chip_labels()
+
+    def _bind_group_nav_scroll(self, virtual: bool) -> None:
+        cur = getattr(self, "_nav_scroll_virtual", None)
+        if cur is not None and cur == virtual:
+            return
+        self._nav_scroll_virtual = virtual
+        tree = self._group_table.tree
+        vsb = self._group_table.vsb
+        if virtual:
+            tree.configure(yscrollcommand=lambda *_a: None)
+            vsb.configure(command=self._on_nav_virtual_scrollbar_cmd)
+            if not self._nav_wheel_bound:
+                self._nav_wheel_bound = True
+                tree.bind("<MouseWheel>", self._on_nav_virtual_wheel, add="+")
+                tree.bind("<Button-4>", self._on_nav_virtual_wheel, add="+")
+                tree.bind("<Button-5>", self._on_nav_virtual_wheel, add="+")
+        else:
+            tree.configure(yscrollcommand=vsb.set)
+            vsb.configure(command=tree.yview)
+
+    def _fill_virtual_group_rows(self, groups, total, vis, get_group_decision_state) -> None:
+        from ..components.virtual_navigator import slot_iid
+
+        self._group_table.clear()
+        self._nav_slot_group_ids = []
+        end = min(total, self._nav_top + vis)
+        for slot, idx in enumerate(range(self._nav_top, end)):
+            ge = groups[idx]
+            state = get_group_decision_state(ge.group_id, self.vm.keep_selections, ge.has_risk)
+            state_label = self._decision_badge_text(state)
+            tag = "warn" if ge.has_risk else ("danger" if state == "unresolved" else "safe" if state == "ready" else "")
+            self._nav_slot_group_ids.append(ge.group_id)
+            self._group_table.insert_row(
+                slot_iid(slot),
+                (str(idx + 1), state_label, str(ge.file_count), fmt_bytes(ge.reclaimable_bytes), ge.confidence_label),
+                tags=(tag,) if tag else (),
+            )
+        if total > vis:
+            self._group_count_var.set(
+                f"Rows {self._nav_top + 1}–{end} of {total} (virtual scroll — CEREBRO_VIRTUAL_NAV=1)"
+            )
+        else:
+            self._group_count_var.set(f"{total} group{'s' if total != 1 else ''}")
+
+    def _on_nav_virtual_scrollbar_cmd(self, *args) -> None:
+        from ..components.decision_state import get_group_decision_state
+        from ..components.virtual_navigator import clamp_top, scrollbar_fracs, slot_iid, virtual_navigator_enabled
+
+        if not virtual_navigator_enabled():
+            return
+        groups = self.vm.filtered_groups
+        total = len(groups)
+        vis = max(1, int(self._group_table.tree.cget("height")))
+        if total <= vis:
+            return
+        opcode = args[0]
+        max_top = max(0, total - vis)
+        if opcode == "moveto":
+            pos = float(args[1])
+            self._nav_top = int(round(pos * max_top)) if max_top else 0
+        elif opcode == "scroll":
+            n = int(float(args[1]))
+            if args[2] == "units":
+                self._nav_top = clamp_top(self._nav_top + n, total, vis)
+            else:
+                self._nav_top = clamp_top(self._nav_top + n * vis, total, vis)
+        else:
+            return
+        self._fill_virtual_group_rows(groups, total, vis, get_group_decision_state)
+        lo, hi = scrollbar_fracs(self._nav_top, total, vis)
+        self._group_table.vsb.set(lo, hi)
+        gid = self.vm.selected_group_id
+        if gid and gid in self._nav_slot_group_ids:
+            self._group_table.select(slot_iid(self._nav_slot_group_ids.index(gid)))
+
+    def _on_nav_virtual_wheel(self, event) -> None:
+        from ..components.decision_state import get_group_decision_state
+        from ..components.virtual_navigator import clamp_top, scrollbar_fracs, slot_iid, virtual_navigator_enabled
+
+        if not virtual_navigator_enabled() or not self._use_virtual_nav_for_current():
+            return
+        groups = self.vm.filtered_groups
+        total = len(groups)
+        vis = max(1, int(self._group_table.tree.cget("height")))
+        if total <= vis:
+            return
+        if getattr(event, "delta", 0):
+            n = -1 if event.delta > 0 else 1
+        elif getattr(event, "num", 0) == 4:
+            n = -1
+        elif getattr(event, "num", 0) == 5:
+            n = 1
+        else:
+            return
+        self._nav_top = clamp_top(self._nav_top + n * 3, total, vis)
+        self._fill_virtual_group_rows(groups, total, vis, get_group_decision_state)
+        lo, hi = scrollbar_fracs(self._nav_top, total, vis)
+        self._group_table.vsb.set(lo, hi)
+        gid = self.vm.selected_group_id
+        if gid and gid in self._nav_slot_group_ids:
+            self._group_table.select(slot_iid(self._nav_slot_group_ids.index(gid)))
+
+    def _use_virtual_nav_for_current(self) -> bool:
+        from ..components.virtual_navigator import virtual_navigator_enabled
+
+        if not virtual_navigator_enabled():
+            return False
+        tree = self._group_table.tree
+        vis = max(1, int(tree.cget("height")))
+        return len(self.vm.filtered_groups) > vis
+
+    def _dispatch_group_select(self, iid: str) -> None:
+        from ..components.virtual_navigator import NAV_SLOT_PREFIX, virtual_navigator_enabled
+
+        if virtual_navigator_enabled() and self._use_virtual_nav_for_current() and iid.startswith(NAV_SLOT_PREFIX):
+            rest = iid[len(NAV_SLOT_PREFIX) :]
+            try:
+                slot = int(rest)
+            except ValueError:
+                return
+            if 0 <= slot < len(self._nav_slot_group_ids):
+                self._on_group_select(self._nav_slot_group_ids[slot])
+            return
+        self._on_group_select(iid)
+
+    def _select_group_in_table(self, group_id: str) -> None:
+        from ..components.decision_state import get_group_decision_state
+        from ..components.virtual_navigator import (
+            clamp_top,
+            scrollbar_fracs,
+            slot_iid,
+            virtual_navigator_enabled,
+        )
+
+        groups = self.vm.filtered_groups
+        tree = self._group_table.tree
+        vis = max(1, int(tree.cget("height")))
+        total = len(groups)
+        idx = next((i for i, g in enumerate(groups) if g.group_id == group_id), None)
+        if idx is None:
+            return
+        if virtual_navigator_enabled() and total > vis:
+            max_top = max(0, total - vis)
+            if idx < self._nav_top:
+                self._nav_top = idx
+            elif idx >= self._nav_top + vis:
+                self._nav_top = min(max_top, idx - vis + 1)
+            self._nav_top = clamp_top(self._nav_top, total, vis)
+            self._fill_virtual_group_rows(groups, total, vis, get_group_decision_state)
+            lo, hi = scrollbar_fracs(self._nav_top, total, vis)
+            self._group_table.vsb.set(lo, hi)
+            self._group_table.select(slot_iid(idx - self._nav_top))
+        else:
+            self._group_table.select(group_id)
 
     def _on_search(self, text: str):
         self.vm.filter_text = text
@@ -663,8 +846,9 @@ class ReviewPage(ttk.Frame):
             return
         idx = next((i for i, g in enumerate(groups) if g.group_id == self.vm.selected_group_id), 0)
         if idx + 1 < len(groups):
-            self._on_group_select(groups[idx + 1].group_id)
-            self._group_table.select(groups[idx + 1].group_id)
+            gid = groups[idx + 1].group_id
+            self._on_group_select(gid)
+            self._select_group_in_table(gid)
 
     def _on_key_prev_group(self):
         groups = self.vm.filtered_groups
@@ -672,8 +856,9 @@ class ReviewPage(ttk.Frame):
             return
         idx = next((i for i, g in enumerate(groups) if g.group_id == self.vm.selected_group_id), 0)
         if idx > 0:
-            self._on_group_select(groups[idx - 1].group_id)
-            self._group_table.select(groups[idx - 1].group_id)
+            gid = groups[idx - 1].group_id
+            self._on_group_select(gid)
+            self._select_group_in_table(gid)
 
     def _on_group_select(self, group_id: str):
         self.vm.selected_group_id = group_id

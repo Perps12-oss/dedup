@@ -75,16 +75,18 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 
 - `functools.lru_cache` on `is_image_extension` (`engine/media_types.py`).
 - `dedup/ui/utils/error_boundary.py` — `safe_ui_call` helper (opt-in at call sites).
+- **Review navigator virtualization (spike):** `dedup/ui/components/virtual_navigator.py` + Review **Group Navigator** windowed rows when `CEREBRO_VIRTUAL_NAV=1` and group count > visible table height; legacy path (2000-row cap) unchanged when flag off.
+- **Benchmark log:** `docs/BENCHMARK_BASELINE.md` snapshot table; sample `bench_discovery` run recorded (2026-03-21).
 
 ### Skipped / why
 
-- **VirtualTree**, **debounced filters**, **optimistic deletion UI**, **ProcessPoolExecutor** hashing changes: need design + benchmarks.
+- **Full VirtualTree** (hierarchical), **debounced filters**, **optimistic deletion UI**, **ProcessPoolExecutor** hashing changes: need design + benchmarks.
 - **Global ErrorBoundary** wrapping every Tk command: high touch; use `safe_ui_call` selectively first.
 
 ### Sub-phase
 
-- Prototype `VirtualTree` for Review navigator behind feature flag.
-- Profile discovery/hashing with `engine/bench.py`; append results to `BENCHMARK_BASELINE.md`.
+- Extend virtualization to other heavy Treeviews (e.g. workspace file table) if profiling warrants.
+- Profile discovery/hashing with `engine/bench.py` / `bench_incremental_scan`; keep appending rows to `BENCHMARK_BASELINE.md`.
 
 ---
 
@@ -146,6 +148,6 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 1. ~~Phase 1 follow-up~~ **Done:** Ruff clean, format, pre-commit, pip-audit JSON, vulture, button audit doc, runtime notes. *Remaining optional:* pylint, pydeps, GUI soak, mypy green.  
 2. Phase 2 follow-up: JSON theme export/import (no draggable editor yet).  
 3. Phase 3 follow-up: Toast wiring + remove/hide Export stubs.  
-4. Phase 4 follow-up: VirtualTree spike + benchmark refresh.  
+4. ~~Phase 4 follow-up~~ **Done (spike):** Virtual windowed navigator + `BENCHMARK_BASELINE` snapshot row. *Remaining:* broader VirtualTree, incremental bench rows.  
 5. Phase 5 follow-up: page-level `ui_mode` gates.  
 6. Phase 7: contrast remediation for failing presets.

@@ -23,10 +23,16 @@
 | **Button audit** | Living | `docs/button_functionality_audit.md` |
 | **History / Diagnostics Export** | Implemented | Top bar **Export** → JSON save-as (`export_sessions_json`, `export_report_json`) |
 | **Theme JSON + toasts** | Implemented | Themes page `cerebro_theme_config_v1` import/export; `ToastManager` for scan complete, theme change, export |
+| **Phase 4 spike** | Opt-in | `CEREBRO_VIRTUAL_NAV=1` → Review Group Navigator uses windowed Treeview rows; `BENCHMARK_BASELINE.md` snapshot table |
 
 ---
 
 ## Changelog (append newest first)
+
+### 2026-03-21 — Phase 4 follow-up: virtual navigator + benchmark snapshot
+
+- `virtual_navigator.py` (scroll math + env gate); Review page virtual vs legacy scroll binding; `DataTable(sortable=False, vsb=…)` for navigator; tests `test_virtual_navigator.py`.
+- `docs/BENCHMARK_BASELINE.md` snapshot log; sample `bench_discovery` run; `PHASE_ROLLOUT.md` Phase 4 updated.
 
 ### 2026-03-21 — Theme JSON bundle + ToastManager wiring (Phase 2/3 follow-up)
 

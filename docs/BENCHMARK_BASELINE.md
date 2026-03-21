@@ -71,6 +71,14 @@ Output format (from `bench_incremental_scan` and `run_baseline`): JSON with `sum
 
 No production behavior change is required to run benchmarks; they use the same pipeline and persistence APIs as the app.
 
+## Snapshot log (append after each deliberate baseline run)
+
+| Date (UTC) | Host context | Command (abbrev.) | Result (notes) |
+|------------|--------------|-------------------|----------------|
+| 2026-03-21 | Windows, repo root `dedup`, Python 3.14 | `python -m dedup.scripts.bench_discovery "<repo>" --files 400 --runs 2` | 190 files discovered (tree smaller than cap); mean **~1253 files/sec**, stdev high between runs (cold vs warm / AV). |
+
+Re-run on the same path after performance work and add a row; compare mean files/sec and wall time.
+
 ## Discovery hot path
 
 - **Default**: `resolve_paths=False` in ScanConfig and DiscoveryOptions; discovery does not call `Path.resolve()` per file, keeping the hot path minimal. Paths are used as returned by the OS (e.g. scandir).

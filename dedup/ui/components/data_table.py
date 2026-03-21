@@ -30,6 +30,7 @@ class DataTable(ttk.Frame):
         show_tree: bool = False,
         selectmode: str = "browse",
         height: int = 12,
+        sortable: bool = True,
         on_select: Optional[Callable[[str], None]] = None,
         on_double_click: Optional[Callable[[str], None]] = None,
         **kwargs,
@@ -39,6 +40,7 @@ class DataTable(ttk.Frame):
         self.rowconfigure(0, weight=1)
 
         self._columns = columns
+        self._sortable = sortable
         self._on_select = on_select
         self._on_double_click = on_double_click
         self._sort_col: Optional[str] = None
@@ -56,7 +58,10 @@ class DataTable(ttk.Frame):
         )
 
         for key, heading, width, anchor in columns:
-            self.tree.heading(key, text=heading, command=lambda c=key: self._sort_by(c))
+            if sortable:
+                self.tree.heading(key, text=heading, command=lambda c=key: self._sort_by(c))
+            else:
+                self.tree.heading(key, text=heading)
             self.tree.column(key, width=width, anchor=anchor, stretch=False)
 
         if show_tree:
@@ -65,6 +70,8 @@ class DataTable(ttk.Frame):
         vsb = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview)
         hsb = ttk.Scrollbar(self, orient="horizontal", command=self.tree.xview)
         self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        self.vsb = vsb
+        self.hsb = hsb
 
         self.tree.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
