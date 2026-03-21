@@ -7,6 +7,7 @@ Used during discovery to filter by media type; extensions are normalized lowerca
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Dict, Set, List, Optional
 
 # Category key used in config/UI (lowercase, no spaces)
@@ -79,6 +80,7 @@ def list_categories() -> List[str]:
     ]
 
 
+@lru_cache(maxsize=256)
 def is_image_extension(ext: str) -> bool:
     """True if extension is in the Images category (for thumbnail support)."""
     e = ext.lower().lstrip(".")

@@ -1,0 +1,6 @@
+# Pylint was not executed in the Phase 1 automation pass (overlap with Ruff).
+
+Run when needed:
+  python -m pylint dedup/engine --errors-only
+
+Append output here or to AUDIT_REPORT_PHASE1.md.

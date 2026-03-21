@@ -170,6 +170,10 @@ class AppShell(ttk.Frame):
         s.advanced_mode = not s.advanced_mode
         self.top_bar.set_advanced(s.advanced_mode)
         self._state.emit("advanced_mode_changed", s.advanced_mode)
+        try:
+            self._state.save()
+        except Exception:
+            pass
 
     def _on_theme_applied(self, tokens: dict):
         self._grad_bar.update_colors(tokens["gradient_start"], tokens["gradient_end"])

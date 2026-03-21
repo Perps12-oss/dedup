@@ -1,6 +1,6 @@
 # CEREBRO Dedup — Duplicate File Finder & Operations Shell
 
-A production-grade duplicate file finder with a six-page CEREBRO operations shell: Mission, Scan, Review, History, Diagnostics, and Settings. The UI is store- and controller-driven with a clear separation between engine, orchestration, and shell.
+A production-grade duplicate file finder with a seven-destination CEREBRO operations shell: Mission, Scan, Review, History, Diagnostics, Themes, and Settings. The UI is store- and controller-driven with a clear separation between engine, orchestration, and shell.
 
 ## Philosophy
 
@@ -14,7 +14,7 @@ A production-grade duplicate file finder with a six-page CEREBRO operations shel
 - **Streaming discovery**: Memory-efficient file discovery using generators.
 - **Layered hashing**: Fast partial hash first, full hash when needed.
 - **Safe deletion**: Trash/recycle bin by default; permanent only with confirmation.
-- **Six-page shell**: Mission (home), Scan (live), Review (decision studio), History, Diagnostics, Settings.
+- **Shell pages**: Mission (home), Scan (live), Review (decision studio), History, Diagnostics, Themes (presets + contrast), Settings.
 - **Store + controllers**: UIStateStore is the read authority; ScanController and ReviewController handle commands; no direct page/backend coupling in action paths.
 - **Cross-platform**: Windows, macOS, Linux.
 
@@ -67,7 +67,7 @@ plan = pipeline.create_deletion_plan(result)
 - **dedup/infrastructure/** — Config, persistence, trash, logging.
 - **dedup/ui/** — CEREBRO shell: app, store, controllers, pages, components, viewmodels, projections, theme.
   - **Authority**: When store is attached, ScanPage reads from store only (hub feeds store). Review reads via selectors; commands go through ReviewController/ScanController.
-  - **Pages**: Mission, Scan, Review, History, Diagnostics, Settings (six destinations in NavRail).
+  - **Pages**: Mission, Scan, Review, History, Diagnostics, Themes, Settings (NavRail).
 
 See `docs/CONTROLLER_CONTRACTS.md` and `docs/REPO_AUTHORITY.md` for single-authority and command-path details.
 

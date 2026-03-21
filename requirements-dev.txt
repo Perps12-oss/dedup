@@ -1,0 +1,10 @@
+# Development / audit tooling (optional)
+-r docs/requirements.txt
+
+ruff>=0.8.0
+mypy>=1.8.0
+pytest>=7.4.0
+vulture>=2.11
+pip-audit>=2.6.0
+pydeps>=1.12.0
+pylint>=3.0.0

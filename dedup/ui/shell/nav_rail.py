@@ -1,7 +1,7 @@
 """
 NavRail — fixed left navigation rail.
 
-Items: Mission, Scan, Review, History, Diagnostics, Settings
+Items: Mission, Scan, Review, History, Diagnostics, Themes, Settings
 """
 from __future__ import annotations
 import tkinter as tk
@@ -21,6 +21,7 @@ PRIMARY_NAV: List[Tuple[str, str, str]] = [
 SECONDARY_NAV: List[Tuple[str, str, str]] = [
     ("history",     IC.HISTORY,     "History"),
     ("diagnostics", IC.DIAGNOSTICS, "Diagnostics"),
+    ("themes",      IC.THEMES,      "Themes"),
     ("settings",    IC.SETTINGS,    "Settings"),
 ]
 NAV_ITEMS: List[Tuple[str, str, str]] = PRIMARY_NAV + SECONDARY_NAV

@@ -2,7 +2,7 @@
 CEREBRO Dedup Engine — Main Application
 ========================================
 Modern-classic operations shell with:
-  - Fixed left nav rail (6 pages)
+  - Fixed left nav rail (Mission, Scan, Review, History, Diagnostics, Themes, Settings)
   - Persistent top command bar with theme switcher
   - Durable pipeline status strip
   - Toggleable insight drawer
@@ -30,6 +30,7 @@ from .utils.formatting import fmt_bytes, fmt_int, fmt_duration
 from .utils.ui_state import UIState, load_settings, save_settings
 
 from .shell.app_shell import AppShell
+from .shell.shortcut_registry import ShortcutRegistry
 from .pages.mission_page import MissionPage
 from .pages.scan_page import ScanPage
 from .controller.review_controller import ReviewController
@@ -38,6 +39,7 @@ from .pages.review_page import ReviewPage
 from .pages.history_page import HistoryPage
 from .pages.diagnostics_page import DiagnosticsPage
 from .pages.settings_page import SettingsPage
+from .pages.theme_page import ThemePage
 
 from .projections.hub import ProjectionHub
 from .state.store import UIStateStore, MissionState, LastScanSummaryState
@@ -130,6 +132,7 @@ class CerebroApp:
         )
         self._hub_store_adapter = ProjectionHubStoreAdapter(self.hub, self.store)
         self._hub_store_adapter.start()
+        self.store.set_ui_mode("advanced" if self.state.settings.advanced_mode else "simple")
 
         # ── Build pages (store is available for Mission, History, Review) ────────
         self._build_pages()
@@ -259,6 +262,13 @@ class CerebroApp:
         )
         self.shell.register_page("settings", self._settings)
 
+        self._theme_page = ThemePage(
+            content,
+            state=self.state,
+            on_theme_change=self._on_theme_change,
+        )
+        self.shell.register_page("themes", self._theme_page)
+
         # Apply persisted preferences to shell
         self._apply_preferences()
 
@@ -273,21 +283,21 @@ class CerebroApp:
 
     def _bind_global_shortcuts(self) -> None:
         """Global keyboard layer for studio navigation and shortcut help."""
-        self.root.bind_all("<Control-Key-1>", lambda e: self._navigate("mission"), add="+")
-        self.root.bind_all("<Control-Key-2>", lambda e: self._navigate("scan"), add="+")
-        self.root.bind_all("<Control-Key-3>", lambda e: self._navigate("review"), add="+")
-        self.root.bind_all("<Control-comma>", lambda e: self._navigate("settings"), add="+")
-        self.root.bind_all("?", lambda e: self._show_shortcuts_help(), add="+")
+        reg = ShortcutRegistry(self.root)
+        reg.register("<Control-Key-1>", "Mission Control", lambda e: self._navigate("mission"))
+        reg.register("<Control-Key-2>", "Live Scan Studio", lambda e: self._navigate("scan"))
+        reg.register("<Control-Key-3>", "Decision Studio", lambda e: self._navigate("review"))
+        reg.register("<Control-Key-7>", "Themes", lambda e: self._navigate("themes"))
+        reg.register("<Control-comma>", "Settings", lambda e: self._navigate("settings"))
+        reg.register("?", "Shortcut help", lambda e: self._show_shortcuts_help())
+        self._shortcut_registry = reg
 
     def _show_shortcuts_help(self) -> None:
         """Show compact keyboard cheat sheet."""
+        global_lines = "\n".join(self._shortcut_registry.describe_lines())
         text = (
             "Global\n"
-            "  Ctrl+1  Mission Control\n"
-            "  Ctrl+2  Live Scan Studio\n"
-            "  Ctrl+3  Decision Studio\n"
-            "  Ctrl+,  Settings\n"
-            "  ?       Show this help\n\n"
+            f"{global_lines}\n\n"
             "Decision Studio\n"
             "  Ctrl+Left / Ctrl+Right  Previous/Next group\n"
             "  G / T / C               Gallery/Table/Compare mode\n"
@@ -326,6 +336,7 @@ class CerebroApp:
                 ("Export",       "Ghost.TButton",  lambda: None),
             ],
             "settings":    [],
+            "themes":      [],
         }
         self.shell.set_page_actions(action_map.get(page, []))
 
@@ -512,6 +523,7 @@ class CerebroApp:
         self.shell.top_bar.set_current_theme(key)
 
     def _on_advanced_mode(self, active: bool):
+        self.store.set_ui_mode("advanced" if active else "simple")
         self.shell.apply_preferences()
 
     def _apply_preferences(self) -> None:

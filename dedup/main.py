@@ -2,7 +2,7 @@
 """
 CEREBRO Dedup - Duplicate file finder and operations shell.
 
-Production-grade engine and six-page UI (Mission, Scan, Review, History, Diagnostics, Settings).
+Production-grade engine and seven-destination UI (Mission, Scan, Review, History, Diagnostics, Themes, Settings).
 Capable of handling 1,000,000+ files with store- and controller-driven architecture.
 
 Usage:

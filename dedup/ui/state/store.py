@@ -129,6 +129,8 @@ class UIAppState:
     review: ReviewState = field(default_factory=ReviewState)
     mission: MissionState = field(default_factory=MissionState)
     history: HistoryProjection = field(default_factory=lambda: EMPTY_HISTORY)
+    # Mirrors AppSettings.advanced_mode: "simple" = reduced chrome, "advanced" = full controls.
+    ui_mode: str = "simple"
 
 
 class UIStateStore:
@@ -194,6 +196,11 @@ class UIStateStore:
     def set_review_selection(self, selection: ReviewSelectionState) -> None:
         """Update review selection slice (keep_selections, selected_group_id). Used by ReviewController."""
         self._set_state(replace(self._state, review=replace(self._state.review, selection=selection)))
+
+    def set_ui_mode(self, mode: str) -> None:
+        """Publish simple vs advanced UI mode for store subscribers (see docs/MODE_TOGGLE.md)."""
+        m = mode if mode in ("simple", "advanced") else "simple"
+        self._set_state(replace(self._state, ui_mode=m))
 
     def _set_state(self, new_state: UIAppState) -> None:
         if new_state is self._state:

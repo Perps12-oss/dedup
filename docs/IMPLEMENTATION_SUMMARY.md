@@ -181,6 +181,16 @@ pip install xxhash send2trash
 python -m dedup
 ```
 
+## Multi-phase engineering rollout (2026)
+
+Structured audit, theme tooling, shortcuts, store `ui_mode`, and documentation are tracked in:
+
+- `docs/PHASE_ROLLOUT.md` — per-phase done / skipped / sub-phase plan
+- `docs/AUDIT_REPORT_PHASE1.md`, `THEME_SYSTEM.md`, `MODE_TOGGLE.md`
+- Repository root `CONTRIBUTING.md` and `requirements-dev.txt`
+
+The UI shell now includes a **Themes** page (nav + Ctrl+7) in addition to the six original destinations.
+
 ## Conclusion
 
 DEDUP successfully distills Cerebro's strong engine concepts into a minimal, maintainable codebase while preserving the core functionality needed for duplicate file detection at scale.

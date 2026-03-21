@@ -1,0 +1,34 @@
+# Tool configuration for the dedup repo (package lives under ./dedup/).
+# Install dev tools: pip install -r requirements-dev.txt
+
+[tool.pytest.ini_options]
+testpaths = ["dedup/tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["dedup"]
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "F",
+  "I",
+  "W",
+]
+ignore = [
+  "E501",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"dedup/tests/**" = ["E402"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_ignores = true
+ignore_missing_imports = true
+explicit_package_bases = true
+mypy_path = "."
+packages = ["dedup.engine", "dedup.orchestration", "dedup.infrastructure"]
