@@ -14,8 +14,10 @@ from typing import Callable, List, Optional, Tuple
 
 from ..theme.contrast import contrast_ratio, format_ratio, passes_aa_normal
 from ..theme.design_system import font_tuple
-from ..theme.gradients import color_at_gradient_position, draw_horizontal_multi_stop
+from ..theme.gradient_editor_canvas import DraggableGradientEditor
+from ..theme.gradients import color_at_gradient_position
 from ..theme.theme_config import ThemeConfig
+from ..theme.theme_lab import ThemeLabPanel
 from ..theme.theme_manager import get_theme_manager, parse_gradient_stops_from_raw
 from ..theme.theme_preview import ThemeSwatchGrid
 from ..theme.theme_registry import THEMES, get_theme
@@ -62,21 +64,41 @@ class ThemePage(ttk.Frame):
         outer = ttk.Frame(self, padding=(pad, pad, pad, pad))
         outer.grid(row=0, column=0, sticky="nsew")
         outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(0, weight=1)
 
-        title = ttk.Label(outer, text="Themes", font=font_tuple("page_title"))
+        hp = ttk.Panedwindow(outer, orient=tk.HORIZONTAL)
+        hp.grid(row=0, column=0, sticky="nsew")
+
+        self._lab = ThemeLabPanel(hp)
+        hp.add(self._lab, weight=5)
+
+        right = ttk.Frame(hp)
+        hp.add(right, weight=6)
+        right.columnconfigure(0, weight=1)
+
+        title = ttk.Label(right, text="Themes", font=font_tuple("page_title"))
         title.grid(row=0, column=0, sticky="w")
         sub = ttk.Label(
-            outer,
+            right,
             text="Choose a preset. Contrast checks use WCAG relative luminance (informative, not legal advice).",
             style="Muted.TLabel",
             font=font_tuple("page_subtitle"),
-            wraplength=720,
+            wraplength=520,
             justify="left",
         )
         sub.grid(row=1, column=0, sticky="w", pady=(_S(1), _S(4)))
 
-        sw_frame = ttk.LabelFrame(outer, text="Presets (15 + CEREBRO Noir)", padding=_S(2))
-        sw_frame.grid(row=2, column=0, sticky="ew", pady=(0, _S(4)))
+        ctk_row = ttk.Frame(right)
+        ctk_row.grid(row=2, column=0, sticky="ew", pady=(0, _S(2)))
+        ttk.Button(
+            ctk_row,
+            text="Optional CustomTkinter preview…",
+            style="Ghost.TButton",
+            command=self._open_ctk_preview,
+        ).pack(side="left")
+
+        sw_frame = ttk.LabelFrame(right, text="Presets (15 + CEREBRO Noir)", padding=_S(2))
+        sw_frame.grid(row=3, column=0, sticky="ew", pady=(0, _S(4)))
         self._swatches = ThemeSwatchGrid(
             sw_frame,
             on_select=self._select_theme,
@@ -84,8 +106,8 @@ class ThemePage(ttk.Frame):
         )
         self._swatches.pack(fill="x")
 
-        cf = ttk.LabelFrame(outer, text="Contrast snapshot (current theme)", padding=_S(2))
-        cf.grid(row=3, column=0, sticky="ew")
+        cf = ttk.LabelFrame(right, text="Contrast snapshot (current theme)", padding=_S(2))
+        cf.grid(row=4, column=0, sticky="ew")
         self._contrast_lbl = ttk.Label(
             cf,
             text="",
@@ -95,22 +117,16 @@ class ThemePage(ttk.Frame):
         )
         self._contrast_lbl.pack(anchor="w")
 
-        gf = ttk.LabelFrame(outer, text="Top accent bar gradient", padding=_S(2))
-        gf.grid(row=4, column=0, sticky="ew", pady=(_S(4), 0))
-        self._grad_preview = tk.Canvas(
-            gf,
-            height=32,
-            highlightthickness=1,
-            highlightbackground="#888888",
-        )
-        self._grad_preview.pack(fill="x", pady=(0, _S(2)))
-        self._grad_preview.bind("<Configure>", lambda e: self._refresh_gradient_preview_canvas())
+        gf = ttk.LabelFrame(right, text="Top accent bar gradient — drag handles", padding=_S(2))
+        gf.grid(row=5, column=0, sticky="ew", pady=(_S(4), 0))
+        self._drag_grad = DraggableGradientEditor(gf, height=56, on_change=self._on_drag_gradient_stops)
+        self._drag_grad.pack(fill="x", pady=(0, _S(2)))
         hint = ttk.Label(
             gf,
-            text="Positions are 0 (left) → 1 (right). At least two stops. Applies to the thin strip under the top bar.",
+            text="Drag circles to move stops. Numeric rows below for precision. Applies to the strip under the top bar.",
             style="Muted.TLabel",
             font=font_tuple("caption"),
-            wraplength=720,
+            wraplength=520,
             justify="left",
         )
         hint.pack(anchor="w", pady=(0, _S(2)))
@@ -128,9 +144,10 @@ class ThemePage(ttk.Frame):
 
         self._working_stops = self._load_editor_stops()
         self._rebuild_stop_rows()
+        self._drag_grad.set_stops(sorted(self._working_stops, key=lambda x: x[0]), silent=True)
 
-        io = ttk.LabelFrame(outer, text="Import / export", padding=_S(2))
-        io.grid(row=5, column=0, sticky="ew", pady=(_S(4), 0))
+        io = ttk.LabelFrame(right, text="Import / export", padding=_S(2))
+        io.grid(row=6, column=0, sticky="ew", pady=(_S(4), 0))
         ior = ttk.Frame(io)
         ior.pack(fill="x")
         ttk.Button(
@@ -147,15 +164,28 @@ class ThemePage(ttk.Frame):
         ).pack(side="left")
 
         note = ttk.Label(
-            outer,
+            right,
             text="Export includes preset key, ThemeConfig (incl. custom gradient stops), and motion/contrast UI flags. "
             "Import applies a known preset, optional gradient stops, and flags.",
             style="Muted.TLabel",
             font=font_tuple("caption"),
-            wraplength=720,
+            wraplength=520,
             justify="left",
         )
-        note.grid(row=6, column=0, sticky="w", pady=(_S(3), 0))
+        note.grid(row=7, column=0, sticky="w", pady=(_S(3), 0))
+        try:
+            hp.paneconfig(self._lab, minsize=260)
+        except Exception:
+            pass
+
+    def _on_drag_gradient_stops(self, stops: List[Tuple[float, str]]) -> None:
+        self._working_stops = list(stops)
+        self._rebuild_stop_rows()
+
+    def _open_ctk_preview(self) -> None:
+        from ..theme.optional_ctk_preview import open_ctk_preview
+
+        open_ctk_preview(self.winfo_toplevel())
 
     def _notify_toast(self, msg: str) -> None:
         if self._on_toast:
@@ -386,16 +416,11 @@ class ThemePage(ttk.Frame):
         self._notify_toast("Using preset gradient")
 
     def _refresh_gradient_preview_canvas(self) -> None:
-        try:
-            w = max(2, self._grad_preview.winfo_width())
-            h = max(2, self._grad_preview.winfo_height())
-        except Exception:
+        if not hasattr(self, "_drag_grad"):
             return
         srt = sorted(self._working_stops, key=lambda x: x[0])
         if len(srt) >= 2:
-            draw_horizontal_multi_stop(self._grad_preview, w, h, srt)
-        else:
-            self._grad_preview.delete("gradient")
+            self._drag_grad.set_stops(srt, silent=True)
 
     def _refresh_contrast(self, tokens: dict) -> None:
         bg = tokens.get("bg_base", "#000000")

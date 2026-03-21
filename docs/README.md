@@ -25,6 +25,9 @@ cd dedup
 
 # Optional: recommended dependencies (faster hashing, drag-drop, thumbnails)
 pip install -e ".[recommended]"
+
+# Optional: modern shell (Sun Valley ttk, Windows Mica, CustomTkinter preview)
+pip install -e ".[modern-ui]"
 # or: pip install xxhash send2trash tkinterdnd2 Pillow
 
 # Run

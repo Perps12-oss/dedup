@@ -47,6 +47,10 @@ class AppSettings:
     window_y: int = -1
     # Optional multi-stop accent gradient [[0.0, "#hex"], ...] for top bar strip (2+ stops)
     custom_gradient_stops: Optional[list] = None
+    # Sun Valley (sv-ttk) Fluent-style ttk base; falls back to clam if package missing
+    sun_valley_shell: bool = True
+    # Windows 11+ optional Mica-style backdrop (requires pywinstyles)
+    win_mica_backdrop: bool = False
 
     def to_dict(self):
         return asdict(self)
@@ -54,7 +58,10 @@ class AppSettings:
     @classmethod
     def from_dict(cls, d: dict) -> "AppSettings":
         valid = {f for f in cls.__dataclass_fields__}
-        return cls(**{k: v for k, v in d.items() if k in valid})
+        defaults = asdict(cls())
+        incoming = {k: v for k, v in d.items() if k in valid}
+        merged = {**defaults, **incoming}
+        return cls(**{k: merged[k] for k in valid})
 
 
 def _settings_path() -> Path:

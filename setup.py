@@ -36,6 +36,11 @@ setup(
             "tkinterdnd2>=0.4.2",
             "Pillow>=9.0.0",
         ],
+        "modern-ui": [
+            "sv-ttk>=2.6.0",
+            "pywinstyles>=1.9.0",
+            "customtkinter>=5.2.0",
+        ],
         "dev": [
             "pytest>=7.0.0",
             "pytest-cov>=4.0.0",

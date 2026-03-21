@@ -8,13 +8,50 @@ Aligns with Master Plan: large page titles, compact data labels, consistent nume
 
 from __future__ import annotations
 
+import sys
+import tkinter.font as tkfont
 from typing import Any, Dict
 
 # ---------------------------------------------------------------------------
 # Typography (font family, size, weight)
-# Segoe UI used for UI; numeric/data can use same family with consistent size/weight
+# Prefer modern UI stacks when available (Fluent / Sonoma–style).
 # ---------------------------------------------------------------------------
-FONT_FAMILY = "Segoe UI"
+FONT_FAMILY = "Segoe UI Variable" if sys.platform == "win32" else "Segoe UI"
+
+
+def get_ui_font_family() -> str:
+    return FONT_FAMILY
+
+
+def apply_root_typography(root) -> None:
+    """Resolve a modern UI font and apply Tk option_add defaults (call once after Tk exists)."""
+    global FONT_FAMILY
+    candidates = (
+        "Segoe UI Variable",
+        "Segoe UI",
+        "Inter",
+        "SF Pro Text",
+        "Helvetica Neue",
+        "Tahoma",
+    )
+    for name in candidates:
+        try:
+            f = tkfont.Font(root, family=name, size=10)
+            actual = f.actual("family")
+            if actual:
+                FONT_FAMILY = str(actual)
+                break
+        except Exception:
+            continue
+    else:
+        FONT_FAMILY = "Segoe UI"
+    try:
+        root.option_add("*Font", (FONT_FAMILY, 10))
+        root.option_add("*TkDefaultFont", (FONT_FAMILY, 10))
+        root.option_add("*TkTextFont", (FONT_FAMILY, 10))
+        root.option_add("*TkFixedFont", ("Consolas", 10))
+    except Exception:
+        pass
 
 # Display density (TopBar ⊞ control + Settings). Scales default font sizes in font_tuple().
 _DENSITY_FONT_SCALE: Dict[str, float] = {

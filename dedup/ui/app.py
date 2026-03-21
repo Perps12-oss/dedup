@@ -40,8 +40,10 @@ from .shell.app_shell import AppShell
 from .shell.shortcut_registry import ShortcutRegistry
 from .state.hub_adapter import ProjectionHubStoreAdapter
 from .state.store import LastScanSummaryState, MissionState, UIStateStore
+from .theme import design_system
 from .theme.theme_manager import get_theme_manager, parse_gradient_stops_from_raw
 from .theme.theme_registry import get_theme
+from .utils.backdrop import try_apply_mica
 from .utils.formatting import fmt_bytes
 from .utils.ui_state import UIState
 
@@ -165,6 +167,8 @@ class CerebroApp:
             y = max(0, (sh - geom_h) // 2)
         self.root.geometry(f"{geom_w}x{geom_h}+{x}+{y}")
 
+        design_system.apply_root_typography(self.root)
+
         self._toast = ToastManager(self.root)
         self._last_scan_toast_id: str | None = None
 
@@ -172,11 +176,9 @@ class CerebroApp:
         self.coordinator = ScanCoordinator()
 
         # ── Apply initial theme (density affects ttk font sizes / Treeview row height)
-        from .theme import design_system
-
         design_system.set_ui_density(self.state.settings.density or "comfortable")
-        tm = get_theme_manager()
-        tm.apply(self.state.settings.theme_key, self.root, gradient_stops=parse_gradient_stops_from_raw(self.state.settings.custom_gradient_stops))
+        self._apply_scene_theme()
+        try_apply_mica(self.root, self.state.settings.win_mica_backdrop)
 
         # ── Build shell ───────────────────────────────────────────────
         self.root.columnconfigure(0, weight=1)
@@ -338,7 +340,7 @@ class CerebroApp:
             state=self.state,
             on_theme_change=self._on_theme_change,
             on_preference_changed=self._apply_preferences,
-            on_toast=lambda msg: self._toast.show(msg, ms=2600),
+            on_toast=lambda msg: self._toast_notify(msg, ms=2600),
         )
         self.shell.register_page("themes", self._theme_page)
 
@@ -539,7 +541,7 @@ class CerebroApp:
             self._last_scan_toast_id = result.scan_id
             try:
                 n = len(result.duplicate_groups)
-                self._toast.show(f"Scan complete — {n:,} duplicate group(s). Review opened.", ms=4500)
+                self._toast_notify(f"Scan complete — {n:,} duplicate group(s). Review opened.", ms=4500)
             except Exception:
                 pass
 
@@ -632,14 +634,24 @@ class CerebroApp:
     # Theme & settings
     # ------------------------------------------------------------------
 
+    def _apply_scene_theme(self) -> None:
+        get_theme_manager().apply(
+            self.state.settings.theme_key,
+            self.root,
+            gradient_stops=parse_gradient_stops_from_raw(self.state.settings.custom_gradient_stops),
+            sun_valley=self.state.settings.sun_valley_shell,
+        )
+
+    def _toast_notify(self, msg: str, ms: int = 3200) -> None:
+        self._toast.show(msg, ms=ms, reduced_motion=bool(self.state.settings.reduced_motion))
+
     def _on_theme_change(self, key: str):
         self.state.settings.theme_key = key
-        tm = get_theme_manager()
-        tm.apply(key, self.root, gradient_stops=parse_gradient_stops_from_raw(self.state.settings.custom_gradient_stops))
+        self._apply_scene_theme()
         self.shell.top_bar.set_current_theme(key)
         try:
             label = get_theme(key).get("name", key)
-            self._toast.show(f"Theme: {label}", ms=2800)
+            self._toast_notify(f"Theme: {label}", ms=2800)
         except Exception:
             pass
 
@@ -649,14 +661,9 @@ class CerebroApp:
 
     def _apply_preferences(self) -> None:
         """Apply UI preferences from state.settings to shell, store ui_mode, and gated chrome."""
-        from .theme import design_system
-
         design_system.set_ui_density(self.state.settings.density or "comfortable")
-        get_theme_manager().apply(
-            self.state.settings.theme_key,
-            self.root,
-            gradient_stops=parse_gradient_stops_from_raw(self.state.settings.custom_gradient_stops),
-        )
+        self._apply_scene_theme()
+        try_apply_mica(self.root, self.state.settings.win_mica_backdrop)
         self.shell.apply_preferences()
         m = "advanced" if self.state.settings.advanced_mode else "simple"
         self.store.set_ui_mode(m)
