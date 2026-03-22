@@ -73,6 +73,7 @@ class TopBar(tk.Frame):
         self._mode_chip = tk.Label(left, text="Idle", font=font_tuple("strip"), padx=SPACING["md"], pady=SPACING["xs"])
         self._mode_chip.pack(side="left", padx=(SPACING["sm"], 0))
 
+        self._drawer_pack_padx = (SPACING["md"], 0)
         if self._on_drawer_toggle:
             self._drawer_btn = tk.Label(
                 left,
@@ -81,7 +82,7 @@ class TopBar(tk.Frame):
                 padx=SPACING["sm"],
                 cursor="hand2",
             )
-            self._drawer_btn.pack(side="left", padx=(SPACING["md"], 0))
+            self._drawer_btn.pack(side="left", padx=self._drawer_pack_padx)
             self._drawer_btn.bind("<Button-1>", lambda e: self._on_drawer_toggle())
         else:
             self._drawer_btn = None
@@ -124,6 +125,16 @@ class TopBar(tk.Frame):
         settings_btn.pack(side="left")
         settings_btn.bind("<Button-1>", lambda e: self._on_settings())
         self._settings_lbl = settings_btn
+
+    def set_drawer_toggle_visible(self, visible: bool) -> None:
+        """Show or hide the Insights drawer toggle (e.g. hidden on Review — stats live on-page)."""
+        if self._drawer_btn is None:
+            return
+        if visible:
+            if not self._drawer_btn.winfo_ismapped():
+                self._drawer_btn.pack(side="left", padx=self._drawer_pack_padx)
+        else:
+            self._drawer_btn.pack_forget()
 
     def set_page_actions(self, actions: List[ActionSpec]):
         """Replace the center contextual action buttons."""
@@ -190,9 +201,7 @@ class TopBar(tk.Frame):
         fg2 = t["text_secondary"]
         for frame in (self, self._left_frame, self._center_frame, self._right_frame):
             frame.configure(background=bg)
-        self._title_lbl.configure(
-            background=bg, foreground=t["accent_primary"], font=font_tuple("section_title")
-        )
+        self._title_lbl.configure(background=bg, foreground=t["accent_primary"], font=font_tuple("section_title"))
         self._subtitle_lbl.configure(background=bg, foreground=fg2, font=font_tuple("caption"))
         self._session_chip.configure(background=t["bg_elevated"], foreground=fg2, font=font_tuple("strip"))
         self._mode_chip.configure(background=t["bg_elevated"], foreground=fg2, font=font_tuple("strip"))

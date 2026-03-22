@@ -336,9 +336,9 @@ class ThemePage(ttk.Frame):
             sp.bind("<Return>", lambda e, idx=i, v=var: self._spin_pos_commit(idx, v))
             chip = tk.Label(row, text="   ", width=4, background=col, relief="solid", borderwidth=1)
             chip.pack(side="left", padx=(0, _S(2)))
-            ttk.Button(row, text="Color…", style="Ghost.TButton", command=lambda idx=i: self._pick_stop_color(idx)).pack(
-                side="left", padx=(0, _S(2))
-            )
+            ttk.Button(
+                row, text="Color…", style="Ghost.TButton", command=lambda idx=i: self._pick_stop_color(idx)
+            ).pack(side="left", padx=(0, _S(2)))
             rm_state = "disabled" if len(self._working_stops) <= 2 else "normal"
             ttk.Button(
                 row,

@@ -96,15 +96,18 @@ class MissionPage(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
-        content = ttk.Frame(self, padding=(_PAD_PAGE, _PAD_PAGE, _PAD_PAGE, _PAD_PAGE))
+        self._content = ttk.Frame(self, padding=(_PAD_PAGE, _PAD_PAGE, _PAD_PAGE, _PAD_PAGE))
+        content = self._content
         content.grid(row=0, column=0, sticky="nsew")
         content.columnconfigure(0, weight=1)
-        # Recent Sessions fills remaining height between readiness row and Quick Scan.
+        # Recent Sessions fills remaining height between readiness row and Quick Scan
+        # when visible; weight cleared in Simple mode when Recent is hidden (see _sync_mission_layout).
         content.rowconfigure(2, weight=1)
 
         # ── Hero zone ────────────────────────────────────────────────
         # Title block + subtitle stacked; CTAs on same row below.
-        hero = ttk.Frame(content)
+        self._hero = ttk.Frame(content)
+        hero = self._hero
         hero.grid(row=0, column=0, sticky="ew", pady=(0, _GAP_LG))
         hero.columnconfigure(0, weight=1)
 
@@ -162,7 +165,8 @@ class MissionPage(ttk.Frame):
         self._welcome_lbl.grid(row=2, column=0, sticky="w", pady=(_GAP_SM, 0))
 
         # ── Readiness row: 3 equal-width status cards ─────────────────
-        ready = ttk.Frame(content)
+        self._ready = ttk.Frame(content)
+        ready = self._ready
         ready.grid(row=1, column=0, sticky="ew", pady=(0, _GAP_LG))
         ready.columnconfigure(0, weight=1)
         ready.columnconfigure(1, weight=1)
@@ -187,7 +191,8 @@ class MissionPage(ttk.Frame):
         self._build_recent_sessions(self._recent_card.body)
 
         # ── Quick Scan ────────────────────────────────────────────────
-        quick_card = SectionCard(content, title=f"{IC.SCAN}  Quick Scan")
+        self._quick_card = SectionCard(content, title=f"{IC.SCAN}  Quick Scan")
+        quick_card = self._quick_card
         quick_card.grid(row=3, column=0, sticky="ew", pady=(0, _GAP_MD))
         self._build_quick_start(quick_card.body)
 
@@ -454,6 +459,34 @@ class MissionPage(ttk.Frame):
             self._tour_btn.grid(row=0, column=3, sticky="w")
         else:
             self._tour_btn.grid_remove()
+
+        # Avoid allocating all extra vertical space to an empty grid row when Recent is hidden (Simple mode).
+        if show_recent:
+            self._content.rowconfigure(2, weight=1)
+        else:
+            self._content.rowconfigure(2, weight=0)
+
+        self._apply_mission_density(simple)
+
+    def _apply_mission_density(self, simple: bool) -> None:
+        """Sprint 1 (P0): tighter padding and gaps in Simple mode; defaults match legacy Advanced."""
+        if simple:
+            pad = _S(5)  # 20px page edges vs 24px — reduces wasted margin on first impression
+            hero_tail = _GAP_MD  # 16px below hero block
+            ready_tail = _GAP_MD
+            recent_tail = _GAP_MD
+            quick_tail = _GAP_SM
+        else:
+            pad = _PAD_PAGE
+            hero_tail = _GAP_LG
+            ready_tail = _GAP_LG
+            recent_tail = _GAP_LG
+            quick_tail = _GAP_MD
+        self._content.configure(padding=(pad, pad, pad, pad))
+        self._hero.grid_configure(pady=(0, hero_tail))
+        self._ready.grid_configure(pady=(0, ready_tail))
+        self._recent_card.grid_configure(pady=(0, recent_tail))
+        self._quick_card.grid_configure(pady=(0, quick_tail))
 
     def _layout_mission_readiness_row(self, show_engine: bool, show_safety: bool) -> None:
         ec, lc, sc = self._engine_card, self._last_scan_card, self._safety_card

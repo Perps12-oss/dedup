@@ -118,13 +118,14 @@ class ReviewVM:
         self.deletion = build_deletion_from_review_vm(self)
 
     def load_result(self, result) -> None:
-        """Replace groups from a new ScanResult and reset selections."""
+        """Replace groups from a new ScanResult; one default keeper per duplicate group (first file)."""
         from ..projections.review_projection import build_review_groups_from_result
+        from ..utils.review_keep import default_keep_map_from_result
 
         self.groups = build_review_groups_from_result(result)
-        self.keep_selections = {}
+        self.keep_selections = default_keep_map_from_result(result)
         self.current_group_idx = 0
-        self.deletion = EMPTY_DELETION
+        self._refresh_deletion()
 
     def review_completion_pct(self) -> float:
         if not self.groups:

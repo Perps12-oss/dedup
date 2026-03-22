@@ -42,12 +42,14 @@ class AppShell(ttk.Frame):
         state: UIState,
         on_navigate: Callable[[str], None],
         on_theme_change: Callable[[str], None],
+        on_review_delete: Optional[Callable[[], None]] = None,
         **kwargs,
     ):
         super().__init__(parent, **kwargs)
         self._state = state
         self._on_navigate = on_navigate
         self._on_theme_change = on_theme_change
+        self._on_review_delete = on_review_delete
         self._tm = get_theme_manager()
         self._pages: Dict[str, ttk.Frame] = {}
         self._active_page: Optional[str] = None
@@ -89,6 +91,7 @@ class AppShell(ttk.Frame):
             middle,
             on_navigate=self._handle_navigate,
             on_density_toggle=self._do_density_toggle,
+            on_review_delete=self._on_review_delete,
         )
         self.nav_rail.grid(row=0, column=0, sticky="ns")
 

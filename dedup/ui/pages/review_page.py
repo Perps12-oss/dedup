@@ -297,9 +297,7 @@ class ReviewPage(ttk.Frame):
         self._bind_apply_smart = lambda e: self._on_apply_smart_rule_intent()
         self._bind_compare_prev = lambda e: self._run_if_compare_allowed(self._workspace.compare_prev)
         self._bind_compare_next = lambda e: self._run_if_compare_allowed(self._workspace.compare_next)
-        self._bind_quick_compare = lambda e: self._run_if_compare_allowed(
-            self._workspace.open_quick_compare_overlay
-        )
+        self._bind_quick_compare = lambda e: self._run_if_compare_allowed(self._workspace.open_quick_compare_overlay)
 
     # ----------------------------------------------------------------
     # Sub-builders
@@ -497,6 +495,17 @@ class ReviewPage(ttk.Frame):
         )
         self._smart_rule_combo.grid(row=1, column=0, sticky="ew", pady=(0, _GAP_MD))
 
+        ttk.Label(
+            body,
+            text=(
+                "One protected file per duplicate group (others can be deleted). "
+                "Manual picks in Table / Gallery / Compare override Smart Select."
+            ),
+            style="Panel.Muted.TLabel",
+            font=font_tuple("caption"),
+            wraplength=220,
+        ).grid(row=2, column=0, sticky="w", pady=(0, _GAP_SM))
+
         # ── Action buttons ────────────────────────────────────────────
         # Both full-width, stacked vertically — more readable than side-by-side
         # on a narrow rail.
@@ -505,14 +514,14 @@ class ReviewPage(ttk.Frame):
             text="Apply to Group",
             style="Accent.TButton",
             command=self._on_apply_smart_rule_intent,
-        ).grid(row=2, column=0, sticky="ew", pady=(0, _GAP_XS))
+        ).grid(row=3, column=0, sticky="ew", pady=(0, _GAP_XS))
 
         ttk.Button(
             body,
-            text="Clear All",
+            text="Reset defaults",
             style="Ghost.TButton",
             command=self._on_clear_smart_rule_intent,
-        ).grid(row=3, column=0, sticky="ew")
+        ).grid(row=4, column=0, sticky="ew")
 
         # ── Active rule status ────────────────────────────────────────
         # Extra top gap separates status from actions.
@@ -522,7 +531,7 @@ class ReviewPage(ttk.Frame):
             textvariable=self._active_rule_var,
             style="Panel.Accent.TLabel",
             font=font_tuple("caption"),
-        ).grid(row=4, column=0, sticky="w", pady=(_GAP_MD, 0))
+        ).grid(row=5, column=0, sticky="w", pady=(_GAP_MD, 0))
 
     # ----------------------------------------------------------------
     # Public
@@ -560,7 +569,7 @@ class ReviewPage(ttk.Frame):
 
             self._store.set_review_selection(
                 ReviewSelectionState(
-                    keep_selections={},
+                    keep_selections=dict(self.vm.keep_selections),
                     selected_group_id=self.vm.selected_group_id,
                 )
             )
@@ -1036,7 +1045,13 @@ class ReviewPage(ttk.Frame):
         if self._review_controller:
             self._review_controller.handle_clear_keep(gid)
         else:
-            self.vm.clear_keep(gid)
+            from ..utils.review_keep import default_path_for_group
+
+            p = default_path_for_group(self._current_result, gid) if self._current_result else None
+            if p:
+                self.vm.set_keep(gid, p)
+            else:
+                self.vm.clear_keep(gid)
             self._load_workspace(gid)
             self._safety_panel.update_plan(
                 del_count=self.vm.delete_count,
@@ -1216,7 +1231,11 @@ class ReviewPage(ttk.Frame):
         if self._review_controller:
             self._review_controller.handle_clear_all_keeps()
         else:
-            self.vm.keep_selections = {}
+            from ..utils.review_keep import default_keep_map_from_result
+
+            self.vm.keep_selections = (
+                default_keep_map_from_result(self._current_result) if self._current_result else {}
+            )
             self._refresh_group_list()
             gid = self.vm.selected_group_id
             if gid:
