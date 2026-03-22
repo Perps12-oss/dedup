@@ -41,11 +41,13 @@ class NavRail(tk.Frame):
         parent,
         on_navigate: Callable[[str], None],
         on_density_toggle: Optional[Callable[[], None]] = None,
+        on_review_delete: Optional[Callable[[], None]] = None,
         **kwargs,
     ):
         super().__init__(parent, **kwargs)
         self._on_navigate = on_navigate
         self._on_density_toggle = on_density_toggle
+        self._on_review_delete = on_review_delete
         self._buttons: Dict[str, tk.Frame] = {}
         self._active: Optional[str] = None
         self._tm = get_theme_manager()
@@ -75,6 +77,10 @@ class NavRail(tk.Frame):
         # Primary navigation (Mission, Scan, Review)
         for key, icon, label in PRIMARY_NAV:
             self._add_nav_cell(key, icon, label)
+            if key == "review":
+                self._review_delete_outer = tk.Frame(self)
+                self._build_review_delete_strip()
+                self._review_delete_outer.pack_forget()
 
         # Separator between primary and secondary
         self._sep_primary_secondary = tk.Frame(self, height=1)
@@ -92,6 +98,39 @@ class NavRail(tk.Frame):
         self._compact_lbl.pack(pady=SPACING["md"])
         if self._on_density_toggle:
             self._compact_lbl.bind("<Button-1>", lambda e: self._on_density_toggle())
+
+    def _build_review_delete_strip(self) -> None:
+        """Prominent destructive action for Decision Studio — shown only on Review page."""
+        t = self._tm.tokens
+        inner = tk.Frame(
+            self._review_delete_outer,
+            cursor="hand2",
+            highlightthickness=2,
+            highlightbackground=t["danger"],
+            highlightcolor=t["danger"],
+        )
+        inner.pack(fill="x", padx=4, pady=2)
+        self._review_delete_inner = inner
+        tk.Label(inner, text=IC.TRASH, font=font_tuple("nav_icon")).pack(pady=(4, 0))
+        tk.Label(inner, text="DELETE", font=font_tuple("caption")).pack(pady=(0, 4))
+
+        def _go(_e=None):
+            if self._on_review_delete:
+                self._on_review_delete()
+
+        for w in (inner, *inner.winfo_children()):
+            w.bind("<Button-1>", _go)
+
+    def set_review_delete_visible(self, visible: bool) -> None:
+        """Show the rail DELETE control (Decision Studio only)."""
+        outer = getattr(self, "_review_delete_outer", None)
+        if outer is None:
+            return
+        if visible:
+            if not outer.winfo_ismapped():
+                outer.pack(fill="x", pady=(2, SPACING["sm"]), before=self._sep_primary_secondary)
+        else:
+            outer.pack_forget()
 
     def _add_nav_cell(self, key: str, icon: str, label: str) -> None:
         cell = tk.Frame(self, cursor="hand2")
@@ -139,6 +178,16 @@ class NavRail(tk.Frame):
         self._sep_primary_secondary.configure(background=t["border_soft"])
         self._spacer.configure(background=t["bg_sidebar"])
         self._compact_lbl.configure(background=t["bg_sidebar"], foreground=t["text_muted"])
+        if getattr(self, "_review_delete_inner", None) is not None:
+            self._review_delete_inner.configure(
+                background=t["bg_elevated"],
+                highlightbackground=t["danger"],
+                highlightcolor=t["danger"],
+            )
+            for ch in self._review_delete_inner.winfo_children():
+                ch.configure(background=t["bg_elevated"], foreground=t["danger"])
+        if getattr(self, "_review_delete_outer", None) is not None:
+            self._review_delete_outer.configure(background=t["bg_sidebar"])
         for key, cell in self._buttons.items():
             is_active = key == self._active
             bg = t["nav_active_bg"] if is_active else t["bg_sidebar"]

@@ -30,12 +30,37 @@
 | **Theme contrast audit** | CI-ready | `python -m dedup.scripts.audit_theme_contrast --strict`; report at `docs/THEME_CONTRAST_REPORT.md` |
 | **Simple `ui_mode` gates** | Wired | Export / Copy Diag hidden; Diagnostics Phases-only + drawer; Review Compare hidden + shortcuts gated |
 | **Mission / Scan simple layout** | Wired | Simple: last-scan–only Mission, Scan left column only; Advanced honors `mission_show_*` / `scan_show_*` + Settings checkboxes |
+| **Mission Simple density (Sprint 1 / P0)** | Implemented | Tighter page padding + section gaps in Simple; `rowconfigure(2)` weight only when Recent Sessions row is visible (avoids blank mid-page band) — see `docs/UI_DENSITY_MISSION_SCAN_REVIEW_BLUEPRINT.md` |
+| **Status strip (Sprint 2 / P0-S1)** | Implemented | Group separators; phase uses `text_primary`; engine/warnings keep semantic colors on theme change; Simple hides storage + intent; session hover tooltip; Advanced click → Diagnostics — `dedup/ui/shell/status_strip.py` |
+| **Review UX (P1)** | Implemented | DELETE moved to **nav rail** (prominent danger strip under Review); top bar keeps Preview Effects only; Insights **drawer** toggle hidden on Review + empty drawer sections (stats on-page); Compare/table copy clarified; deletion path uses **toasts** (before/after summary) via `ReviewController` + `ToastManager` |
 | **Root README** | Present | `README.md` → `docs/README.md` + contributing + engineering status |
 | **Phase 6 triage** | Documented | `UI_CONSISTENCY_AUDIT.md` Phase 6 table; rollout Phase 6 sub-phase closed |
 
 ---
 
 ## Changelog (append newest first)
+
+### 2026-03-21 — Review P1: rail DELETE, drawer dedupe, Compare copy, deletion toasts
+
+- **Nav rail:** under **Review**, prominent `DELETE` control (trash + danger border); `CerebroApp._review_delete_from_rail` → `ReviewController.handle_execute_deletion`.
+- **Top bar:** Review actions = **Preview Effects** only (DELETE removed from center).
+- **Insights drawer:** toggle hidden on Review; `_update_drawer_content("review")` returns no sections (Provenance ribbon + Safety panel hold the same facts on-page).
+- **Workspace:** Compare mode buttons rephrased; removed duplicate second row that mirrored keep left/right; table “Keep this file” label.
+- **Toasts:** `ReviewController` optional `toast_notify` — messages before confirm, “Deleting…”, then success/partial summary (messagebox retained for partial-failure headline).
+
+### 2026-03-21 — Sprint 2 (P0-S1): Status strip hierarchy + Simple collapse
+
+- `StatusStrip`: vertical group separators; **phase** label uses `text_primary`; `_apply_colors` reapplies engine/warnings semantic colors after theme (fixes muted overwrite).
+- **Simple** `ui_mode`: hide **storage** (schema) and **intent** cells; **Advanced**: full strip, `hand2` cursor, click anywhere on strip navigates to **Diagnostics**; session cell hover shows full session id (`CerebroApp._on_status_strip_click`, `set_ui_mode` from `_apply_preferences`).
+- Tests: `dedup/tests/test_status_strip.py`.
+- Blueprint: `docs/UI_DENSITY_MISSION_SCAN_REVIEW_BLUEPRINT.md` (P0-S1).
+
+### 2026-03-21 — Sprint 1 (P0): Mission Simple density
+
+- **Stage 0 (baseline):** `CerebroApp` root `minsize` **580×320** (`dedup/ui/app.py`); first-run default geometry ≈ **45% × 65%** of primary screen, clamped to mins and caps (`STARTUP_MAX_W_CAP` 1600, `STARTUP_MAX_H_CAP` 1000). Mission Simple vs Advanced layout rules: `MissionPage.sync_chrome()` + store `ui_mode`; content max width remains `AppShell` / `MAX_CONTENT_WIDTH` (see blueprint P0 global density).
+- `MissionPage`: Simple mode uses slightly smaller page padding (`_S(5)` vs `_PAD_PAGE`) and `_GAP_MD` between hero → readiness → quick scan; Advanced unchanged.
+- Grid: `content` row 2 (Recent Sessions) gets `weight=1` only when that row is shown; `weight=0` when Recent is hidden so extra height does not accumulate in an empty row.
+- Blueprint: `docs/UI_DENSITY_MISSION_SCAN_REVIEW_BLUEPRINT.md` (P0-M1, row-weight fix).
 
 ### 2026-03-21 — Shell alignment + accent gradient tooling + docs
 

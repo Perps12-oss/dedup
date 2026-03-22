@@ -189,8 +189,10 @@ class CerebroApp:
             state=self.state,
             on_navigate=self._navigate,
             on_theme_change=self._on_theme_change,
+            on_review_delete=self._review_delete_from_rail,
         )
         self.shell.grid(row=0, column=0, sticky="nsew")
+        self.shell.status_strip.set_strip_click_handler(self._on_status_strip_click)
 
         # ── Create store first so ReviewController and store-fed pages can use it ───
         self.store = UIStateStore(tk_root=self.root)
@@ -307,6 +309,7 @@ class CerebroApp:
             self.coordinator,
             self.store,
             callbacks=self._review,
+            toast_notify=lambda msg, ms: self._toast.show(msg, ms=ms),
         )
         self._review._review_controller = self._review_controller
         self.shell.register_page("review", self._review)
@@ -351,6 +354,10 @@ class CerebroApp:
     # Navigation
     # ------------------------------------------------------------------
 
+    def _review_delete_from_rail(self) -> None:
+        """Left-rail DELETE — same execute path as former top-bar control."""
+        self._review_controller.handle_execute_deletion()
+
     def _navigate(self, page: str):
         self.shell.show_page(page)
         self._update_page_actions(page)
@@ -382,7 +389,7 @@ class CerebroApp:
             "  Space                   Quick look (selected file)\n"
             "  X                       Quick compare overlay\n"
             "  [ / ]                   Compare previous/next pair\n"
-            "  K / Shift+K             Keep selected / Clear keep\n"
+            "  K / Shift+K             Keep selected / Reset keeper to default (first file)\n"
             "  A                       Apply Smart Auto Select\n"
             "  P                       Preview Effects\n"
             "  U                       Undo guidance\n"
@@ -403,7 +410,6 @@ class CerebroApp:
             ],
             "review": [
                 ("Preview Effects", "Ghost.TButton", lambda: self._review_controller.handle_preview_deletion()),
-                ("DELETE", "Danger.TButton", lambda: self._review_controller.handle_execute_deletion()),
             ],
             "history": [
                 ("Refresh", "Ghost.TButton", lambda: self._history.refresh()),
@@ -423,6 +429,8 @@ class CerebroApp:
             elif page in ("history", "diagnostics"):
                 actions = [a for a in actions if a[0] != "Export"]
         self.shell.set_page_actions(actions)
+        self.shell.top_bar.set_drawer_toggle_visible(page != "review")
+        self.shell.nav_rail.set_review_delete_visible(page == "review")
 
     def _update_drawer_content(self, page: str):
         sections = []
@@ -449,25 +457,8 @@ class CerebroApp:
                 ),
             ]
         elif page == "review":
-            sections = [
-                (
-                    "Review",
-                    [
-                        ("Groups", str(self._review.vm.total_groups)),
-                        ("Delete", str(self._review.vm.delete_count)),
-                        ("Keep", str(self._review.vm.keep_count)),
-                        ("Reclaim", fmt_bytes(self._review.vm.reclaimable_bytes)),
-                    ],
-                ),
-                (
-                    "Safety",
-                    [
-                        ("Mode", "Trash"),
-                        ("Revalidate", "ON"),
-                        ("Audit", "ACTIVE"),
-                    ],
-                ),
-            ]
+            # Stats and safety live on-page (Provenance + Safety panel); skip drawer to avoid duplicate "Insights" bulk.
+            sections = []
         elif page == "history":
             sections = [
                 (
@@ -659,6 +650,12 @@ class CerebroApp:
         _ = active  # AppSettings.advanced_mode already updated by TopBar toggle
         self._apply_preferences()
 
+    def _on_status_strip_click(self, _event=None):
+        """Status strip is read-only telemetry; Advanced mode may use it to open Diagnostics."""
+        if self.store.state.ui_mode != "advanced":
+            return
+        self._navigate("diagnostics")
+
     def _apply_preferences(self) -> None:
         """Apply UI preferences from state.settings to shell, store ui_mode, and gated chrome."""
         design_system.set_ui_density(self.state.settings.density or "comfortable")
@@ -667,6 +664,7 @@ class CerebroApp:
         self.shell.apply_preferences()
         m = "advanced" if self.state.settings.advanced_mode else "simple"
         self.store.set_ui_mode(m)
+        self.shell.status_strip.set_ui_mode(m)
         self._review.set_ui_mode(m)
         ap = self.shell.active_page
         if ap:

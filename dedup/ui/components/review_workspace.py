@@ -56,7 +56,7 @@ class ReviewTableView(ttk.Frame):
         self._file_table = DataTable(
             self,
             columns=[
-                ("action", "Action", 60, "center"),
+                ("action", "Plan", 128, "w"),
                 ("name", "Name", 160, "w"),
                 ("path", "Path", 200, "w"),
                 ("size", "Size", 70, "e"),
@@ -76,7 +76,7 @@ class ReviewTableView(ttk.Frame):
         act.grid(row=2, column=0, sticky="ew", pady=(6, 0))
         ttk.Button(
             act,
-            text=f"{IC.KEEP}  Keep this",
+            text=f"{IC.KEEP}  Keep this file",
             style="Ghost.TButton",
             command=on_keep,
         ).pack(side="left", padx=(0, 6))
@@ -106,7 +106,7 @@ class ReviewTableView(ttk.Frame):
         for f in group.files:
             self._file_meta[f.path] = f
             is_keep = f.path == keep_path
-            action = f"{IC.KEEP} KEEP" if is_keep else f"{IC.DELETE_TGT} DEL"
+            action = "Keep this copy" if is_keep else "Delete (duplicate)"
             tag = "safe" if is_keep else "warn"
             modified = datetime.fromtimestamp(getattr(f, "mtime_ns", 0) / 1_000_000_000).strftime("%Y-%m-%d")
             self._file_table.insert_row(
@@ -178,6 +178,7 @@ class ReviewGalleryView(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
         self._on_keep = on_keep
+        self._keeper_var = tk.StringVar(value="")
         self._thumb_refs: List[Any] = []
         self._cards: List[ttk.Frame] = []
         self._thumb_cancel = threading.Event()
@@ -240,6 +241,9 @@ class ReviewGalleryView(ttk.Frame):
         self._scroll_h.grid(row=1, column=0, sticky="ew")
 
         files = list(group.files)
+        paths = [f.path for f in files]
+        default_keep = keep_path if keep_path in paths else (paths[0] if paths else "")
+        self._keeper_var.set(default_keep)
         size = _thumb_size_for_group(len(files))
         ncols = 4
 
@@ -277,15 +281,13 @@ class ReviewGalleryView(ttk.Frame):
                         ttk.Label(card, text=fmt_bytes(f.size), style="Panel.Muted.TLabel", font=("Segoe UI", 7)).grid(
                             row=2, column=0
                         )
-                        is_keep = fpath == keep_path
-                        action_text = "KEEP" if is_keep else "DEL"
-                        btn = ttk.Button(
+                        ttk.Radiobutton(
                             card,
-                            text=action_text,
-                            style="Ghost.TButton" if is_keep else "Danger.TButton",
-                            command=lambda p=fpath: self._on_keep(p),
-                        )
-                        btn.grid(row=3, column=0, pady=2)
+                            text="Keep this copy",
+                            value=fpath,
+                            variable=self._keeper_var,
+                            command=lambda: self._on_keep(self._keeper_var.get()),
+                        ).grid(row=3, column=0, pady=2)
 
                     self._cards.append(card)
                     self._inner.update_idletasks()
@@ -317,13 +319,12 @@ class ReviewGalleryView(ttk.Frame):
                 ttk.Label(card, text=fmt_bytes(f.size), style="Panel.Muted.TLabel", font=("Segoe UI", 7)).grid(
                     row=2, column=0
                 )
-                is_keep = f.path == keep_path
-                action_text = "KEEP" if is_keep else "DEL"
-                ttk.Button(
+                ttk.Radiobutton(
                     card,
-                    text=action_text,
-                    style="Ghost.TButton" if is_keep else "Danger.TButton",
-                    command=lambda p=f.path: self._on_keep(p),
+                    text="Keep this copy",
+                    value=f.path,
+                    variable=self._keeper_var,
+                    command=lambda: self._on_keep(self._keeper_var.get()),
                 ).grid(row=3, column=0, pady=2)
                 self._cards.append(card)
 
@@ -350,6 +351,9 @@ class ReviewCompareView(ttk.Frame):
         self._pair_index = 0
         self._left_idx = 0
         self._right_idx = 1
+        self._del_left = tk.BooleanVar(value=False)
+        self._del_right = tk.BooleanVar(value=False)
+        self._syncing_del_checks = False
         self.bind("<Destroy>", self._on_destroy, add="+")
 
         self.configure(style="Panel.TFrame")
@@ -376,15 +380,15 @@ class ReviewCompareView(ttk.Frame):
         act = ttk.Frame(self, style="Panel.TFrame")
         act.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         act.columnconfigure(0, weight=1)
-        act.columnconfigure(1, weight=1)
-        ttk.Button(act, text="Keep Left", style="Ghost.TButton", command=on_keep_left).grid(row=0, column=0, padx=4)
-        ttk.Button(act, text="Keep Right", style="Ghost.TButton", command=on_keep_right).grid(row=0, column=1, padx=4)
-        ttk.Button(act, text="Keep All Except Left", style="Ghost.TButton", command=on_keep_left).grid(
-            row=1, column=0, padx=4, pady=(4, 0)
-        )
-        ttk.Button(act, text="Keep All Except Right", style="Ghost.TButton", command=on_keep_right).grid(
-            row=1, column=1, padx=4, pady=(4, 0)
-        )
+        ttk.Label(
+            act,
+            text=(
+                "Check Delete on one side to mark that file for removal; the other side stays protected. "
+                "This overrides Smart Select for this group. If neither box is checked, the left file is protected."
+            ),
+            style="Panel.Muted.TLabel",
+            wraplength=520,
+        ).grid(row=0, column=0, sticky="w")
 
         # Tier 3: Multi-compare strip (up to 6)
         mc = ttk.Frame(self, style="Panel.TFrame")
@@ -491,7 +495,7 @@ class ReviewCompareView(ttk.Frame):
             self._left_idx, self._right_idx = li, ri
         self._pair_lbl.configure(text=f"Comparing {self._left_idx + 1} vs {self._right_idx + 1}")
 
-        def add_preview(frame: ttk.Frame, f):
+        def add_preview(frame: ttk.Frame, f, side: str):
             for w in frame.winfo_children():
                 w.destroy()
             size = (320, 320)
@@ -538,9 +542,62 @@ class ReviewCompareView(ttk.Frame):
             ttk.Label(
                 frame, text=truncate_path(f.path, 50), style="Panel.Muted.TLabel", font=("Segoe UI", 7), wraplength=300
             ).grid(row=3, column=0)
+            var = self._del_left if side == "left" else self._del_right
+            chk = ttk.Frame(frame, style="Panel.TFrame")
+            chk.grid(row=4, column=0, sticky="ew", pady=(8, 0))
+            ttk.Checkbutton(
+                chk,
+                text="Delete this copy (Trash later; other preview is kept)",
+                variable=var,
+                command=self._on_compare_delete_toggle,
+            ).pack(anchor="w")
 
-        add_preview(self._left_frame, left_f)
-        add_preview(self._right_frame, right_f)
+        add_preview(self._left_frame, left_f, "left")
+        add_preview(self._right_frame, right_f, "right")
+        self._sync_del_checks_from_keep(left_f, right_f)
+
+    def _on_compare_delete_toggle(self) -> None:
+        if self._syncing_del_checks:
+            return
+        if self._del_left.get() and self._del_right.get():
+            self._syncing_del_checks = True
+            self._del_right.set(False)
+            self._syncing_del_checks = False
+        elif self._del_left.get():
+            self._syncing_del_checks = True
+            self._del_right.set(False)
+            self._syncing_del_checks = False
+        elif self._del_right.get():
+            self._syncing_del_checks = True
+            self._del_left.set(False)
+            self._syncing_del_checks = False
+        self._apply_compare_keep_from_checks()
+
+    def _apply_compare_keep_from_checks(self) -> None:
+        if not hasattr(self, "_group"):
+            return
+        if self._del_left.get():
+            self._on_keep_right()
+        elif self._del_right.get():
+            self._on_keep_left()
+        else:
+            self._on_keep_left()
+
+    def _sync_del_checks_from_keep(self, left_f, right_f) -> None:
+        self._syncing_del_checks = True
+        try:
+            k = (self._keep_path or "").strip()
+            if k == left_f.path:
+                self._del_left.set(False)
+                self._del_right.set(True)
+            elif k == right_f.path:
+                self._del_left.set(True)
+                self._del_right.set(False)
+            else:
+                self._del_left.set(False)
+                self._del_right.set(True)
+        finally:
+            self._syncing_del_checks = False
 
     def _render_multi_compare(self) -> None:
         for w in self._multi_grid.winfo_children():

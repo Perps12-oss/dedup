@@ -53,6 +53,7 @@ def apply_root_typography(root) -> None:
     except Exception:
         pass
 
+
 # Display density (TopBar ⊞ control + Settings). Scales default font sizes in font_tuple().
 _DENSITY_FONT_SCALE: Dict[str, float] = {
     "comfortable": 1.0,

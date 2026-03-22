@@ -15,6 +15,8 @@ A production-grade duplicate file finder with a seven-destination CEREBRO operat
 - **Layered hashing**: Fast partial hash first, full hash when needed.
 - **Safe deletion**: Trash/recycle bin by default; permanent only with confirmation.
 - **Shell pages**: Mission (home), Scan (live), Review (decision studio), History, Diagnostics, Themes (presets, contrast snapshot, **custom top-bar accent gradient** editor, JSON import/export), Settings.
+- **Bottom status strip**: Read-only telemetry (session, phase, engine health, checkpoint, workers, warnings, and in **Advanced** mode schema + scan intent). **Simple** mode hides the last two for a calmer bar; hover the session field for the full session id. In **Advanced** mode, clicking the strip opens **Diagnostics** (single overflow affordance; not a menu bar).
+- **Decision Studio (Review):** primary destructive action is **DELETE** on the **left nav rail** (under Review); the top bar keeps **Preview Effects**. The right **Insights** drawer toggle is hidden on Review so stats are not duplicated (see Provenance ribbon + Safety panel). Deletion uses **toasts** for before/after summaries once you confirm in the dialog.
 - **Store + controllers**: UIStateStore is the read authority; ScanController and ReviewController handle commands; no direct page/backend coupling in action paths.
 - **Cross-platform**: Windows, macOS, Linux.
 
