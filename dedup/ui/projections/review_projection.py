@@ -28,6 +28,7 @@ class ReviewGroupProjection:
     keeper_candidate: str  # path of suggested keeper (first file by default)
     thumbnail_capable: bool  # True if at least one file is a renderable image
     metadata_summary: str  # human-readable one-liner, e.g. "4 × 12.4 MB JPG"
+    primary_filename: str = ""  # first file basename — navigator labels / search
 
     @property
     def has_risk(self) -> bool:
@@ -84,6 +85,7 @@ def build_review_group_from_duplicate_group(
     if ext:
         meta_parts.append(ext.upper())
     meta_summary = " ".join(meta_parts)
+    primary_filename = files[0].filename if files else ""
 
     return ReviewGroupProjection(
         group_id=group.group_id,
@@ -97,6 +99,7 @@ def build_review_group_from_duplicate_group(
         keeper_candidate=keeper,
         thumbnail_capable=thumb_capable,
         metadata_summary=meta_summary,
+        primary_filename=primary_filename,
     )
 
 

@@ -430,7 +430,8 @@ class CerebroApp:
                 actions = [a for a in actions if a[0] != "Export"]
         self.shell.set_page_actions(actions)
         self.shell.top_bar.set_drawer_toggle_visible(page != "review")
-        self.shell.nav_rail.set_review_delete_visible(page == "review")
+        # Primary DELETE lives on the Review workspace (full-width); hide rail duplicate.
+        self.shell.nav_rail.set_review_delete_visible(False)
 
     def _update_drawer_content(self, page: str):
         sections = []

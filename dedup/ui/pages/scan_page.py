@@ -4,9 +4,9 @@ Scan Page — Live operations console for the durable pipeline.
 Layout:
   Row 0: Page header + Cancel button
   Row 1: Status Ribbon
-  Row 2: Phase Timeline
-  Row 3: Live Metrics | Work Saved
-  Row 4: Phase Detail | Events log
+  Row 2: Banners (interrupt / degraded / error)
+  Row 3: Main grid — left: Target, Timeline, Progress & Session (spans two rows);
+         right: Live Metrics, Scan progress (rainbow bar + ETA), Health, Activity Feed
 
 UI Refactor (v2): Aligned to shared 8px design system.
   - Header: stacked title_block with action buttons in top-right corner.
@@ -36,6 +36,7 @@ from ..components import (
     SectionCard,
     StatusRibbon,
 )
+from ..components.rainbow_progress import RainbowProgressBar
 from ..projections.compatibility_projection import CompatibilityProjection
 from ..projections.metrics_projection import MetricsProjection
 from ..projections.phase_projection import PHASE_ORDER, PhaseProjection
@@ -246,8 +247,10 @@ class ScanPage(ttk.Frame):
 
         if show_m:
             self._metrics_card.grid()
+            self._progress_card.grid()
         else:
             self._metrics_card.grid_remove()
+            self._progress_card.grid_remove()
         if show_w:
             self._work_card.grid()
         else:
@@ -352,6 +355,7 @@ class ScanPage(ttk.Frame):
             self._ribbon.set_state("failed", detail=proj.resume_reason[:60] if proj.resume_reason else "Error")
             self._state_hint.set("Scan failed. Inspect diagnostics, then retry or resume.")
             self._show_interruption_banner("Scan interrupted. Resume where you left off?")
+        self._defer(self._update_scan_progress_eta, "scan_eta")
 
     # ------------------------------------------------------------------
     # Rendering
@@ -404,6 +408,55 @@ class ScanPage(ttk.Frame):
                 if live:
                     self._result_vars["Duplicate groups"].set(fmt_int(live))
 
+        self._update_scan_progress_eta()
+
+    def _update_scan_progress_eta(self) -> None:
+        """Rainbow bar + ETA from phase row/total throughput when available."""
+        if not hasattr(self, "_rainbow_progress"):
+            return
+        rp = self._rainbow_progress
+        pm = self.vm.phase_metrics
+        sess = self.vm.session.status
+
+        if sess == "completed" or self._scan_completed:
+            rp.set_fraction(1.0, indeterminate=False)
+            self._pct_var.set("100%")
+            self._eta_var.set("Complete")
+            return
+        if sess in ("cancelled", "failed"):
+            rp.set_fraction(0.0, indeterminate=False)
+            self._pct_var.set("—")
+            self._eta_var.set("ETA: —")
+            return
+        if sess != "running":
+            rp.set_fraction(0.0, indeterminate=False)
+            self._pct_var.set("0%")
+            self._eta_var.set("ETA: —")
+            return
+
+        tu = pm.total_units
+        has_total = tu is not None and tu > 0
+        if has_total:
+            frac = min(1.0, pm.completed_units / tu)
+            rp.set_fraction(frac, indeterminate=False)
+            self._pct_var.set(f"{100 * frac:.0f}%")
+            rem = tu - pm.completed_units
+            if rem <= 0:
+                self._eta_var.set("Finishing…")
+            elif pm.elapsed_phase_s > 0.5 and pm.completed_units > 0:
+                rate = pm.completed_units / pm.elapsed_phase_s
+                if rate > 0:
+                    eta_s = rem / rate
+                    self._eta_var.set(f"ETA ~{fmt_duration(eta_s)} remaining")
+                else:
+                    self._eta_var.set("ETA: —")
+            else:
+                self._eta_var.set("ETA: —")
+        else:
+            rp.set_fraction(0.0, indeterminate=True)
+            self._pct_var.set("…")
+            self._eta_var.set("ETA: —  (awaiting phase total)")
+
     def _render_phase_detail(self) -> None:
         s = self.vm.session
         active_phase = next((p for p in self.vm.phases.values() if p.status == "running"), None)
@@ -413,6 +466,8 @@ class ScanPage(ttk.Frame):
             )
         if active_phase:
             self._phase_vars["Phase units processed"].set(fmt_int(active_phase.rows_written))
+        if self.vm.session.status == "running":
+            self._defer(self._update_scan_progress_eta, "scan_eta")
 
     def _render_work_saved(self) -> None:
         ws = self.vm.work_saved_info
@@ -575,7 +630,7 @@ class ScanPage(ttk.Frame):
         main.grid(row=3, column=0, sticky="nsew")
         main.columnconfigure(0, weight=2)
         main.columnconfigure(1, weight=3)
-        main.rowconfigure(2, weight=1)
+        main.rowconfigure(3, weight=1)
 
         # Left rail
         target_card = SectionCard(main, title=f"{IC.FOLDER}  Scan Target")
@@ -588,7 +643,7 @@ class ScanPage(ttk.Frame):
         self._timeline.pack(fill="x")
 
         phase_card = SectionCard(main, title=f"{IC.ACTIVE}  Progress & Session")
-        phase_card.grid(row=2, column=0, sticky="nsew", padx=(0, _GAP_SM))
+        phase_card.grid(row=2, column=0, rowspan=2, sticky="nsew", padx=(0, _GAP_SM))
         self._build_phase_detail(phase_card.body)
 
         # Right rail
@@ -596,12 +651,30 @@ class ScanPage(ttk.Frame):
         self._metrics_card.grid(row=0, column=1, sticky="ew", pady=(0, _GAP_MD))
         self._build_live_metrics(self._metrics_card.body)
 
+        self._progress_card = SectionCard(main, title=f"{IC.SCAN}  Scan progress")
+        self._progress_card.grid(row=1, column=1, sticky="ew", pady=(0, _GAP_MD))
+        _prow = ttk.Frame(self._progress_card.body, style="Panel.TFrame")
+        _prow.pack(fill="x")
+        self._rainbow_progress = RainbowProgressBar(_prow, height=_S(8))
+        self._rainbow_progress.pack(fill="x")
+        _eta_row = ttk.Frame(self._progress_card.body, style="Panel.TFrame")
+        _eta_row.pack(fill="x", pady=(_GAP_SM, 0))
+        self._pct_var = tk.StringVar(value="0%")
+        self._eta_var = tk.StringVar(value="ETA: —")
+        ttk.Label(_eta_row, textvariable=self._pct_var, font=font_tuple("body_bold")).pack(side="left")
+        ttk.Label(
+            _eta_row,
+            textvariable=self._eta_var,
+            style="Muted.TLabel",
+            font=font_tuple("caption"),
+        ).pack(side="right")
+
         self._work_card = SectionCard(main, title=f"{IC.SHIELD}  Health & Compatibility")
-        self._work_card.grid(row=1, column=1, sticky="ew", pady=(0, _GAP_MD))
+        self._work_card.grid(row=2, column=1, sticky="ew", pady=(0, _GAP_MD))
         self._build_work_saved(self._work_card.body)
 
         self._events_card = SectionCard(main, title=f"{IC.INFO}  Activity Feed")
-        self._events_card.grid(row=2, column=1, sticky="nsew")
+        self._events_card.grid(row=3, column=1, sticky="nsew")
         self._build_events(self._events_card.body)
 
     def _build_scan_target(self, body: ttk.Frame):

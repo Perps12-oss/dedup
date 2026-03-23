@@ -35,12 +35,12 @@ from typing import Callable, Optional
 from ...engine.models import DeletionPlan, DeletionResult, ScanResult
 from ...orchestration.coordinator import ScanCoordinator
 from ..components import (
-    DataTable,
     FilterBar,
     ProvenanceRibbon,
     SafetyPanel,
     SectionCard,
 )
+from ..components.group_thumbnail_navigator import GroupThumbnailNavigator
 from ..components.review_workspace import ReviewWorkspaceStack
 from ..controller.review_controller import ReviewController
 from ..theme.design_system import font_tuple
@@ -49,7 +49,7 @@ from ..utils.icons import IC
 from ..viewmodels.review_vm import ReviewVM
 
 _THUMB_SIZE = (64, 64)
-# Bounded navigator for scale (Phase 3B): cap visible rows to avoid unbounded Treeview
+# Cap groups passed to the thumbnail navigator (virtualized rendering; still bounded)
 REVIEW_NAVIGATOR_MAX_ROWS = 2000
 
 
@@ -101,10 +101,6 @@ class ReviewPage(ttk.Frame):
         # Track which state-filter chip is active so we can style it
         self._active_chip_key: str = "all"
         self._ui_mode: str = "simple"
-        self._nav_top = 0
-        self._nav_slot_group_ids: list[str] = []
-        self._nav_scroll_virtual: bool | None = None
-        self._nav_wheel_bound = False
         self._build()
 
     # --- IReviewCallbacks: public contract for ReviewController ---
@@ -122,6 +118,8 @@ class ReviewPage(ttk.Frame):
 
     def on_execute_start(self) -> None:
         self._safety_panel._delete_btn.configure(state="disabled", text="Executing…")
+        if hasattr(self, "_workspace_delete_btn"):
+            self._workspace_delete_btn.configure(state="disabled", text="Executing…")
         self.update()
 
     def on_execute_done(self, result) -> None:
@@ -285,6 +283,9 @@ class ReviewPage(ttk.Frame):
         # Keyboard shortcuts (bindings stored for on_show / on_hide)
         self._bind_key_next = lambda e: self._on_key_next_group()
         self._bind_key_prev = lambda e: self._on_key_prev_group()
+        self._bind_key_down = lambda e: self._on_key_arrow_down(e)
+        self._bind_key_up = lambda e: self._on_key_arrow_up(e)
+        self._bind_key_return = lambda e: self._on_key_activate_group(e)
         self._bind_mode_gallery = lambda e: self._set_mode_shortcut("gallery")
         self._bind_mode_table = lambda e: self._set_mode_shortcut("table")
         self._bind_mode_compare = lambda e: self._set_mode_shortcut("compare")
@@ -381,34 +382,28 @@ class ReviewPage(ttk.Frame):
             font=font_tuple("caption"),
         ).grid(row=3, column=0, sticky="w", pady=(0, _GAP_XS))
 
-        # ── Group table ───────────────────────────────────────────────
-        # Row height set via `height` (number of visible rows).
-        self._group_table = DataTable(
+        # ── Thumbnail grid (virtualized; lazy image loads) ────────────
+        self._group_nav = GroupThumbnailNavigator(
             body,
-            columns=[
-                ("idx", "#", 32, "center"),
-                ("state", "State", 120, "w"),
-                ("files", "Files", 40, "center"),
-                ("size", "Size", 70, "e"),
-                ("conf", "Conf", 40, "center"),
-            ],
-            height=8,
-            sortable=False,
             on_select=self._dispatch_group_select,
+            resolve_duplicate_group=self._resolve_duplicate_group_for_nav,
         )
-        self._group_table.grid(row=4, column=0, sticky="nsew")
+        self._group_nav.grid(row=4, column=0, sticky="nsew")
         body.rowconfigure(4, weight=1)
-        self._group_table.bind_height_to_parent(
-            body,
-            min_lines=5,
-            max_lines=22,
-            reserve_px=200,
-            after_change=self._refresh_group_list,
-        )
 
     def _build_workspace(self, body: ttk.Frame):
         body.columnconfigure(0, weight=1)
-        body.rowconfigure(1, weight=1)
+        body.rowconfigure(2, weight=1)
+
+        # ── Primary DELETE (full width, matches deletion-plan prominence) ─
+        self._workspace_delete_btn = ttk.Button(
+            body,
+            text="DELETE — select keep files to enable",
+            style="Danger.TButton",
+            command=self._on_execute_intent,
+            state="disabled",
+        )
+        self._workspace_delete_btn.grid(row=0, column=0, sticky="ew", pady=(0, _GAP_MD), ipady=_GAP_MD)
 
         # ── Summary band ──────────────────────────────────────────────
         # Increased padding for breathing room.
@@ -418,7 +413,7 @@ class ReviewPage(ttk.Frame):
             style="Panel.TFrame",
             padding=(_GAP_MD, _GAP_SM, _GAP_MD, _GAP_SM),
         )
-        band.grid(row=0, column=0, sticky="ew", pady=(0, _GAP_MD))
+        band.grid(row=1, column=0, sticky="ew", pady=(0, _GAP_MD))
         band.columnconfigure(0, weight=1)
         band.columnconfigure(1, weight=0)  # right info block: natural width
 
@@ -471,7 +466,7 @@ class ReviewPage(ttk.Frame):
             on_keep=self._on_set_keep,
             on_clear_keep=self._on_clear_keep,
         )
-        self._workspace.grid(row=1, column=0, sticky="nsew")
+        self._workspace.grid(row=2, column=0, sticky="nsew")
 
     def _build_smart_rules_rail(self, body: ttk.Frame):
         """Construct the Smart Rules section of the Right Rail (Blueprint 5.2)."""
@@ -581,12 +576,7 @@ class ReviewPage(ttk.Frame):
         )
         self._refresh_group_list()
         self._update_filter_chip_labels()
-        self._safety_panel.update_plan(
-            del_count=self.vm.delete_count,
-            keep_count=self.vm.keep_count,
-            reclaim_bytes=self.vm.reclaimable_bytes,
-            risk_flags=self.vm.risk_flags,
-        )
+        self._push_deletion_plan_ui()
 
     def on_show(self):
         self.bind_all("<Control-Right>", self._bind_key_next, add="+")
@@ -604,6 +594,9 @@ class ReviewPage(ttk.Frame):
         self.bind_all("<Key-bracketleft>", self._bind_compare_prev, add="+")
         self.bind_all("<Key-bracketright>", self._bind_compare_next, add="+")
         self.bind_all("<Key-x>", self._bind_quick_compare, add="+")
+        self.bind_all("<Down>", self._bind_key_down, add="+")
+        self.bind_all("<Up>", self._bind_key_up, add="+")
+        self.bind_all("<Return>", self._bind_key_return, add="+")
 
     def on_hide(self):
         self.unbind_all("<Control-Right>")
@@ -621,39 +614,63 @@ class ReviewPage(ttk.Frame):
         self.unbind_all("<Key-bracketleft>")
         self.unbind_all("<Key-bracketright>")
         self.unbind_all("<Key-x>")
+        self.unbind_all("<Down>")
+        self.unbind_all("<Up>")
+        self.unbind_all("<Return>")
 
     # ----------------------------------------------------------------
-    # Group list
+    # Group navigator (thumbnail grid)
     # ----------------------------------------------------------------
+    def _resolve_duplicate_group_for_nav(self, group_id: str):
+        if not self._current_result:
+            return None
+        return next((g for g in self._current_result.duplicate_groups if g.group_id == group_id), None)
+
+    def _push_deletion_plan_ui(self) -> None:
+        self._safety_panel.update_plan(
+            del_count=self.vm.delete_count,
+            keep_count=self.vm.keep_count,
+            reclaim_bytes=self.vm.reclaimable_bytes,
+            risk_flags=self.vm.risk_flags,
+        )
+        self._sync_workspace_delete_btn()
+
+    def _sync_workspace_delete_btn(self) -> None:
+        if not hasattr(self, "_workspace_delete_btn"):
+            return
+        dc = self.vm.delete_count
+        try:
+            rb = int(self.vm.reclaimable_bytes)
+        except (TypeError, ValueError):
+            rb = 0
+        try:
+            dc = int(dc)
+        except (TypeError, ValueError):
+            dc = 0
+        if dc > 0:
+            self._workspace_delete_btn.configure(
+                state="normal",
+                text=f"DELETE — remove {dc} duplicate file(s) ({fmt_bytes(rb)})",
+            )
+        else:
+            self._workspace_delete_btn.configure(
+                state="disabled",
+                text="DELETE — select keep files to enable",
+            )
+
+    def _should_skip_keyboard_nav(self, event) -> bool:
+        w = getattr(event, "widget", None)
+        if w is None:
+            return False
+        if isinstance(w, (tk.Text, tk.Entry, tk.Listbox)):
+            return True
+        if isinstance(w, (ttk.Entry, ttk.Combobox)):
+            return True
+        return False
+
     def _refresh_group_list(self):
         from ..components.decision_state import get_group_decision_state
-        from ..components.virtual_navigator import (
-            clamp_top,
-            scrollbar_fracs,
-            virtual_navigator_enabled,
-        )
 
-        groups = self.vm.filtered_groups
-        total = len(groups)
-        tree = self._group_table.tree
-        vis = max(1, int(tree.cget("height")))
-        use_virtual = virtual_navigator_enabled() and total > vis
-
-        self._bind_group_nav_scroll(use_virtual)
-
-        if use_virtual:
-            self._nav_top = clamp_top(self._nav_top, total, vis)
-            self._fill_virtual_group_rows(groups, total, vis, get_group_decision_state)
-            lo, hi = scrollbar_fracs(self._nav_top, total, vis)
-            self._group_table.vsb.set(lo, hi)
-        else:
-            self._refresh_group_list_legacy(get_group_decision_state)
-
-        self._update_filter_chip_labels()
-
-    def _refresh_group_list_legacy(self, get_group_decision_state):
-        self._group_table.clear()
-        self._nav_slot_group_ids = []
         groups = self.vm.filtered_groups
         total = len(groups)
         display = groups if total <= REVIEW_NAVIGATOR_MAX_ROWS else groups[:REVIEW_NAVIGATOR_MAX_ROWS]
@@ -661,169 +678,18 @@ class ReviewPage(ttk.Frame):
             self._group_count_var.set(f"Showing first {REVIEW_NAVIGATOR_MAX_ROWS} of {total} groups")
         else:
             self._group_count_var.set(f"{total} group{'s' if total != 1 else ''}")
-        for i, ge in enumerate(display):
-            state = get_group_decision_state(ge.group_id, self.vm.keep_selections, ge.has_risk)
-            state_label = self._decision_badge_text(state)
-            tag = "warn" if ge.has_risk else ("danger" if state == "unresolved" else "safe" if state == "ready" else "")
-            self._group_table.insert_row(
-                ge.group_id,
-                (str(i + 1), state_label, str(ge.file_count), fmt_bytes(ge.reclaimable_bytes), ge.confidence_label),
-                tags=(tag,) if tag else (),
-            )
-
-    def _bind_group_nav_scroll(self, virtual: bool) -> None:
-        cur = getattr(self, "_nav_scroll_virtual", None)
-        if cur is not None and cur == virtual:
-            return
-        self._nav_scroll_virtual = virtual
-        tree = self._group_table.tree
-        vsb = self._group_table.vsb
-        if virtual:
-            tree.configure(yscrollcommand=lambda *_a: None)
-            vsb.configure(command=self._on_nav_virtual_scrollbar_cmd)
-            if not self._nav_wheel_bound:
-                self._nav_wheel_bound = True
-                tree.bind("<MouseWheel>", self._on_nav_virtual_wheel, add="+")
-                tree.bind("<Button-4>", self._on_nav_virtual_wheel, add="+")
-                tree.bind("<Button-5>", self._on_nav_virtual_wheel, add="+")
-        else:
-            tree.configure(yscrollcommand=vsb.set)
-            vsb.configure(command=tree.yview)
-
-    def _fill_virtual_group_rows(self, groups, total, vis, get_group_decision_state) -> None:
-        from ..components.virtual_navigator import slot_iid
-
-        self._group_table.clear()
-        self._nav_slot_group_ids = []
-        end = min(total, self._nav_top + vis)
-        for slot, idx in enumerate(range(self._nav_top, end)):
-            ge = groups[idx]
-            state = get_group_decision_state(ge.group_id, self.vm.keep_selections, ge.has_risk)
-            state_label = self._decision_badge_text(state)
-            tag = "warn" if ge.has_risk else ("danger" if state == "unresolved" else "safe" if state == "ready" else "")
-            self._nav_slot_group_ids.append(ge.group_id)
-            self._group_table.insert_row(
-                slot_iid(slot),
-                (str(idx + 1), state_label, str(ge.file_count), fmt_bytes(ge.reclaimable_bytes), ge.confidence_label),
-                tags=(tag,) if tag else (),
-            )
-        if total > vis:
-            self._group_count_var.set(
-                f"Rows {self._nav_top + 1}–{end} of {total} (virtual scroll — CEREBRO_VIRTUAL_NAV=1)"
-            )
-        else:
-            self._group_count_var.set(f"{total} group{'s' if total != 1 else ''}")
-
-    def _on_nav_virtual_scrollbar_cmd(self, *args) -> None:
-        from ..components.decision_state import get_group_decision_state
-        from ..components.virtual_navigator import clamp_top, scrollbar_fracs, slot_iid, virtual_navigator_enabled
-
-        if not virtual_navigator_enabled():
-            return
-        groups = self.vm.filtered_groups
-        total = len(groups)
-        vis = max(1, int(self._group_table.tree.cget("height")))
-        if total <= vis:
-            return
-        opcode = args[0]
-        max_top = max(0, total - vis)
-        if opcode == "moveto":
-            pos = float(args[1])
-            self._nav_top = int(round(pos * max_top)) if max_top else 0
-        elif opcode == "scroll":
-            n = int(float(args[1]))
-            if args[2] == "units":
-                self._nav_top = clamp_top(self._nav_top + n, total, vis)
-            else:
-                self._nav_top = clamp_top(self._nav_top + n * vis, total, vis)
-        else:
-            return
-        self._fill_virtual_group_rows(groups, total, vis, get_group_decision_state)
-        lo, hi = scrollbar_fracs(self._nav_top, total, vis)
-        self._group_table.vsb.set(lo, hi)
-        gid = self.vm.selected_group_id
-        if gid and gid in self._nav_slot_group_ids:
-            self._group_table.select(slot_iid(self._nav_slot_group_ids.index(gid)))
-
-    def _on_nav_virtual_wheel(self, event) -> None:
-        from ..components.decision_state import get_group_decision_state
-        from ..components.virtual_navigator import clamp_top, scrollbar_fracs, slot_iid, virtual_navigator_enabled
-
-        if not virtual_navigator_enabled() or not self._use_virtual_nav_for_current():
-            return
-        groups = self.vm.filtered_groups
-        total = len(groups)
-        vis = max(1, int(self._group_table.tree.cget("height")))
-        if total <= vis:
-            return
-        if getattr(event, "delta", 0):
-            n = -1 if event.delta > 0 else 1
-        elif getattr(event, "num", 0) == 4:
-            n = -1
-        elif getattr(event, "num", 0) == 5:
-            n = 1
-        else:
-            return
-        self._nav_top = clamp_top(self._nav_top + n * 3, total, vis)
-        self._fill_virtual_group_rows(groups, total, vis, get_group_decision_state)
-        lo, hi = scrollbar_fracs(self._nav_top, total, vis)
-        self._group_table.vsb.set(lo, hi)
-        gid = self.vm.selected_group_id
-        if gid and gid in self._nav_slot_group_ids:
-            self._group_table.select(slot_iid(self._nav_slot_group_ids.index(gid)))
-
-    def _use_virtual_nav_for_current(self) -> bool:
-        from ..components.virtual_navigator import virtual_navigator_enabled
-
-        if not virtual_navigator_enabled():
-            return False
-        tree = self._group_table.tree
-        vis = max(1, int(tree.cget("height")))
-        return len(self.vm.filtered_groups) > vis
-
-    def _dispatch_group_select(self, iid: str) -> None:
-        from ..components.virtual_navigator import NAV_SLOT_PREFIX, virtual_navigator_enabled
-
-        if virtual_navigator_enabled() and self._use_virtual_nav_for_current() and iid.startswith(NAV_SLOT_PREFIX):
-            rest = iid[len(NAV_SLOT_PREFIX) :]
-            try:
-                slot = int(rest)
-            except ValueError:
-                return
-            if 0 <= slot < len(self._nav_slot_group_ids):
-                self._on_group_select(self._nav_slot_group_ids[slot])
-            return
-        self._on_group_select(iid)
-
-    def _select_group_in_table(self, group_id: str) -> None:
-        from ..components.decision_state import get_group_decision_state
-        from ..components.virtual_navigator import (
-            clamp_top,
-            scrollbar_fracs,
-            slot_iid,
-            virtual_navigator_enabled,
+        self._group_nav.set_groups(
+            display,
+            self.vm.selected_group_id,
+            lambda gid, risky: get_group_decision_state(gid, self.vm.keep_selections, risky),
         )
+        self._update_filter_chip_labels()
 
-        groups = self.vm.filtered_groups
-        tree = self._group_table.tree
-        vis = max(1, int(tree.cget("height")))
-        total = len(groups)
-        idx = next((i for i, g in enumerate(groups) if g.group_id == group_id), None)
-        if idx is None:
-            return
-        if virtual_navigator_enabled() and total > vis:
-            max_top = max(0, total - vis)
-            if idx < self._nav_top:
-                self._nav_top = idx
-            elif idx >= self._nav_top + vis:
-                self._nav_top = min(max_top, idx - vis + 1)
-            self._nav_top = clamp_top(self._nav_top, total, vis)
-            self._fill_virtual_group_rows(groups, total, vis, get_group_decision_state)
-            lo, hi = scrollbar_fracs(self._nav_top, total, vis)
-            self._group_table.vsb.set(lo, hi)
-            self._group_table.select(slot_iid(idx - self._nav_top))
-        else:
-            self._group_table.select(group_id)
+    def _dispatch_group_select(self, group_id: str) -> None:
+        self._on_group_select(group_id)
+
+    def _select_group_in_navigator(self, group_id: str) -> None:
+        self._group_nav.scroll_to_group_id(group_id)
 
     def _on_search(self, text: str):
         self.vm.filter_text = text
@@ -852,18 +718,6 @@ class ReviewPage(ttk.Frame):
         self.vm.sort_by = mapping.get(label, "priority")
         self._refresh_group_list()
 
-    def _decision_badge_text(self, state: str) -> str:
-        icons = {
-            "unresolved": "●",
-            "ready": "✓",
-            "warning": "⚠",
-            "skipped": "—",
-            "keep_selected": "◉",
-        }
-        from ..components.decision_state import get_decision_label
-
-        return f"{icons.get(state, '•')} {get_decision_label(state)}"
-
     def _update_filter_chip_labels(self) -> None:
         from ..components.decision_state import get_group_decision_state
 
@@ -885,24 +739,62 @@ class ReviewPage(ttk.Frame):
         groups = self.vm.filtered_groups
         if not groups or not self.winfo_viewable():
             return
-        idx = next((i for i, g in enumerate(groups) if g.group_id == self.vm.selected_group_id), 0)
+        sel = self.vm.selected_group_id
+        idx = next((i for i, g in enumerate(groups) if g.group_id == sel), None)
+        if idx is None:
+            gid = groups[0].group_id
+            self._on_group_select(gid)
+            self._select_group_in_navigator(gid)
+            return
         if idx + 1 < len(groups):
             gid = groups[idx + 1].group_id
             self._on_group_select(gid)
-            self._select_group_in_table(gid)
+            self._select_group_in_navigator(gid)
 
     def _on_key_prev_group(self):
         groups = self.vm.filtered_groups
         if not groups or not self.winfo_viewable():
             return
-        idx = next((i for i, g in enumerate(groups) if g.group_id == self.vm.selected_group_id), 0)
+        sel = self.vm.selected_group_id
+        idx = next((i for i, g in enumerate(groups) if g.group_id == sel), None)
+        if idx is None:
+            return
         if idx > 0:
             gid = groups[idx - 1].group_id
             self._on_group_select(gid)
-            self._select_group_in_table(gid)
+            self._select_group_in_navigator(gid)
+
+    def _on_key_arrow_down(self, event):
+        if self._should_skip_keyboard_nav(event):
+            return
+        self._on_key_next_group()
+        return "break"
+
+    def _on_key_arrow_up(self, event):
+        if self._should_skip_keyboard_nav(event):
+            return
+        self._on_key_prev_group()
+        return "break"
+
+    def _on_key_activate_group(self, event):
+        if self._should_skip_keyboard_nav(event):
+            return
+        groups = self.vm.filtered_groups
+        if not groups:
+            return "break"
+        gid = self.vm.selected_group_id
+        if not gid:
+            gid = groups[0].group_id
+            self._on_group_select(gid)
+            self._select_group_in_navigator(gid)
+        else:
+            self._load_workspace(gid)
+        return "break"
 
     def _on_group_select(self, group_id: str):
         self.vm.selected_group_id = group_id
+        if hasattr(self, "_group_nav"):
+            self._group_nav.set_selected_id(group_id)
         if self._store:
             from ..state.store import ReviewSelectionState
 
@@ -923,7 +815,9 @@ class ReviewPage(ttk.Frame):
         self._workspace.load_group(group, keep_path=keep_path, mode=mode)
         if group:
             file_count = len(getattr(group, "files", []) or [])
-            self._group_summary_var.set(f"Group {group.group_id} · {file_count} files")
+            rp = next((x for x in self.vm.groups if x.group_id == group_id), None)
+            title = (rp.primary_filename or group.group_id) if rp else group.group_id
+            self._group_summary_var.set(f"{title} · {file_count} files")
             self._group_reason_var.set("Reason: hash-based duplicate group")
             self._group_keep_var.set(f"Keep: {Path(keep_path).name if keep_path else 'not selected'}")
             reclaim = sum(getattr(f, "size", 0) for f in group.files) - (
@@ -964,12 +858,7 @@ class ReviewPage(ttk.Frame):
         gid = self.vm.selected_group_id
         if gid:
             self._load_workspace(gid)
-        self._safety_panel.update_plan(
-            del_count=self.vm.delete_count,
-            keep_count=self.vm.keep_count,
-            reclaim_bytes=self.vm.reclaimable_bytes,
-            risk_flags=self.vm.risk_flags,
-        )
+        self._push_deletion_plan_ui()
         if self.vm.keep_count > 0:
             self._active_rule_var.set(f"Smart Rule: {self._smart_rule_var.get()} (active)")
         else:
@@ -990,12 +879,7 @@ class ReviewPage(ttk.Frame):
             self._current_result.duplicate_groups = new_groups
             self.load_result(self._current_result)
         else:
-            self._safety_panel.update_plan(
-                del_count=self.vm.delete_count,
-                keep_count=self.vm.keep_count,
-                reclaim_bytes=self.vm.reclaimable_bytes,
-                risk_flags=self.vm.risk_flags,
-            )
+            self._push_deletion_plan_ui()
         if self.vm.keep_count == 0:
             self._active_rule_var.set("Smart Rule: off")
         if self._store:
@@ -1031,12 +915,7 @@ class ReviewPage(ttk.Frame):
         else:
             self.vm.set_keep(gid, path)
             self._load_workspace(gid)
-            self._safety_panel.update_plan(
-                del_count=self.vm.delete_count,
-                keep_count=self.vm.keep_count,
-                reclaim_bytes=self.vm.reclaimable_bytes,
-                risk_flags=self.vm.risk_flags,
-            )
+            self._push_deletion_plan_ui()
 
     def _on_clear_keep(self) -> None:
         gid = self.vm.selected_group_id
@@ -1053,12 +932,7 @@ class ReviewPage(ttk.Frame):
             else:
                 self.vm.clear_keep(gid)
             self._load_workspace(gid)
-            self._safety_panel.update_plan(
-                del_count=self.vm.delete_count,
-                keep_count=self.vm.keep_count,
-                reclaim_bytes=self.vm.reclaimable_bytes,
-                risk_flags=self.vm.risk_flags,
-            )
+            self._push_deletion_plan_ui()
 
     def _on_mode_change(self) -> None:
         mode = self._mode_var.get()
@@ -1219,12 +1093,7 @@ class ReviewPage(ttk.Frame):
             gid = self.vm.selected_group_id
             if gid:
                 self._load_workspace(gid)
-            self._safety_panel.update_plan(
-                del_count=self.vm.delete_count,
-                keep_count=self.vm.keep_count,
-                reclaim_bytes=self.vm.reclaimable_bytes,
-                risk_flags=self.vm.risk_flags,
-            )
+            self._push_deletion_plan_ui()
         self._active_rule_var.set(f"Smart Rule: {rule} (active)")
 
     def _on_clear_smart_rule_intent(self) -> None:
@@ -1240,12 +1109,7 @@ class ReviewPage(ttk.Frame):
             gid = self.vm.selected_group_id
             if gid:
                 self._load_workspace(gid)
-            self._safety_panel.update_plan(
-                del_count=self.vm.delete_count,
-                keep_count=self.vm.keep_count,
-                reclaim_bytes=self.vm.reclaimable_bytes,
-                risk_flags=self.vm.risk_flags,
-            )
+            self._push_deletion_plan_ui()
         self._active_rule_var.set("Smart Rule: off")
 
     # ----------------------------------------------------------------
@@ -1402,9 +1266,13 @@ class ReviewPage(ttk.Frame):
             self._on_dry_run()
             return
         self._safety_panel._delete_btn.configure(state="disabled", text="Executing…")
+        if hasattr(self, "_workspace_delete_btn"):
+            self._workspace_delete_btn.configure(state="disabled", text="Executing…")
         self.update()
         result = self.coordinator.execute_deletion(plan)
         self._safety_panel._delete_btn.configure(state="normal", text="DELETE")
+        if hasattr(self, "_workspace_delete_btn"):
+            self._sync_workspace_delete_btn()
         self._on_execute_done(result)
         if result.failed_files:
             messagebox.showwarning(
