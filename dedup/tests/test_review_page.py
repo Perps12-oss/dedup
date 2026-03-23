@@ -461,9 +461,5 @@ def test_gallery_non_image_gets_placeholder(tk_root):
     view.load_group(group, keep_path="")
     tk_root.update_idletasks()
 
-    # Non-image files are added synchronously; each card has 📄 and a Keep radiobutton
-    assert len(view._cards) == 2
-    # Check structure: each card has children (placeholder, size, radiobutton)
-    for card in view._cards:
-        kids = card.winfo_children()
-        assert len(kids) >= 3  # icon/label, size, radiobutton
+    # Non-image files: hero shows document icon; one radio per file
+    assert len(view._keep_choice_frame.winfo_children()) == 2

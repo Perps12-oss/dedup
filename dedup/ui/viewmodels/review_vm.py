@@ -90,7 +90,13 @@ class ReviewVM:
             ]
         if self.filter_text:
             q = self.filter_text.lower()
-            out = [g for g in out if q in g.metadata_summary.lower() or q in g.group_id.lower()]
+            out = [
+                g
+                for g in out
+                if q in g.metadata_summary.lower()
+                or q in g.group_id.lower()
+                or q in (getattr(g, "primary_filename", "") or "").lower()
+            ]
         # Sort by decision-making flow by default; support operator-focused sort modes.
         _order = {STATE_UNRESOLVED: 0, STATE_WARNING: 1, STATE_READY: 2}
         if self.sort_by == "reclaimable":

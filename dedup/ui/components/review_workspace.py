@@ -25,6 +25,9 @@ from ..utils.icons import IC
 from .data_table import DataTable
 from .empty_state import EmptyState
 
+_GAP_XS = 4
+_GAP_MD = 16
+
 
 def _thumb_size_for_group(n: int) -> tuple:
     """Adaptive thumbnail size (width, height) based on group size."""
@@ -165,8 +168,11 @@ class ReviewTableView(ttk.Frame):
         self._quick_peek_tip = None
 
 
+_HERO_SIZE = (680, 380)
+
+
 class ReviewGalleryView(ttk.Frame):
-    """Scrollable thumbnail grid for selected duplicate group."""
+    """Large hero preview for the group + per-file sizes + keep selection."""
 
     def __init__(
         self,
@@ -180,26 +186,18 @@ class ReviewGalleryView(ttk.Frame):
         self._on_keep = on_keep
         self._keeper_var = tk.StringVar(value="")
         self._thumb_refs: List[Any] = []
-        self._cards: List[ttk.Frame] = []
         self._thumb_cancel = threading.Event()
         self.bind("<Destroy>", self._on_destroy, add="+")
 
-        self._canvas = tk.Canvas(
-            self,
-            highlightthickness=0,
-            bg="SystemButtonFace",  # Explicit color; cget("style") returns style name, not color
-        )
+        self._canvas = tk.Canvas(self, highlightthickness=0, bd=0)
         self._scroll_v = ttk.Scrollbar(self, orient="vertical", command=self._canvas.yview)
-        self._scroll_h = ttk.Scrollbar(self, orient="horizontal", command=self._canvas.xview)
-
         self._inner = ttk.Frame(self._canvas, style="Panel.TFrame")
         self._canvas.create_window((0, 0), window=self._inner, anchor="nw")
         self._inner.bind("<Configure>", self._on_inner_configure)
-        self._canvas.configure(yscrollcommand=self._scroll_v.set, xscrollcommand=self._scroll_h.set)
+        self._canvas.configure(yscrollcommand=self._scroll_v.set)
 
         self._canvas.grid(row=0, column=0, sticky="nsew")
         self._scroll_v.grid(row=0, column=1, sticky="ns")
-        self._scroll_h.grid(row=1, column=0, sticky="ew")
 
         self._empty = EmptyState(
             self,
@@ -226,107 +224,100 @@ class ReviewGalleryView(ttk.Frame):
         self._thumb_refs.clear()
         for w in self._inner.winfo_children():
             w.destroy()
-        self._cards.clear()
 
         if not group:
+            self._keep_choice_frame = None
             self._empty.show()
             self._canvas.grid_remove()
             self._scroll_v.grid_remove()
-            self._scroll_h.grid_remove()
             return
 
         self._empty.hide()
         self._canvas.grid(row=0, column=0, sticky="nsew")
         self._scroll_v.grid(row=0, column=1, sticky="ns")
-        self._scroll_h.grid(row=1, column=0, sticky="ew")
 
         files = list(group.files)
         paths = [f.path for f in files]
         default_keep = keep_path if keep_path in paths else (paths[0] if paths else "")
         self._keeper_var.set(default_keep)
-        size = _thumb_size_for_group(len(files))
-        ncols = 4
 
-        def make_on_thumb(intended_idx: int):
-            def on_thumb(fpath: str, thumb_path: Optional[Path]):
-                def update():
-                    row, col = intended_idx // ncols, intended_idx % ncols
-                    card = ttk.Frame(self._inner, style="Panel.TFrame", padding=4)
-                    card.grid(row=row, column=col, padx=4, pady=4, sticky="nw")
+        hero_wrap = ttk.Frame(self._inner, style="Panel.TFrame", padding=4)
+        hero_wrap.pack(fill="x", pady=(0, _GAP_MD))
+        hero_h = min(400, _HERO_SIZE[1])
+        hero_box = tk.Frame(hero_wrap, height=hero_h, bg="#1a1a1a")
+        hero_box.pack(fill="x")
+        hero_box.pack_propagate(False)
 
-                    placeholder = ttk.Label(
-                        card,
-                        text=Path(fpath).name[:20],
-                        style="Panel.Muted.TLabel",
-                        font=("Segoe UI", 8),
-                        wraplength=size[0] - 8,
-                    )
-                    placeholder.grid(row=1, column=0)
+        hero_lbl = ttk.Label(hero_box, text="", style="Panel.TLabel", anchor="center")
+        hero_lbl.place(relx=0.5, rely=0.5, anchor="center")
 
-                    if thumb_path and thumb_path.exists():
-                        try:
-                            from tkinter import PhotoImage
-
-                            img = PhotoImage(file=str(thumb_path))
-                            self._thumb_refs.append(img)
-                            lbl = ttk.Label(card, image=img, style="Panel.TLabel")
-                            lbl.image = img
-                            lbl.grid(row=0, column=0)
-                            placeholder.grid_remove()
-                        except Exception:
-                            pass
-
-                    f = next((x for x in files if x.path == fpath), None)
-                    if f:
-                        ttk.Label(card, text=fmt_bytes(f.size), style="Panel.Muted.TLabel", font=("Segoe UI", 7)).grid(
-                            row=2, column=0
-                        )
-                        ttk.Radiobutton(
-                            card,
-                            text="Keep this copy",
-                            value=fpath,
-                            variable=self._keeper_var,
-                            command=lambda: self._on_keep(self._keeper_var.get()),
-                        ).grid(row=3, column=0, pady=2)
-
-                    self._cards.append(card)
-                    self._inner.update_idletasks()
-                    self._canvas.configure(scrollregion=self._canvas.bbox("all"))
-
-                if not self._thumb_cancel.is_set():
-                    self.after(0, update)
-
-            return on_thumb
-
-        for idx, f in enumerate(files):
+        hero_path: Optional[str] = None
+        for f in files:
             if is_image_extension(Path(f.path).suffix.lower().lstrip(".")):
-                generate_thumbnails_async(
-                    [f.path],
-                    make_on_thumb(idx),
-                    size=size,
-                    cache_dir=get_cache_dir(),
-                    max_count=len(files),
-                    cancel_event=self._thumb_cancel,
-                )
-            else:
-                row, col = idx // ncols, idx % ncols
-                card = ttk.Frame(self._inner, style="Panel.TFrame", padding=4)
-                card.grid(row=row, column=col, padx=4, pady=4, sticky="nw")
-                ttk.Label(card, text="📄", font=("Segoe UI", 24)).grid(row=0, column=0)
-                ttk.Label(
-                    card, text=f.filename[:24], style="Panel.Muted.TLabel", font=("Segoe UI", 8), wraplength=size[0] - 8
-                ).grid(row=1, column=0)
-                ttk.Label(card, text=fmt_bytes(f.size), style="Panel.Muted.TLabel", font=("Segoe UI", 7)).grid(
-                    row=2, column=0
-                )
-                ttk.Radiobutton(
-                    card,
-                    text="Keep this copy",
-                    value=f.path,
-                    variable=self._keeper_var,
-                    command=lambda: self._on_keep(self._keeper_var.get()),
-                ).grid(row=3, column=0, pady=2)
-                self._cards.append(card)
+                hero_path = f.path
+                break
+        if hero_path is None and files:
+            hero_path = files[0].path
+
+        if hero_path and is_image_extension(Path(hero_path).suffix.lower().lstrip(".")):
+
+            def on_hero(_fpath: str, cache_path: Optional[Path]):
+                def upd():
+                    if self._thumb_cancel.is_set():
+                        return
+                    if not cache_path or not cache_path.exists():
+                        return
+                    try:
+                        from tkinter import PhotoImage
+
+                        img = PhotoImage(file=str(cache_path))
+                        self._thumb_refs.append(img)
+                        hero_lbl.configure(image=img)
+                        hero_lbl.image = img
+                    except Exception:
+                        hero_lbl.configure(text="Preview unavailable", style="Panel.Muted.TLabel")
+
+                self.after(0, upd)
+
+            generate_thumbnails_async(
+                [hero_path],
+                on_hero,
+                size=_HERO_SIZE,
+                cache_dir=get_cache_dir(),
+                max_count=1,
+                cancel_event=self._thumb_cancel,
+            )
+        else:
+            hero_lbl.configure(
+                text=f"📄\n{Path(hero_path).name if hero_path else '—'}",
+                font=("Segoe UI", 14),
+                justify="center",
+            )
+
+        sizes_hdr = ttk.Label(self._inner, text="Files in this group", style="Panel.Secondary.TLabel")
+        sizes_hdr.pack(anchor="w", pady=(0, _GAP_XS))
+        sizes_fr = ttk.Frame(self._inner, style="Panel.TFrame")
+        sizes_fr.pack(fill="x", pady=(0, _GAP_MD))
+        for f in files:
+            line = f"{f.filename}  —  {fmt_bytes(f.size)}"
+            ttk.Label(sizes_fr, text=line, style="Panel.Muted.TLabel", font=("Segoe UI", 9)).pack(anchor="w", pady=1)
+
+        keep_hdr = ttk.Label(self._inner, text="Keep one copy", style="Panel.Secondary.TLabel")
+        keep_hdr.pack(anchor="w", pady=(0, _GAP_XS))
+        keep_fr = ttk.Frame(self._inner, style="Panel.TFrame")
+        keep_fr.pack(fill="x")
+        self._keep_choice_frame = keep_fr
+        for f in files:
+            ttk.Radiobutton(
+                keep_fr,
+                text=f"{f.filename}  ({fmt_bytes(f.size)})",
+                value=f.path,
+                variable=self._keeper_var,
+                command=lambda: self._on_keep(self._keeper_var.get()),
+            ).pack(anchor="w", pady=2)
+
+        self._inner.update_idletasks()
+        self._canvas.configure(scrollregion=self._canvas.bbox("all"))
 
 
 class ReviewCompareView(ttk.Frame):
