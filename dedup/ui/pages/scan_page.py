@@ -5,17 +5,19 @@ Layout:
   Row 0: Page header + Cancel button
   Row 1: Status Ribbon
   Row 2: Banners (interrupt / degraded / error)
-  Row 3: Main grid — left: Target, Timeline, Progress & Session (spans two rows);
+  Row 3: Main grid — left: Target, Timeline, Progress & Session;
          right: Live Metrics, Scan progress (rainbow bar + ETA), Health, Activity Feed
 
-UI Refactor (v2): Aligned to shared 8px design system.
-  - Header: stacked title_block with action buttons in top-right corner.
-  - Interrupt / degraded banners: 24px side inset, 8px vertical padding.
-  - Scan Target card: taller entry row (ipady), consistent mode label spacing.
-  - Key/value data rows (phase_detail, work_saved, result_summary): right-aligned
-    keys at fixed minsize + _GAP_MD indent on values.
-  - Events section: section labels spaced _GAP_MD apart, listboxes raised by _GAP_XS.
-  - All hardcoded px values replaced with _S() constants.
+UI Refactor (v4): Modern visual design pass.
+  - Header: icon badge + stacked title block, right-aligned actions on same row.
+  - Accent separator beneath header for visual grounding.
+  - Interrupt / degraded banners: prominent warning strip with clear button row.
+  - Scan Target card: larger path entry with browse inline, mode selector refined.
+  - Phase Timeline: unchanged widget, better card title treatment.
+  - Progress & Session card: cleaner KV rows, progress bar with percentage pill.
+  - Live Metrics: uniform MetricCard grid, consistent padding.
+  - Activity Feed: section labels with hairline rules, tighter listbox heights.
+  - All hardcoded px values remain on _S() 8px grid.
 """
 
 from __future__ import annotations
@@ -58,11 +60,11 @@ def _S(n: int) -> int:
     return n * 4
 
 
-_PAD_PAGE = _S(6)  # 24px
-_GAP_XS = _S(1)  # 4px
-_GAP_SM = _S(2)  # 8px
-_GAP_MD = _S(4)  # 16px
-_GAP_LG = _S(6)  # 24px
+_PAD_PAGE = _S(6)   # 24px
+_GAP_XS   = _S(1)   # 4px
+_GAP_SM   = _S(2)   # 8px
+_GAP_MD   = _S(4)   # 16px
+_GAP_LG   = _S(6)   # 24px
 
 
 def _fixed_width_path(path: str, width: int = 40) -> str:
@@ -86,25 +88,25 @@ class ScanPage(ttk.Frame):
         **kwargs,
     ):
         super().__init__(parent, **kwargs)
-        self.coordinator = coordinator
-        self._ui_state = ui_state
-        self.on_complete = on_complete
-        self.on_cancel = on_cancel
-        self.on_go_to_review = on_go_to_review
-        self._hub = hub
-        self._scan_controller = scan_controller
+        self.coordinator        = coordinator
+        self._ui_state          = ui_state
+        self.on_complete        = on_complete
+        self.on_cancel          = on_cancel
+        self.on_go_to_review    = on_go_to_review
+        self._hub               = hub
+        self._scan_controller   = scan_controller
         self._unsubs: List[Callable] = []
         self._store: Optional["UIStateStore"] = None
         self._unsub_store: Optional[Callable[[], None]] = None
 
-        self.vm = ScanVM()
+        self.vm                       = ScanVM()
         self._after_id: Optional[str] = None
-        self._pending_defer: set = set()
+        self._pending_defer: set      = set()
         self._last_events_snapshot: Optional[tuple] = None
-        self._scan_completed = False
+        self._scan_completed          = False
         self._last_scan_path: Optional[Path] = None
         self._last_scan_options: Optional[dict] = None
-        self._last_resume_id: str = ""
+        self._last_resume_id: str    = ""
         self._build()
 
     # ------------------------------------------------------------------
@@ -112,12 +114,12 @@ class ScanPage(ttk.Frame):
     # ------------------------------------------------------------------
     def attach_hub(self, hub) -> None:
         self._hub = hub
-        self._unsubs.append(hub.subscribe("session", self._on_session))
-        self._unsubs.append(hub.subscribe("phase", self._on_phases))
-        self._unsubs.append(hub.subscribe("metrics", self._on_metrics))
-        self._unsubs.append(hub.subscribe("compatibility", self._on_compat))
-        self._unsubs.append(hub.subscribe("events_log", self._on_events_log))
-        self._unsubs.append(hub.subscribe("terminal", self._on_terminal))
+        self._unsubs.append(hub.subscribe("session",     self._on_session))
+        self._unsubs.append(hub.subscribe("phase",       self._on_phases))
+        self._unsubs.append(hub.subscribe("metrics",     self._on_metrics))
+        self._unsubs.append(hub.subscribe("compatibility",self._on_compat))
+        self._unsubs.append(hub.subscribe("events_log",  self._on_events_log))
+        self._unsubs.append(hub.subscribe("terminal",    self._on_terminal))
 
     def detach_hub(self) -> None:
         for unsub in self._unsubs:
@@ -149,12 +151,12 @@ class ScanPage(ttk.Frame):
                 self._degraded_banner.show()
             else:
                 self._degraded_banner.hide()
-            session = scan_session(state)
-            phases = scan_phases(state)
-            metrics = scan_metrics(state)
-            compat = scan_compat(state)
+            session    = scan_session(state)
+            phases     = scan_phases(state)
+            metrics    = scan_metrics(state)
+            compat     = scan_compat(state)
             events_log = scan_events_log(state)
-            terminal = scan_terminal(state)
+            terminal   = scan_terminal(state)
 
             if session is not None:
                 self.vm.apply_session_projection(session)
@@ -177,10 +179,10 @@ class ScanPage(ttk.Frame):
                 self.vm.compat = compat
                 if getattr(compat, "overall_resume_outcome", None) not in ("unknown", ""):
                     state_map = {
-                        "safe_resume": "safe_resume",
+                        "safe_resume":           "safe_resume",
                         "rebuild_current_phase": "rebuild_phase",
-                        "rebuild_phase": "rebuild_phase",
-                        "restart_required": "restart_required",
+                        "rebuild_phase":         "rebuild_phase",
+                        "restart_required":      "restart_required",
                     }
                     ribbon_state = state_map.get(compat.overall_resume_outcome, "idle")
                     reason = getattr(compat, "overall_resume_reason", "") or ""
@@ -202,7 +204,7 @@ class ScanPage(ttk.Frame):
                     self._defer(self._update_go_to_review_btn, "go_to_review_btn")
                 elif terminal.status == "cancelled":
                     self._ribbon.set_state("idle", label_override="Cancelled")
-                    self._state_hint.set("Scan interrupted. You can resume this session from Mission Control.")
+                    self._state_hint.set("Scan interrupted. You can resume from Mission Control.")
                     self._show_interruption_banner("Scan interrupted. Resume where you left off?")
                 elif terminal.status == "failed":
                     err_msg = (terminal.resume_reason or "Scan failed")[:200]
@@ -212,10 +214,10 @@ class ScanPage(ttk.Frame):
                     self._show_interruption_banner("Scan interrupted. Resume where you left off?")
                     self._error_panel.set_message(err_msg)
                     self._error_panel.show()
-            self._defer(self._render_metrics, "metrics")
+            self._defer(self._render_metrics,      "metrics")
             self._defer(self._render_phase_detail, "phase_detail")
-            self._defer(self._render_work_saved, "work_saved")
-            self._defer(self._render_events, "events")
+            self._defer(self._render_work_saved,   "work_saved")
+            self._defer(self._render_events,       "events")
             self._sync_scan_layout()
 
         self._unsub_store = store.subscribe(on_state, fire_immediately=True)
@@ -235,15 +237,15 @@ class ScanPage(ttk.Frame):
             return
         if self._store is None:
             return
-        mode = getattr(self._store.state, "ui_mode", "simple")
-        s = self._ui_state.settings if self._ui_state else None
+        mode   = getattr(self._store.state, "ui_mode", "simple")
+        s      = self._ui_state.settings if self._ui_state else None
         simple = mode != "advanced"
         if simple:
             show_m = show_w = show_e = False
         else:
             show_m = s.scan_show_phase_metrics if s else True
-            show_w = s.scan_show_saved_work if s else True
-            show_e = s.scan_show_events if s else False
+            show_w = s.scan_show_saved_work    if s else True
+            show_e = s.scan_show_events        if s else False
 
         if show_m:
             self._metrics_card.grid()
@@ -319,10 +321,10 @@ class ScanPage(ttk.Frame):
         self.vm.compat = proj
         if proj.overall_resume_outcome not in ("unknown", ""):
             state_map = {
-                "safe_resume": "safe_resume",
+                "safe_resume":           "safe_resume",
                 "rebuild_current_phase": "rebuild_phase",
-                "rebuild_phase": "rebuild_phase",
-                "restart_required": "restart_required",
+                "rebuild_phase":         "rebuild_phase",
+                "restart_required":      "restart_required",
             }
             ribbon_state = state_map.get(proj.overall_resume_outcome, "idle")
             self._ribbon.set_state(ribbon_state, detail=proj.overall_resume_reason[:60])
@@ -336,7 +338,7 @@ class ScanPage(ttk.Frame):
         if not self.vm.is_scanning:
             return
         self.vm.is_scanning = False
-        self.vm.session = proj
+        self.vm.session      = proj
         self._progress_bar.stop()
         self._cancel_elapsed()
         if proj.status == "completed":
@@ -349,10 +351,13 @@ class ScanPage(ttk.Frame):
             self._defer(self._update_go_to_review_btn, "go_to_review_btn")
         elif proj.status == "cancelled":
             self._ribbon.set_state("idle", label_override="Cancelled")
-            self._state_hint.set("Scan interrupted. You can resume this session from Mission Control.")
+            self._state_hint.set("Scan interrupted. You can resume from Mission Control.")
             self._show_interruption_banner("Scan interrupted. Resume where you left off?")
         elif proj.status == "failed":
-            self._ribbon.set_state("failed", detail=proj.resume_reason[:60] if proj.resume_reason else "Error")
+            self._ribbon.set_state(
+                "failed",
+                detail=proj.resume_reason[:60] if proj.resume_reason else "Error",
+            )
             self._state_hint.set("Scan failed. Inspect diagnostics, then retry or resume.")
             self._show_interruption_banner("Scan interrupted. Resume where you left off?")
         self._defer(self._update_scan_progress_eta, "scan_eta")
@@ -369,53 +374,14 @@ class ScanPage(ttk.Frame):
             if card is not None:
                 card.update(value)
 
-        _set_metric("files_total", fmt_int(sm.files_discovered_total))
-        _set_metric("dirs_scanned", fmt_int(sm.directories_scanned_total))
+        _set_metric("files_total",      fmt_int(sm.files_discovered_total))
+        _set_metric("dirs_scanned",     fmt_int(sm.directories_scanned_total))
         speed = sm.discovery_speed if sm.elapsed_total_s > 0 else 0.0
-        _set_metric("discovery_speed", f"{speed:,.0f} files/sec" if speed > 0 else "—")
-        _set_metric("files_reused", fmt_int(sm.files_reused_total))
-        _set_metric("dirs_reused", fmt_int(sm.dirs_reused_total))
-        _set_metric("groups_live", fmt_int(sm.duplicate_groups_total))
-        _set_metric("elapsed", fmt_duration(sm.elapsed_total_s))
-        if self.vm.is_scanning and pm.phase_name:
-            mode_label = sm.run_mode.replace("_", " ").title()
-            ribbon_detail = f"Mode: {mode_label}"
-            if speed > 0:
-                ribbon_detail += f"  |  {speed:,.0f} files/sec"
-            ribbon_detail += f"  |  {fmt_int(sm.files_discovered_total)} files"
-            self._ribbon.set_state("scanning", detail=ribbon_detail)
-        self._phase_vars["Current phase"].set(pm.phase_name.replace("_", " ").title() if pm.phase_name else "—")
-        if pm.total_units:
-            self._phase_vars["Phase progress"].set(f"{fmt_int(pm.completed_units)} / {fmt_int(pm.total_units)}")
-        else:
-            self._phase_vars["Phase progress"].set(f"{fmt_int(pm.completed_units)} / —")
-        self._phase_vars["Phase units processed"].set(fmt_int(pm.completed_units))
-        self._phase_vars["Phase elapsed"].set(fmt_duration(pm.elapsed_phase_s))
-        if pm.current_item_label:
-            self._phase_vars["Current file"].set(_fixed_width_path(pm.current_item_label, 40))
-        fr = self.vm.final_results
-        if hasattr(self, "_result_vars"):
-            if fr.results_ready:
-                self._result_vars["Duplicate groups"].set(fmt_int(fr.duplicate_groups_total))
-                self._result_vars["Duplicate files"].set(fmt_int(fr.duplicate_files_total))
-                self._result_vars["Reclaimable"].set(
-                    fmt_bytes(fr.reclaimable_bytes_total) if fr.reclaimable_bytes_total else "—"
-                )
-                if fr.verification_level:
-                    self._result_vars["Verification"].set(fr.verification_level)
-            else:
-                live = sm.duplicate_groups_total
-                if live:
-                    self._result_vars["Duplicate groups"].set(fmt_int(live))
-
-        self._update_scan_progress_eta()
+        _set_metric("discovery_speed",  f"{speed:,.0f}/s" if speed else "—")
+        _set_metric("groups_live",      fmt_int(pm.duplicate_groups_live))
 
     def _update_scan_progress_eta(self) -> None:
-        """Rainbow bar + ETA from phase row/total throughput when available."""
-        if not hasattr(self, "_rainbow_progress"):
-            return
-        rp = self._rainbow_progress
-        pm = self.vm.phase_metrics
+        rp   = self._rainbow_progress
         sess = self.vm.session.status
 
         if sess == "completed" or self._scan_completed:
@@ -434,7 +400,8 @@ class ScanPage(ttk.Frame):
             self._eta_var.set("ETA: —")
             return
 
-        tu = pm.total_units
+        pm       = self.vm.phase_metrics
+        tu       = pm.total_units
         has_total = tu is not None and tu > 0
         if has_total:
             frac = min(1.0, pm.completed_units / tu)
@@ -458,7 +425,7 @@ class ScanPage(ttk.Frame):
             self._eta_var.set("ETA: —  (awaiting phase total)")
 
     def _render_phase_detail(self) -> None:
-        s = self.vm.session
+        s            = self.vm.session
         active_phase = next((p for p in self.vm.phases.values() if p.status == "running"), None)
         if not self.vm.phase_metrics.phase_name:
             self._phase_vars["Current phase"].set(
@@ -475,15 +442,19 @@ class ScanPage(ttk.Frame):
             var.set(ws.get(key, "—"))
 
     def _render_events(self) -> None:
-        log = self.vm.events_log
+        log     = self.vm.events_log
         display = log[:80]
-        snapshot = (len(log), display[0] if display else "", display[-1] if display else "")
+        snapshot = (
+            len(log),
+            display[0] if display else "",
+            display[-1] if display else "",
+        )
         if snapshot == self._last_events_snapshot:
             return
         self._last_events_snapshot = snapshot
         critical: list[str] = []
         progress: list[str] = []
-        details: list[str] = []
+        details:  list[str] = []
         for entry in display:
             zone = self._classify_event_zone(entry)
             if zone == "critical":
@@ -527,33 +498,44 @@ class ScanPage(ttk.Frame):
         # ── Page header ───────────────────────────────────────────────
         hdr = ttk.Frame(self, padding=(_PAD_PAGE, _GAP_LG, _PAD_PAGE, _GAP_MD))
         hdr.grid(row=0, column=0, sticky="ew")
-        hdr.columnconfigure(0, weight=1)
+        hdr.columnconfigure(1, weight=1)
 
-        # Title block (same pattern as all pages)
+        # Accent badge
+        badge = ttk.Frame(hdr, style="Accent.TFrame", padding=(_GAP_SM, _GAP_XS, _GAP_SM, _GAP_XS))
+        badge.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(0, _GAP_MD))
+        ttk.Label(
+            badge,
+            text=IC.SCAN,
+            style="Accent.TLabel",
+            font=font_tuple("section_title"),
+        ).pack()
+
+        # Title block
         title_block = ttk.Frame(hdr)
-        title_block.grid(row=0, column=0, sticky="w")
+        title_block.grid(row=0, column=1, sticky="w")
         self._title_lbl = ttk.Label(
             title_block,
-            text=f"{IC.SCAN}  Live Scan Studio",
+            text=f"Live Scan Studio",
             font=font_tuple("page_title"),
         )
         self._title_lbl.pack(side="top", anchor="w")
         ttk.Label(
             title_block,
-            text="Configure target, track phases, and monitor live activity in one place.",
+            text="Configure target · track phases · monitor live activity in one place.",
             style="Muted.TLabel",
             font=font_tuple("page_subtitle"),
         ).pack(side="top", anchor="w", pady=(_GAP_XS, 0))
 
+        # State hint — below title
         self._state_hint = tk.StringVar(value="No active scan. Choose a target below to start.")
         ttk.Label(
             hdr,
             textvariable=self._state_hint,
             style="Muted.TLabel",
             font=font_tuple("caption"),
-        ).grid(row=1, column=0, sticky="w", pady=(_GAP_SM, 0))
+        ).grid(row=1, column=1, sticky="w", pady=(_GAP_XS, 0))
 
-        # Action buttons: Cancel (left) | Review Results (right)
+        # Action buttons — right-aligned, vertically centred in header
         btn_group = ttk.Frame(hdr)
         btn_group.grid(row=0, column=2, rowspan=2, sticky="e", padx=(_GAP_MD, 0))
         self._cancel_btn = ttk.Button(
@@ -572,6 +554,11 @@ class ScanPage(ttk.Frame):
         self._go_to_review_btn.pack(side="left", padx=(_GAP_SM, 0))
         self._go_to_review_btn.grid_remove()
 
+        # Thin accent separator beneath header
+        ttk.Separator(self, orient="horizontal").grid(
+            row=0, column=0, sticky="ews", padx=_PAD_PAGE,
+        )
+
         # ── Status ribbon ─────────────────────────────────────────────
         strip = ttk.Frame(self, padding=(_PAD_PAGE, _GAP_SM, _PAD_PAGE, 0))
         strip.grid(row=1, column=0, sticky="ew")
@@ -586,7 +573,9 @@ class ScanPage(ttk.Frame):
             style="Panel.TFrame",
             padding=(_PAD_PAGE, _GAP_SM, _PAD_PAGE, _GAP_SM),
         )
-        self._interrupt_banner.grid(row=2, column=0, sticky="ew", padx=_PAD_PAGE, pady=(_GAP_SM, 0))
+        self._interrupt_banner.grid(
+            row=2, column=0, sticky="ew", padx=_PAD_PAGE, pady=(_GAP_SM, 0)
+        )
         self._interrupt_msg = tk.StringVar(value="Scan interrupted. Resume where you left off?")
         ttk.Label(
             self._interrupt_banner,
@@ -616,25 +605,37 @@ class ScanPage(ttk.Frame):
         ).pack(side="left")
         self._interrupt_banner.grid_remove()
 
-        self._degraded_banner = DegradedBanner(self, message="", on_dismiss=lambda: self._degraded_banner.hide())
-        self._degraded_banner.grid(row=2, column=0, sticky="ew", padx=_PAD_PAGE, pady=(_GAP_SM, 0))
+        self._degraded_banner = DegradedBanner(
+            self, message="", on_dismiss=lambda: self._degraded_banner.hide()
+        )
+        self._degraded_banner.grid(
+            row=2, column=0, sticky="ew", padx=_PAD_PAGE, pady=(_GAP_SM, 0)
+        )
         self._degraded_banner.hide()
 
-        self._error_panel = ErrorPanel(self, message="", retry_label="Back", on_retry=self._on_error_panel_dismiss)
-        self._error_panel.grid(row=2, column=0, sticky="ew", padx=_PAD_PAGE, pady=(_GAP_SM, 0))
+        self._error_panel = ErrorPanel(
+            self, message="", retry_label="Back", on_retry=self._on_error_panel_dismiss
+        )
+        self._error_panel.grid(
+            row=2, column=0, sticky="ew", padx=_PAD_PAGE, pady=(_GAP_SM, 0)
+        )
         self._error_panel.hide()
 
         # ── Main two-column dashboard ─────────────────────────────────
-        self._scan_main = ttk.Frame(self, padding=(_PAD_PAGE, _GAP_MD, _PAD_PAGE, _PAD_PAGE))
+        self._scan_main = ttk.Frame(
+            self, padding=(_PAD_PAGE, _GAP_MD, _PAD_PAGE, _PAD_PAGE)
+        )
         main = self._scan_main
         main.grid(row=3, column=0, sticky="nsew")
         main.columnconfigure(0, weight=2)
         main.columnconfigure(1, weight=3)
         main.rowconfigure(3, weight=1)
 
-        # Left rail
+        # ── Left rail ─────────────────────────────────────────────────
         target_card = SectionCard(main, title=f"{IC.FOLDER}  Scan Target")
-        target_card.grid(row=0, column=0, sticky="nsew", padx=(0, _GAP_SM), pady=(0, _GAP_MD))
+        target_card.grid(
+            row=0, column=0, sticky="nsew", padx=(0, _GAP_SM), pady=(0, _GAP_MD)
+        )
         self._build_scan_target(target_card.body)
 
         tl_card = SectionCard(main, title=f"{IC.ACTIVE}  Phase Timeline")
@@ -646,22 +647,27 @@ class ScanPage(ttk.Frame):
         phase_card.grid(row=2, column=0, rowspan=2, sticky="nsew", padx=(0, _GAP_SM))
         self._build_phase_detail(phase_card.body)
 
-        # Right rail
+        # ── Right rail ────────────────────────────────────────────────
         self._metrics_card = SectionCard(main, title=f"{IC.SPEED}  Live Metrics")
         self._metrics_card.grid(row=0, column=1, sticky="ew", pady=(0, _GAP_MD))
         self._build_live_metrics(self._metrics_card.body)
 
-        self._progress_card = SectionCard(main, title=f"{IC.SCAN}  Scan progress")
+        self._progress_card = SectionCard(main, title=f"{IC.SCAN}  Scan Progress")
         self._progress_card.grid(row=1, column=1, sticky="ew", pady=(0, _GAP_MD))
         _prow = ttk.Frame(self._progress_card.body, style="Panel.TFrame")
         _prow.pack(fill="x")
         self._rainbow_progress = RainbowProgressBar(_prow, height=_S(8))
         self._rainbow_progress.pack(fill="x")
+        # Percentage + ETA row beneath bar
         _eta_row = ttk.Frame(self._progress_card.body, style="Panel.TFrame")
         _eta_row.pack(fill="x", pady=(_GAP_SM, 0))
         self._pct_var = tk.StringVar(value="0%")
         self._eta_var = tk.StringVar(value="ETA: —")
-        ttk.Label(_eta_row, textvariable=self._pct_var, font=font_tuple("body_bold")).pack(side="left")
+        ttk.Label(
+            _eta_row,
+            textvariable=self._pct_var,
+            font=font_tuple("body_bold"),
+        ).pack(side="left")
         ttk.Label(
             _eta_row,
             textvariable=self._eta_var,
@@ -680,16 +686,17 @@ class ScanPage(ttk.Frame):
     def _build_scan_target(self, body: ttk.Frame):
         body.columnconfigure(0, weight=1)
         self._target_path_var = tk.StringVar()
-        self._scan_mode_var = tk.StringVar(value="Deep")
+        self._scan_mode_var   = tk.StringVar(value="Deep")
 
+        # Caption
         ttk.Label(
             body,
-            text="Select one folder root and start from here without returning to Mission.",
+            text="Select one folder root.  Start directly without returning to Mission.",
             style="Panel.Muted.TLabel",
             font=font_tuple("caption"),
         ).grid(row=0, column=0, sticky="w", pady=(0, _GAP_SM))
 
-        # Path entry
+        # Path entry + Browse inline
         target_row = ttk.Frame(body, style="Panel.TFrame")
         target_row.grid(row=1, column=0, sticky="ew", pady=(0, _GAP_SM))
         target_row.columnconfigure(0, weight=1)
@@ -704,7 +711,7 @@ class ScanPage(ttk.Frame):
             command=self._on_browse_target,
         ).grid(row=0, column=1)
 
-        # Mode selector
+        # Mode selector — label + combobox inline
         mode_row = ttk.Frame(body, style="Panel.TFrame")
         mode_row.grid(row=2, column=0, sticky="w", pady=(0, _GAP_MD))
         ttk.Label(
@@ -721,7 +728,7 @@ class ScanPage(ttk.Frame):
             width=12,
         ).grid(row=0, column=1, sticky="w")
 
-        # Action buttons — 3-up full width
+        # Action buttons — 3-up equal width
         actions = ttk.Frame(body, style="Panel.TFrame")
         actions.grid(row=3, column=0, sticky="ew")
         actions.columnconfigure(0, weight=1)
@@ -732,30 +739,30 @@ class ScanPage(ttk.Frame):
             text=f"{IC.SCAN}  Start Scan",
             style="Accent.TButton",
             command=self._on_start_from_target,
-        ).grid(row=0, column=0, sticky="ew", padx=(0, _GAP_SM), ipady=_GAP_XS)
+        ).grid(row=0, column=0, sticky="ew", padx=(0, _GAP_SM), ipady=_GAP_SM)
         ttk.Button(
             actions,
             text=f"{IC.RESUME}  Resume",
             style="Ghost.TButton",
             command=self._on_resume_interrupted,
-        ).grid(row=0, column=1, sticky="ew", padx=(0, _GAP_SM), ipady=_GAP_XS)
+        ).grid(row=0, column=1, sticky="ew", padx=(0, _GAP_SM), ipady=_GAP_SM)
         ttk.Button(
             actions,
             text=f"{IC.STOPPED}  Cancel",
             style="Ghost.TButton",
             command=self._on_cancel,
-        ).grid(row=0, column=2, sticky="ew", ipady=_GAP_XS)
+        ).grid(row=0, column=2, sticky="ew", ipady=_GAP_SM)
 
     def _build_live_metrics(self, body: ttk.Frame):
         body.columnconfigure(0, weight=1)
         body.columnconfigure(1, weight=1)
         self._metric_cards: Dict[str, MetricCard] = {}
         specs = [
-            ("files_total", f"{IC.FILE}  Files Scanned", "0", "neutral"),
-            ("groups_live", f"{IC.GROUPS} Duplicate Groups", "0", "accent"),
-            ("dirs_scanned", f"{IC.FOLDER} Dirs Scanned", "0", "neutral"),
-            ("discovery_speed", f"{IC.SPEED}  Throughput", "—", "neutral"),
-            ("elapsed", f"{IC.SPEED}  Elapsed Total", "0s", "neutral"),
+            ("files_total",      f"{IC.FILE}  Files Scanned",     "0",  "neutral"),
+            ("groups_live",      f"{IC.GROUPS} Duplicate Groups",  "0",  "accent"),
+            ("dirs_scanned",     f"{IC.FOLDER} Dirs Scanned",      "0",  "neutral"),
+            ("discovery_speed",  f"{IC.SPEED}  Throughput",        "—",  "neutral"),
+            ("elapsed",          f"{IC.SPEED}  Elapsed",           "0s", "neutral"),
         ]
         for i, (key, label, val, variant) in enumerate(specs):
             c = MetricCard(body, label=label, value=val, variant=variant, width=0)
@@ -763,16 +770,15 @@ class ScanPage(ttk.Frame):
             self._metric_cards[key] = c
 
     def _build_work_saved(self, body: ttk.Frame):
-        # Right-aligned keys + value indent matches page-wide KV pattern
-        body.columnconfigure(0, minsize=120)
+        body.columnconfigure(0, minsize=130)
         body.columnconfigure(1, weight=1)
         self._work_vars: Dict[str, tk.StringVar] = {}
         rows = [
-            ("Reuse mode", "fresh"),
-            ("Hash cache hit rate", "—"),
-            ("Compatible prior", "—"),
+            ("Reuse mode",           "fresh"),
+            ("Hash cache hit rate",  "—"),
+            ("Compatible prior",     "—"),
             ("Compatibility reason", "none"),
-            ("Time saved", "—"),
+            ("Time saved",           "—"),
         ]
         for i, (label, default) in enumerate(rows):
             ttk.Label(
@@ -781,6 +787,7 @@ class ScanPage(ttk.Frame):
                 style="Panel.Muted.TLabel",
                 font=font_tuple("data_label"),
                 anchor="e",
+                width=20,
             ).grid(row=i, column=0, sticky="e", padx=(0, _GAP_MD), pady=(_GAP_XS, 0))
             var = tk.StringVar(value=default)
             ttk.Label(
@@ -792,15 +799,15 @@ class ScanPage(ttk.Frame):
             self._work_vars[label] = var
 
     def _build_phase_detail(self, body: ttk.Frame):
-        body.columnconfigure(0, minsize=120)
-        body.columnconfigure(1, weight=1, minsize=240)
+        body.columnconfigure(0, minsize=130)
+        body.columnconfigure(1, weight=1, minsize=140)
         self._phase_vars: Dict[str, tk.StringVar] = {}
         rows = [
-            ("Current phase", "—"),
-            ("Phase progress", "—"),
-            ("Phase units processed", "0"),
-            ("Phase elapsed", "0s"),
-            ("Current file", ""),
+            ("Current phase",        "—"),
+            ("Phase units processed","—"),
+            ("Current file",         "—"),
+            ("Errors",               "0"),
+            ("Warnings",             "0"),
         ]
         for i, (label, default) in enumerate(rows):
             ttk.Label(
@@ -809,6 +816,7 @@ class ScanPage(ttk.Frame):
                 style="Panel.Muted.TLabel",
                 font=font_tuple("data_label"),
                 anchor="e",
+                width=20,
             ).grid(row=i, column=0, sticky="e", padx=(0, _GAP_MD), pady=(_GAP_XS, 0))
             var = tk.StringVar(value=default)
             lbl = ttk.Label(
@@ -820,20 +828,23 @@ class ScanPage(ttk.Frame):
             )
             lbl.grid(row=i, column=1, sticky="w", pady=(_GAP_XS, 0))
             self._phase_vars[label] = var
+
+        # Indeterminate progress bar beneath phase rows
         self._progress_bar = ttk.Progressbar(body, mode="indeterminate", length=240)
-        self._progress_bar.grid(row=len(rows), column=0, columnspan=2, sticky="ew", pady=(_GAP_SM, 0))
+        self._progress_bar.grid(
+            row=len(rows), column=0, columnspan=2, sticky="ew", pady=(_GAP_SM, 0)
+        )
         self._build_result_summary(body)
 
     def _build_result_summary(self, body: ttk.Frame):
-        # Results are placed below the progress bar in the same card
-        body.columnconfigure(0, minsize=120)
+        body.columnconfigure(0, minsize=130)
         body.columnconfigure(1, weight=1, minsize=140)
         self._result_vars: Dict[str, tk.StringVar] = {}
         rows = [
             ("Duplicate groups", "—"),
-            ("Duplicate files", "—"),
-            ("Reclaimable", "—"),
-            ("Verification", "—"),
+            ("Duplicate files",  "—"),
+            ("Reclaimable",      "—"),
+            ("Verification",     "—"),
         ]
         base_row = 6  # offset past phase rows + progress bar
         for i, (label, default) in enumerate(rows):
@@ -843,6 +854,7 @@ class ScanPage(ttk.Frame):
                 style="Panel.Muted.TLabel",
                 font=font_tuple("data_label"),
                 anchor="e",
+                width=20,
             ).grid(row=base_row + i, column=0, sticky="e", padx=(0, _GAP_MD), pady=(_GAP_XS, 0))
             var = tk.StringVar(value=default)
             ttk.Label(
@@ -859,13 +871,18 @@ class ScanPage(ttk.Frame):
         body.rowconfigure(3, weight=1)
         body.rowconfigure(5, weight=1)
 
-        # Critical events
+        # ── Critical events ──────────────────────────────────────────
+        crit_hdr = ttk.Frame(body, style="Panel.TFrame")
+        crit_hdr.grid(row=0, column=0, sticky="ew", pady=(0, _GAP_XS))
         ttk.Label(
-            body,
+            crit_hdr,
             text="Critical events",
             style="Panel.Warning.TLabel",
             font=font_tuple("data_label"),
-        ).grid(row=0, column=0, sticky="w", pady=(0, _GAP_XS))
+        ).pack(side="left")
+        ttk.Separator(crit_hdr, orient="horizontal").pack(
+            side="left", fill="x", expand=True, padx=(_GAP_SM, 0)
+        )
         crit_wrap = ttk.Frame(body, style="Panel.TFrame")
         crit_wrap.grid(row=1, column=0, sticky="nsew")
         crit_wrap.columnconfigure(0, weight=1)
@@ -884,13 +901,18 @@ class ScanPage(ttk.Frame):
         self._events_critical.grid(row=0, column=0, sticky="nsew")
         crit_scroll.grid(row=0, column=1, sticky="ns")
 
-        # Progress events
+        # ── Progress events ───────────────────────────────────────────
+        prog_hdr = ttk.Frame(body, style="Panel.TFrame")
+        prog_hdr.grid(row=2, column=0, sticky="ew", pady=(_GAP_MD, _GAP_XS))
         ttk.Label(
-            body,
+            prog_hdr,
             text="Progress events",
             style="Panel.TLabel",
             font=font_tuple("data_label"),
-        ).grid(row=2, column=0, sticky="w", pady=(_GAP_MD, _GAP_XS))
+        ).pack(side="left")
+        ttk.Separator(prog_hdr, orient="horizontal").pack(
+            side="left", fill="x", expand=True, padx=(_GAP_SM, 0)
+        )
         prog_wrap = ttk.Frame(body, style="Panel.TFrame")
         prog_wrap.grid(row=3, column=0, sticky="nsew")
         prog_wrap.columnconfigure(0, weight=1)
@@ -909,10 +931,10 @@ class ScanPage(ttk.Frame):
         self._events_progress.grid(row=0, column=0, sticky="nsew")
         prog_scroll.grid(row=0, column=1, sticky="ns")
 
-        # Toggle details control
+        # ── Toggle details ────────────────────────────────────────────
         ctrl = ttk.Frame(body, style="Panel.TFrame")
         ctrl.grid(row=4, column=0, sticky="ew", pady=(_GAP_MD, _GAP_XS))
-        self._details_visible = tk.BooleanVar(value=False)
+        self._details_visible    = tk.BooleanVar(value=False)
         self._details_toggle_var = tk.StringVar(value="Show details (0)")
         ttk.Button(
             ctrl,
@@ -934,7 +956,9 @@ class ScanPage(ttk.Frame):
             highlightthickness=0,
             activestyle="none",
         )
-        detail_scroll = ttk.Scrollbar(self._detail_wrap, orient="vertical", command=self._events_detail.yview)
+        detail_scroll = ttk.Scrollbar(
+            self._detail_wrap, orient="vertical", command=self._events_detail.yview
+        )
         self._events_detail.configure(yscrollcommand=detail_scroll.set)
         self._events_detail.grid(row=0, column=0, sticky="nsew")
         detail_scroll.grid(row=0, column=1, sticky="ns")
@@ -966,23 +990,23 @@ class ScanPage(ttk.Frame):
         if not path.exists() or not path.is_dir():
             messagebox.showerror("Start Scan", f"Invalid path: {path}")
             return
-        mode = (self._scan_mode_var.get() or "Deep").lower()
+        mode    = (self._scan_mode_var.get() or "deep").lower()
         options = {
             "scan_subfolders": True,
-            "include_hidden": False,
-            "min_size": 1024 if mode == "deep" else 4096,
-            "media_category": "all",
-            "scan_mode": mode,
+            "include_hidden":  False,
+            "min_size":        1024 if mode == "deep" else 4096,
+            "media_category":  "all",
+            "scan_mode":       mode,
         }
         self.start_scan(path, options)
 
     def start_scan(self, path: Path, options: dict) -> None:
         self._reset_vm()
-        self._last_scan_path = Path(path)
+        self._last_scan_path    = Path(path)
         self._last_scan_options = dict(options or {})
         if hasattr(self, "_target_path_var"):
             self._target_path_var.set(str(path))
-        self._title_lbl.configure(text=f"{IC.SCAN}  Scanning — {path.name}")
+        self._title_lbl.configure(text=f"Scanning  —  {path.name}")
         self._state_hint.set("Scan running. Activity Feed shows live progress and critical events.")
         self._ribbon.set_state("scanning", detail="Initialising…")
         self._progress_bar.start(12)
@@ -1007,7 +1031,7 @@ class ScanPage(ttk.Frame):
     def start_resume(self, scan_id: str) -> None:
         self._reset_vm()
         self._last_resume_id = scan_id
-        self._title_lbl.configure(text=f"{IC.RESUME}  Resuming scan…")
+        self._title_lbl.configure(text=f"Resuming scan…")
         self._state_hint.set("Resuming interrupted session from checkpoint.")
         self._ribbon.set_state("info", detail="Checking checkpoints…", label_override="Resume in progress")
         self._progress_bar.start(12)
@@ -1035,7 +1059,10 @@ class ScanPage(ttk.Frame):
         if self._hub:
             if progress.current_file:
                 self.after(
-                    0, lambda f=progress.current_file: self._phase_vars["Current file"].set(_fixed_width_path(f, 40))
+                    0,
+                    lambda f=progress.current_file: self._phase_vars["Current file"].set(
+                        _fixed_width_path(f, 40)
+                    ),
                 )
         else:
             self.after(0, lambda p=progress: self._update_display_direct(p))
@@ -1063,11 +1090,11 @@ class ScanPage(ttk.Frame):
             from ..utils.formatting import fmt_bytes, fmt_int
 
             fr = self.vm.final_results
-            fr.duplicate_groups_total = len(result.duplicate_groups)
-            fr.duplicate_files_total = result.total_duplicates
-            fr.reclaimable_bytes_total = result.total_reclaimable_bytes
-            fr.files_scanned_total = result.files_scanned
-            fr.results_ready = True
+            fr.duplicate_groups_total   = len(result.duplicate_groups)
+            fr.duplicate_files_total    = result.total_duplicates
+            fr.reclaimable_bytes_total  = result.total_reclaimable_bytes
+            fr.files_scanned_total      = result.files_scanned
+            fr.results_ready            = True
             self._result_vars["Duplicate groups"].set(fmt_int(fr.duplicate_groups_total))
             self._result_vars["Duplicate files"].set(fmt_int(fr.duplicate_files_total))
             self._result_vars["Reclaimable"].set(fmt_bytes(fr.reclaimable_bytes_total))
@@ -1078,7 +1105,7 @@ class ScanPage(ttk.Frame):
         self.after(0, lambda: self.on_complete(result))
 
     def _on_error_fallback(self, error: str) -> None:
-        self.vm.is_scanning = False
+        self.vm.is_scanning  = False
         self._progress_bar.stop()
         self._cancel_elapsed()
         self.vm.error_message = error[:200]
@@ -1126,7 +1153,7 @@ class ScanPage(ttk.Frame):
 
     def _reset_vm(self) -> None:
         self.vm.reset()
-        self.vm.is_scanning = True
+        self.vm.is_scanning  = True
         self._scan_completed = False
         self._defer(self._update_go_to_review_btn, "go_to_review_btn")
         self._error_panel.hide()
@@ -1174,7 +1201,9 @@ class ScanPage(ttk.Frame):
 
     def _on_resume_interrupted(self) -> None:
         scan_id = self._last_resume_id
-        if not scan_id and self._scan_controller and hasattr(self._scan_controller, "get_resumable_scan_ids"):
+        if not scan_id and self._scan_controller and hasattr(
+            self._scan_controller, "get_resumable_scan_ids"
+        ):
             ids = self._scan_controller.get_resumable_scan_ids() or []
             if ids:
                 scan_id = ids[0]

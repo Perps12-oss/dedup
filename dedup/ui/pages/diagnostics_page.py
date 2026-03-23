@@ -3,7 +3,7 @@ Diagnostics Page — Deep engine transparency.
 
 Renders from UIStateStore (phase, compat, events_log).
 
-UI Refactor (v2): Aligned to shared 8px design system.
+UI Refactor (v4): Aligned to shared 8px design system.
   - Header: stacked title_block with Refresh button in top-right (standard pattern).
   - Session overview: right-aligned key labels + _GAP_MD indent, _GAP_XS row gaps.
   - Warning section: summary label _GAP_SM below table.
