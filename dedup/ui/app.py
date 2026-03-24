@@ -12,9 +12,10 @@ Modern-classic operations shell with:
 
 from __future__ import annotations
 
-import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
+
+import ttkbootstrap as tb
 
 try:
     from tkinterdnd2 import TkinterDnD  # type: ignore
@@ -44,7 +45,6 @@ from .theme import design_system
 from .theme.theme_manager import get_theme_manager, parse_gradient_stops_from_raw
 from .theme.theme_registry import get_theme
 from .utils.backdrop import try_apply_mica
-from .utils.formatting import fmt_bytes
 from .utils.ui_state import UIState
 
 
@@ -103,7 +103,7 @@ class CerebroApp:
         if TkinterDnD is not None:
             self.root = TkinterDnD.Tk()
         else:
-            self.root = tk.Tk()
+            self.root = tb.Window(themename="darkly")
 
         self.root.title(f"{self.APP_NAME} Dedup Engine v{self.APP_VERSION}")
         self.root.minsize(self.MIN_WIDTH, self.MIN_HEIGHT)

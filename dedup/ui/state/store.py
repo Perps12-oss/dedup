@@ -9,6 +9,7 @@ Pages that consume live state read from the store (migrated incrementally).
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -149,6 +150,8 @@ class UIStateStore:
         self._root = tk_root
         self._state: UIAppState = initial or UIAppState()
         self._subs: List[Callable[[UIAppState], None]] = []
+        self._main_thread_id = threading.get_ident()
+        self._state_lock = threading.RLock()
 
     @property
     def state(self) -> UIAppState:
@@ -210,14 +213,34 @@ class UIStateStore:
         self._set_state(replace(self._state, ui_mode=m))
 
     def _set_state(self, new_state: UIAppState) -> None:
-        if new_state is self._state:
+        if not self._is_main_thread():
+            self.call_on_ui_thread(lambda ns=new_state: self._set_state(ns))
             return
-        self._state = new_state
+        with self._state_lock:
+            if new_state is self._state:
+                return
+            self._state = new_state
         self._notify_all()
 
     def _notify_all(self) -> None:
+        if not self._is_main_thread():
+            self.call_on_ui_thread(self._notify_all)
+            return
         for cb in list(self._subs):
             self._safe_notify_one(cb, self._state)
+
+    def call_on_ui_thread(self, fn: Callable[[], None]) -> None:
+        """Run callable on Tk main thread (or now if already there)."""
+        if self._is_main_thread():
+            fn()
+            return
+        try:
+            self._root.after_idle(fn)
+        except Exception as e:
+            _log.warning("UIStateStore failed to marshal callback: %s", e)
+
+    def _is_main_thread(self) -> bool:
+        return threading.get_ident() == self._main_thread_id
 
     @staticmethod
     def _safe_notify_one(cb: Callable[[UIAppState], None], state: UIAppState) -> None:

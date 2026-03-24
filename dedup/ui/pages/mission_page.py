@@ -24,6 +24,8 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import TYPE_CHECKING, Callable, Optional
 
+import ttkbootstrap as tb
+
 from ..utils.ui_state import UIState
 
 if TYPE_CHECKING:
@@ -147,29 +149,29 @@ class MissionPage(ttk.Frame):
         # CTA bar — Accent primary + Ghost secondaries, even horizontal gap
         cta = ttk.Frame(hero)
         cta.grid(row=2, column=0, sticky="w", pady=(_GAP_MD, 0))
-        ttk.Button(
+        tb.Button(
             cta,
             text=f"{IC.SCAN}  Start New Scan",
-            style="Accent.TButton",
+            bootstyle="success",
             command=self._on_start,
         ).grid(row=0, column=0, sticky="w", padx=(0, _GAP_SM))
-        ttk.Button(
+        tb.Button(
             cta,
             text=f"{IC.RESUME}  Resume Interrupted",
-            style="Ghost.TButton",
+            bootstyle="info",
             command=self._on_resume,
         ).grid(row=0, column=1, sticky="w", padx=(0, _GAP_SM))
-        self._open_review_btn = ttk.Button(
+        self._open_review_btn = tb.Button(
             cta,
             text=f"{IC.REVIEW}  Open Last Review",
-            style="Ghost.TButton",
+            bootstyle="secondary",
             command=self._on_open_last_review,
         )
         self._open_review_btn.grid(row=0, column=2, sticky="w", padx=(0, _GAP_SM))
-        self._tour_btn = ttk.Button(
+        self._tour_btn = tb.Button(
             cta,
             text="Watch Tour",
-            style="Ghost.TButton",
+            bootstyle="secondary",
             command=self._show_quick_tour,
         )
         self._tour_btn.grid(row=0, column=3, sticky="w")
@@ -328,10 +330,10 @@ class MissionPage(ttk.Frame):
                 ("Downloads", Path.home() / "Downloads"),
             ]
         ):
-            ttk.Button(
+            tb.Button(
                 shortcut,
                 text=label,
-                style="Ghost.TButton",
+                bootstyle="secondary",
                 command=lambda p=candidate: self._set_path(str(p)),
             ).grid(row=0, column=idx, sticky="w", padx=(0, _GAP_SM))
 
@@ -359,10 +361,10 @@ class MissionPage(ttk.Frame):
             pf,
             textvariable=self._path_var,
         ).grid(row=0, column=0, sticky="ew", padx=(0, _GAP_SM), ipady=_GAP_XS)
-        ttk.Button(
+        tb.Button(
             pf,
             text="Browse…",
-            style="Ghost.TButton",
+            bootstyle="secondary",
             command=self._on_browse,
         ).grid(row=0, column=1)
 
@@ -383,16 +385,16 @@ class MissionPage(ttk.Frame):
         btn_f.grid(row=5, column=0, sticky="ew")
         btn_f.columnconfigure(0, weight=1)
         btn_f.columnconfigure(1, weight=1)
-        ttk.Button(
+        tb.Button(
             btn_f,
             text=f"{IC.SCAN}  Start Scan",
-            style="Accent.TButton",
+            bootstyle="primary",
             command=self._on_start,
         ).grid(row=0, column=0, sticky="ew", padx=(0, _GAP_SM), ipady=_GAP_SM)
-        self._resume_btn = ttk.Button(
+        self._resume_btn = tb.Button(
             btn_f,
             text=f"{IC.RESUME}  Resume",
-            style="Ghost.TButton",
+            bootstyle="secondary",
             command=self._on_resume,
             state="disabled",
         )
@@ -688,7 +690,6 @@ class MissionPage(ttk.Frame):
             action_row.columnconfigure(1, weight=1)
             # Status pill
             pill_text  = "Resumable" if status == "resumable" else status.title()
-            pill_style = "Accent.TButton" if status == "resumable" else "Ghost.TButton"
             ttk.Label(
                 action_row,
                 text=pill_text,
@@ -702,10 +703,10 @@ class MissionPage(ttk.Frame):
                 if status == "resumable"
                 else self._on_open_last_review
             )
-            ttk.Button(
+            tb.Button(
                 action_row,
                 text=action_text,
-                style="Ghost.TButton",
+                bootstyle="success" if status == "resumable" else "secondary",
                 command=action_cmd,
             ).grid(row=0, column=2, sticky="e")
 
@@ -730,10 +731,10 @@ class MissionPage(ttk.Frame):
             ).pack(side="left")
             for folder in self.vm.recent_folders[:4]:
                 name = Path(folder).name or folder
-                btn  = ttk.Button(
+                btn  = tb.Button(
                     self._recent_frame,
                     text=name,
-                    style="Ghost.TButton",
+                    bootstyle="secondary",
                     command=lambda f=folder: self._set_path(f),
                 )
                 btn.pack(side="left", padx=(_GAP_XS, 0))

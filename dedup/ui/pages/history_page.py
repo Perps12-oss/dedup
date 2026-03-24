@@ -27,6 +27,8 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import TYPE_CHECKING, Callable, Optional
 
+import ttkbootstrap as tb
+
 if TYPE_CHECKING:
     from ..state.store import UIStateStore
 
@@ -98,10 +100,10 @@ class HistoryPage(ttk.Frame):
             font=font_tuple("page_subtitle"),
         ).pack(side="top", anchor="w", pady=(_GAP_XS, 0))
 
-        ttk.Button(
+        tb.Button(
             hdr,
             text=f"{IC.REFRESH} Refresh",
-            style="Ghost.TButton",
+            bootstyle="secondary",
             command=self._refresh,
         ).grid(row=0, column=2, sticky="e", padx=(_GAP_MD, 0))
 
@@ -168,10 +170,10 @@ class HistoryPage(ttk.Frame):
             variable=self._failed_var,
             command=self._apply_filter,
         ).pack(side="left", padx=(_GAP_MD, 0))
-        ttk.Button(
+        tb.Button(
             toolbar,
             text=f"{IC.TRASH} Empty Trash",
-            style="Ghost.TButton",
+            bootstyle="danger",
             command=self._on_empty_trash,
         ).pack(side="right")
 
@@ -195,26 +197,26 @@ class HistoryPage(ttk.Frame):
         # Action buttons below table — Load/Resume on left, Delete on right
         act = ttk.Frame(body, style="Panel.TFrame")
         act.grid(row=3, column=0, sticky="ew", pady=(_GAP_SM, 0))
-        self._load_btn = ttk.Button(
+        self._load_btn = tb.Button(
             act,
             text=f"{IC.FILE} Load Results",
-            style="Ghost.TButton",
+            bootstyle="secondary",
             command=self._on_load,
             state="disabled",
         )
         self._load_btn.pack(side="left")
-        self._resume_btn = ttk.Button(
+        self._resume_btn = tb.Button(
             act,
             text=f"{IC.RESUME} Resume Scan",
-            style="Accent.TButton",
+            bootstyle="success",
             command=self._on_resume,
             state="disabled",
         )
         self._resume_btn.pack(side="left", padx=(_GAP_SM, 0))
-        self._del_btn = ttk.Button(
+        self._del_btn = tb.Button(
             act,
             text=f"{IC.TRASH} Delete Entry",
-            style="Ghost.TButton",
+            bootstyle="danger",
             command=self._on_delete,
             state="disabled",
         )
