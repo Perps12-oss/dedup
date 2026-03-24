@@ -17,6 +17,7 @@ python -m pytest dedup/tests
 python -m ruff check dedup
 python -m ruff format dedup
 python -m mypy dedup/engine dedup/orchestration dedup/infrastructure
+python -m vulture dedup --exclude=__pycache__,tests --min-confidence=70
 ```
 
 ## Conventions
@@ -24,6 +25,13 @@ python -m mypy dedup/engine dedup/orchestration dedup/infrastructure
 - **UI:** Prefer store + controllers over calling the engine from pages (`docs/CONTROLLER_CONTRACTS.md`).
 - **Theming:** Use semantic tokens; see `docs/THEME_SYSTEM.md`.
 - **Buttons:** Follow `docs/BUTTON_HIERARCHY.md`.
+- **Threading:** Never mutate Tk/UI objects from worker threads; route updates through store/controller UI-thread marshalling.
+
+## Local quality gates
+
+- Install hooks once: `pre-commit install`
+- Run hooks manually: `pre-commit run --all-files`
+- Hooks currently run Ruff + compile checks before commit.
 
 ## Pull requests
 

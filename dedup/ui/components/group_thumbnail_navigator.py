@@ -236,7 +236,7 @@ class GroupThumbnailNavigator(ttk.Frame):
 
         if thumb_path and is_image_extension(Path(thumb_path).suffix.lower().lstrip(".")):
 
-            def on_done(fpath: str, cache_path: Optional[Path]):
+            def on_done(_fpath: str, cache_path: Optional[Path]):
 
                 def upd():
                     if token != self._pending_thumb_token or self._thumb_cancel.is_set():

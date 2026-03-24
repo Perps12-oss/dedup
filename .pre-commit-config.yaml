@@ -6,3 +6,10 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+  - repo: local
+    hooks:
+      - id: compileall-check
+        name: compileall check
+        entry: python -m compileall dedup
+        language: system
+        pass_filenames: false
