@@ -120,6 +120,38 @@ class ReviewVM:
         self.keep_selections.pop(group_id, None)
         self._refresh_deletion()
 
+    def _sync_current_group_idx(self) -> None:
+        if not self.selected_group_id:
+            return
+        for i, g in enumerate(self.groups):
+            if g.group_id == self.selected_group_id:
+                self.current_group_idx = i
+                return
+
+    def select_next_group(self) -> None:
+        fg = self.filtered_groups
+        if not fg:
+            return
+        ids = [g.group_id for g in fg]
+        if self.selected_group_id in ids:
+            i = ids.index(self.selected_group_id)
+            self.selected_group_id = ids[(i + 1) % len(ids)]
+        else:
+            self.selected_group_id = ids[0]
+        self._sync_current_group_idx()
+
+    def select_prev_group(self) -> None:
+        fg = self.filtered_groups
+        if not fg:
+            return
+        ids = [g.group_id for g in fg]
+        if self.selected_group_id in ids:
+            i = ids.index(self.selected_group_id)
+            self.selected_group_id = ids[(i - 1) % len(ids)]
+        else:
+            self.selected_group_id = ids[-1]
+        self._sync_current_group_idx()
+
     def _refresh_deletion(self) -> None:
         self.deletion = build_deletion_from_review_vm(self)
 

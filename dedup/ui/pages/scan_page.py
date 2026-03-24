@@ -5,8 +5,9 @@ Layout:
   Row 0: Page header + Cancel button
   Row 1: Status Ribbon
   Row 2: Banners (interrupt / degraded / error)
-  Row 3: Main grid — left: Target, Timeline, Progress & Session;
-         right: Live Metrics, Scan progress (rainbow bar + ETA), Health, Activity Feed
+  Row 3: Main grid — row0–1: Target + Timeline full width; row2–3: Progress & Session | right stack
+         (Live Metrics, Scan progress rainbow+ETA, Health); row4: Activity Feed full width when shown.
+         Simple mode / no rail cards: Progress & Session spans full width.
 
 UI Refactor (v4): Modern visual design pass.
   - Header: icon badge + stacked title block, right-aligned actions on same row.
@@ -22,6 +23,7 @@ UI Refactor (v4): Modern visual design pass.
 
 from __future__ import annotations
 
+import math
 import time
 import tkinter as tk
 from pathlib import Path
@@ -192,7 +194,7 @@ class ScanPage(ttk.Frame):
             if terminal is not None and self.vm.is_scanning:
                 self.vm.is_scanning = False
                 self.vm.session = terminal
-                self._progress_bar.stop()
+                self._sync_phase_busy_bar(False)
                 self._cancel_elapsed()
                 if terminal.status == "completed":
                     self._ribbon.set_state("completed", detail="Scan complete")
@@ -257,16 +259,28 @@ class ScanPage(ttk.Frame):
             self._work_card.grid()
         else:
             self._work_card.grid_remove()
+
+        any_rail = show_m or show_w
+        if any_rail:
+            self._right_panel.grid(row=2, column=1, rowspan=2, sticky="nsew", padx=(_GAP_SM, 0), pady=0)
+        else:
+            self._right_panel.grid_remove()
+
         if show_e:
             self._events_card.grid()
+            self._scan_main.rowconfigure(4, weight=1)
         else:
             self._events_card.grid_remove()
+            self._scan_main.rowconfigure(4, weight=0)
 
         main = self._scan_main
-        if show_m or show_w or show_e:
-            main.columnconfigure(1, weight=3)
+        main.columnconfigure(0, weight=1)
+        if any_rail:
+            main.columnconfigure(1, weight=1)
+            self._phase_card.grid_configure(column=0, columnspan=1, rowspan=2)
         else:
             main.columnconfigure(1, weight=0)
+            self._phase_card.grid_configure(column=0, columnspan=2, rowspan=2)
 
     def sync_chrome(self) -> None:
         """Re-apply Scan layout from `ui_mode` + `AppSettings`."""
@@ -339,7 +353,7 @@ class ScanPage(ttk.Frame):
             return
         self.vm.is_scanning = False
         self.vm.session      = proj
-        self._progress_bar.stop()
+        self._sync_phase_busy_bar(False)
         self._cancel_elapsed()
         if proj.status == "completed":
             self._ribbon.set_state("completed", detail="Scan complete")
@@ -384,18 +398,27 @@ class ScanPage(ttk.Frame):
         rp   = self._rainbow_progress
         sess = self.vm.session.status
 
+        def _sync_ribbon(frac: float, indeterminate: bool) -> None:
+            try:
+                self._ribbon.mirror_progress(frac, indeterminate=indeterminate)
+            except Exception:
+                pass
+
         if sess == "completed" or self._scan_completed:
             rp.set_fraction(1.0, indeterminate=False)
+            _sync_ribbon(1.0, False)
             self._pct_var.set("100%")
             self._eta_var.set("Complete")
             return
         if sess in ("cancelled", "failed"):
             rp.set_fraction(0.0, indeterminate=False)
+            _sync_ribbon(0.0, False)
             self._pct_var.set("—")
             self._eta_var.set("ETA: —")
             return
         if sess != "running":
             rp.set_fraction(0.0, indeterminate=False)
+            _sync_ribbon(0.0, False)
             self._pct_var.set("0%")
             self._eta_var.set("ETA: —")
             return
@@ -406,6 +429,7 @@ class ScanPage(ttk.Frame):
         if has_total:
             frac = min(1.0, pm.completed_units / tu)
             rp.set_fraction(frac, indeterminate=False)
+            _sync_ribbon(frac, False)
             self._pct_var.set(f"{100 * frac:.0f}%")
             rem = tu - pm.completed_units
             if rem <= 0:
@@ -420,9 +444,39 @@ class ScanPage(ttk.Frame):
             else:
                 self._eta_var.set("ETA: —")
         else:
-            rp.set_fraction(0.0, indeterminate=True)
-            self._pct_var.set("…")
-            self._eta_var.set("ETA: —  (awaiting phase total)")
+            phase_lc = (pm.phase_name or "").lower()
+            # Discovery does not know total file count until the walk finishes — use a
+            # monotonic soft curve from files found so the bar moves smoothly.
+            if "discover" in phase_lc:
+                files_found = max(0, int(pm.completed_units or 0))
+                frac = min(0.93, 1.0 - math.exp(-files_found / 6000.0)) if files_found > 0 else 0.0
+                rp.set_fraction(frac, indeterminate=False)
+                _sync_ribbon(frac, False)
+                self._pct_var.set(f"{100 * frac:.0f}%  ({files_found:,} files)")
+                if pm.elapsed_phase_s > 0.4 and files_found > 0:
+                    rate = files_found / pm.elapsed_phase_s
+                    self._eta_var.set(f"~{rate:,.0f} files/s  ·  total unknown until discovery ends")
+                else:
+                    self._eta_var.set("Discovery in progress…")
+            else:
+                rp.set_fraction(0.0, indeterminate=True)
+                _sync_ribbon(0.0, True)
+                self._pct_var.set("…")
+                self._eta_var.set("ETA: —  (awaiting phase total)")
+
+        try:
+            pm = self.vm.phase_metrics
+            if pm.phase_name:
+                phase_lbl = str(pm.phase_name).replace("_", " ").title()
+            elif getattr(self.vm.session, "current_phase", None):
+                phase_lbl = str(self.vm.session.current_phase).replace("_", " ").title()
+            else:
+                phase_lbl = "Scanning"
+            self._ribbon.set_detail(
+                f"{phase_lbl}  ·  {self._pct_var.get()}  ·  {self._eta_var.get()}"
+            )
+        except Exception:
+            pass
 
     def _render_phase_detail(self) -> None:
         s            = self.vm.session
@@ -627,36 +681,44 @@ class ScanPage(ttk.Frame):
         )
         main = self._scan_main
         main.grid(row=3, column=0, sticky="nsew")
-        main.columnconfigure(0, weight=2)
-        main.columnconfigure(1, weight=3)
+        main.columnconfigure(0, weight=1)
+        main.columnconfigure(1, weight=1)
+        main.rowconfigure(2, weight=1)
         main.rowconfigure(3, weight=1)
+        main.rowconfigure(4, weight=1)
 
-        # ── Left rail ─────────────────────────────────────────────────
+        # ── Full-width top rows ───────────────────────────────────────
         target_card = SectionCard(main, title=f"{IC.FOLDER}  Scan Target")
-        target_card.grid(
-            row=0, column=0, sticky="nsew", padx=(0, _GAP_SM), pady=(0, _GAP_MD)
-        )
+        target_card.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, _GAP_MD))
         self._build_scan_target(target_card.body)
 
         tl_card = SectionCard(main, title=f"{IC.ACTIVE}  Phase Timeline")
-        tl_card.grid(row=1, column=0, sticky="ew", padx=(0, _GAP_SM), pady=(0, _GAP_MD))
+        tl_card.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, _GAP_MD))
         self._timeline = PhaseTimeline(tl_card.body)
         self._timeline.pack(fill="x")
 
-        phase_card = SectionCard(main, title=f"{IC.ACTIVE}  Progress & Session")
-        phase_card.grid(row=2, column=0, rowspan=2, sticky="nsew", padx=(0, _GAP_SM))
-        self._build_phase_detail(phase_card.body)
+        self._phase_card = SectionCard(main, title=f"{IC.ACTIVE}  Progress & Session")
+        self._phase_card.grid(row=2, column=0, rowspan=2, sticky="nsew", padx=(0, _GAP_SM))
+        self._build_phase_detail(self._phase_card.body)
 
-        # ── Right rail ────────────────────────────────────────────────
-        self._metrics_card = SectionCard(main, title=f"{IC.SPEED}  Live Metrics")
-        self._metrics_card.grid(row=0, column=1, sticky="ew", pady=(0, _GAP_MD))
+        # ── Right stack (metrics + rainbow + health) fills rows 2–3 ───
+        # Avoids a dead zone under Health when Activity Feed is hidden.
+        self._right_panel = ttk.Frame(main, style="Panel.TFrame")
+        self._right_panel.columnconfigure(0, weight=1)
+        self._right_panel.rowconfigure(2, weight=1)
+        self._right_panel.grid(
+            row=2, column=1, rowspan=2, sticky="nsew", padx=(_GAP_SM, 0), pady=0
+        )
+
+        self._metrics_card = SectionCard(self._right_panel, title=f"{IC.SPEED}  Live Metrics")
+        self._metrics_card.grid(row=0, column=0, sticky="ew", pady=(0, _GAP_MD))
         self._build_live_metrics(self._metrics_card.body)
 
-        self._progress_card = SectionCard(main, title=f"{IC.SCAN}  Scan Progress")
-        self._progress_card.grid(row=1, column=1, sticky="ew", pady=(0, _GAP_MD))
+        self._progress_card = SectionCard(self._right_panel, title=f"{IC.SCAN}  Scan Progress")
+        self._progress_card.grid(row=1, column=0, sticky="ew", pady=(0, _GAP_MD))
         _prow = ttk.Frame(self._progress_card.body, style="Panel.TFrame")
         _prow.pack(fill="x")
-        self._rainbow_progress = RainbowProgressBar(_prow, height=_S(8))
+        self._rainbow_progress = RainbowProgressBar(_prow, height=_S(14))
         self._rainbow_progress.pack(fill="x")
         # Percentage + ETA row beneath bar
         _eta_row = ttk.Frame(self._progress_card.body, style="Panel.TFrame")
@@ -675,12 +737,12 @@ class ScanPage(ttk.Frame):
             font=font_tuple("caption"),
         ).pack(side="right")
 
-        self._work_card = SectionCard(main, title=f"{IC.SHIELD}  Health & Compatibility")
-        self._work_card.grid(row=2, column=1, sticky="ew", pady=(0, _GAP_MD))
+        self._work_card = SectionCard(self._right_panel, title=f"{IC.SHIELD}  Health & Compatibility")
+        self._work_card.grid(row=2, column=0, sticky="nsew", pady=(0, _GAP_MD))
         self._build_work_saved(self._work_card.body)
 
         self._events_card = SectionCard(main, title=f"{IC.INFO}  Activity Feed")
-        self._events_card.grid(row=3, column=1, sticky="nsew")
+        self._events_card.grid(row=4, column=0, columnspan=2, sticky="nsew", pady=(_GAP_MD, 0))
         self._build_events(self._events_card.body)
 
     def _build_scan_target(self, body: ttk.Frame):
@@ -829,12 +891,26 @@ class ScanPage(ttk.Frame):
             lbl.grid(row=i, column=1, sticky="w", pady=(_GAP_XS, 0))
             self._phase_vars[label] = var
 
-        # Indeterminate progress bar beneath phase rows
-        self._progress_bar = ttk.Progressbar(body, mode="indeterminate", length=240)
-        self._progress_bar.grid(
-            row=len(rows), column=0, columnspan=2, sticky="ew", pady=(_GAP_SM, 0)
-        )
+        # Busy indicator: ttk progressbars stay hairline-thin on Windows themes; use canvas bar
+        # and let this row absorb extra vertical space in the card so the bar reads clearly.
+        pr = len(rows)
+        body.rowconfigure(pr, weight=1, minsize=_S(10))
+        bar_slot = ttk.Frame(body, style="Panel.TFrame")
+        bar_slot.grid(row=pr, column=0, columnspan=2, sticky="nsew", pady=(_GAP_SM, _GAP_XS))
+        bar_slot.columnconfigure(0, weight=1)
+        bar_slot.rowconfigure(0, weight=1)
+        self._progress_bar = RainbowProgressBar(bar_slot, height=_S(11))
+        self._progress_bar.grid(row=0, column=0, sticky="nsew")
         self._build_result_summary(body)
+
+    def _sync_phase_busy_bar(self, busy: bool) -> None:
+        """Start/stop indeterminate activity in the phase card (canvas-based; visible on Windows)."""
+        if not hasattr(self, "_progress_bar"):
+            return
+        try:
+            self._progress_bar.set_fraction(0.0, indeterminate=busy)
+        except Exception:
+            pass
 
     def _build_result_summary(self, body: ttk.Frame):
         body.columnconfigure(0, minsize=130)
@@ -1009,7 +1085,7 @@ class ScanPage(ttk.Frame):
         self._title_lbl.configure(text=f"Scanning  —  {path.name}")
         self._state_hint.set("Scan running. Activity Feed shows live progress and critical events.")
         self._ribbon.set_state("scanning", detail="Initialising…")
-        self._progress_bar.start(12)
+        self._sync_phase_busy_bar(True)
         self._schedule_elapsed()
         if self._scan_controller:
             self._scan_controller.handle_start_scan(
@@ -1034,7 +1110,7 @@ class ScanPage(ttk.Frame):
         self._title_lbl.configure(text=f"Resuming scan…")
         self._state_hint.set("Resuming interrupted session from checkpoint.")
         self._ribbon.set_state("info", detail="Checking checkpoints…", label_override="Resume in progress")
-        self._progress_bar.start(12)
+        self._sync_phase_busy_bar(True)
         self._schedule_elapsed()
         if self._scan_controller:
             self._scan_controller.handle_start_resume(
@@ -1081,7 +1157,7 @@ class ScanPage(ttk.Frame):
 
     def _on_complete_fallback(self, result: ScanResult) -> None:
         self.vm.is_scanning = False
-        self._progress_bar.stop()
+        self._sync_phase_busy_bar(False)
         self._cancel_elapsed()
         if not self._hub:
             self._ribbon.set_state("completed", detail=f"{result.files_scanned:,} files scanned")
@@ -1106,7 +1182,7 @@ class ScanPage(ttk.Frame):
 
     def _on_error_fallback(self, error: str) -> None:
         self.vm.is_scanning  = False
-        self._progress_bar.stop()
+        self._sync_phase_busy_bar(False)
         self._cancel_elapsed()
         self.vm.error_message = error[:200]
         self._state_hint.set("Scan failed. Review the error and retry.")
@@ -1133,7 +1209,7 @@ class ScanPage(ttk.Frame):
             elif self.coordinator:
                 self.coordinator.cancel_scan()
             self.vm.is_scanning = False
-            self._progress_bar.stop()
+            self._sync_phase_busy_bar(False)
             self._cancel_elapsed()
             if not self._hub:
                 self._ribbon.set_state("idle", label_override="Cancelled")

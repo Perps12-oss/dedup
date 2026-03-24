@@ -22,20 +22,20 @@ def test_thumb_size_for_group_adaptive_sizing():
     """Gallery uses adaptive thumb size: 2→220, 3-4→160, 5+→110."""
     from dedup.ui.components.review_workspace import _thumb_size_for_group
 
-    assert _thumb_size_for_group(1) == (220, 220)
-    assert _thumb_size_for_group(2) == (220, 220)
-    assert _thumb_size_for_group(3) == (160, 160)
-    assert _thumb_size_for_group(4) == (160, 160)
-    assert _thumb_size_for_group(5) == (110, 110)
-    assert _thumb_size_for_group(20) == (110, 110)
+    assert _thumb_size_for_group(1) == (280, 280)
+    assert _thumb_size_for_group(2) == (280, 280)
+    assert _thumb_size_for_group(3) == (200, 200)
+    assert _thumb_size_for_group(4) == (200, 200)
+    assert _thumb_size_for_group(5) == (140, 140)
+    assert _thumb_size_for_group(20) == (140, 140)
 
 
 def test_thumb_size_large_group_sane():
     """Large groups (20+) still get consistent small thumb size."""
     from dedup.ui.components.review_workspace import _thumb_size_for_group
 
-    assert _thumb_size_for_group(50) == (110, 110)
-    assert _thumb_size_for_group(100) == (110, 110)
+    assert _thumb_size_for_group(50) == (140, 140)
+    assert _thumb_size_for_group(100) == (140, 140)
 
 
 # ---------------------------------------------------------------------------
@@ -86,34 +86,6 @@ def test_review_vm_clear_keep_removes_selection():
 
     vm.clear_keep("g1")
     assert "g1" not in vm.keep_selections
-
-
-def test_workspace_stack_clear_selection_button_shown_when_keep(tk_root):
-    """Clear selection toolbar is visible when group has a keep choice."""
-    from dedup.engine.models import DuplicateGroup, FileMetadata
-    from dedup.ui.components.review_workspace import ReviewWorkspaceStack
-
-    called = []
-    stack = ReviewWorkspaceStack(tk_root, on_keep=lambda _: None, on_clear_keep=lambda: called.append(1))
-    group = DuplicateGroup(
-        group_id="g1",
-        group_hash="xx",
-        files=[
-            FileMetadata(path="/a.jpg", size=100, mtime_ns=0, inode=1),
-            FileMetadata(path="/b.jpg", size=100, mtime_ns=0, inode=2),
-        ],
-    )
-    stack.load_group(group, keep_path="/a.jpg", mode="table")
-    tk_root.update_idletasks()
-    # Clear toolbar should be visible (grid'd) — use winfo_ismapped (winfo_viewable fails when root withdrawn)
-    assert stack._clear_toolbar_visible
-    stack._clear_btn.invoke()
-    assert len(called) == 1
-
-    stack.load_group(group, keep_path="", mode="table")
-    tk_root.update_idletasks()
-    # Clear toolbar should be hidden when no keep
-    assert not stack._clear_toolbar_visible
 
 
 # ---------------------------------------------------------------------------
@@ -181,20 +153,18 @@ def test_workspace_stack_load_group_passes_mode(tk_root):
     assert stack._current == 2
 
 
-def test_clear_selection_button_shown_when_keep_set(tk_root):
-    """Clear selection toolbar is shown when group has a keep choice."""
+def test_compare_multicomp_menu_clear_invokes_on_clear_keep(tk_root):
+    """Multi-compare menu Clear selection routes to on_clear_keep (Compare view)."""
     from dedup.engine.models import DuplicateGroup, FileMetadata
     from dedup.ui.components.review_workspace import ReviewWorkspaceStack
 
-    def noop(_: str):
-        pass
-
     cleared = []
 
-    def on_clear():
-        cleared.append(1)
-
-    stack = ReviewWorkspaceStack(tk_root, on_keep=noop, on_clear_keep=on_clear)
+    stack = ReviewWorkspaceStack(
+        tk_root,
+        on_keep=lambda _: None,
+        on_clear_keep=lambda: cleared.append(1),
+    )
     group = DuplicateGroup(
         group_id="g1",
         group_hash="xx",
@@ -203,48 +173,9 @@ def test_clear_selection_button_shown_when_keep_set(tk_root):
             FileMetadata(path="/b.jpg", size=100, mtime_ns=0, inode=2),
         ],
     )
-    stack.load_group(group, keep_path="", mode="table")
-    assert stack._clear_toolbar_visible is False  # hidden when no keep
-
-    stack.load_group(group, keep_path="/a.jpg", mode="table")
-    assert stack._clear_toolbar_visible is True  # visible when keep set
-
-    stack._clear_btn.invoke()
-    assert len(cleared) == 1
-
-
-def test_workspace_stack_clear_selection_button(tk_root):
-    """Clear selection toolbar appears when group has keep_path; button invokes callback."""
-    from dedup.engine.models import DuplicateGroup, FileMetadata
-    from dedup.ui.components.review_workspace import ReviewWorkspaceStack
-
-    def noop(_: str):
-        pass
-
-    cleared = []
-
-    def on_clear():
-        cleared.append(1)
-
-    stack = ReviewWorkspaceStack(tk_root, on_keep=noop, on_clear_keep=on_clear)
-    group = DuplicateGroup(
-        group_id="g1",
-        group_hash="xx",
-        files=[
-            FileMetadata(path="/a.jpg", size=100, mtime_ns=0, inode=1),
-            FileMetadata(path="/b.jpg", size=100, mtime_ns=0, inode=2),
-        ],
-    )
-    # No keep_path: toolbar hidden
-    stack.load_group(group, keep_path="", mode="table")
-    assert stack._clear_toolbar_visible is False
-
-    # With keep_path: toolbar shown
-    stack.load_group(group, keep_path="/a.jpg", mode="table")
-    assert stack._clear_toolbar_visible is True
-
-    # Click Clear selection
-    stack._clear_btn.invoke()
+    stack.load_group(group, keep_path="/a.jpg", mode="compare")
+    tk_root.update_idletasks()
+    stack._compare._on_clear_keep()
     assert len(cleared) == 1
 
 
@@ -404,6 +335,7 @@ def test_on_execute_delete_calls_executor(tk_root):
 
     from dedup.engine.models import DeletionPlan, DeletionPolicy, DeletionResult
     from dedup.ui.pages.review_page import ReviewPage
+    from dedup.ui.projections.review_projection import ReviewGroupProjection
 
     grp = dict(keep=["/a/file.jpg"], delete=["/b/file.jpg"])
     plan = DeletionPlan(scan_id="t", groups=[grp])
@@ -419,9 +351,22 @@ def test_on_execute_delete_calls_executor(tk_root):
     page = ReviewPage(tk_root, coordinator=coordinator, on_delete_complete=lambda _: None)
     page._current_result = MagicMock()
     page._current_result.duplicate_groups = []
-    page.vm.groups = [MagicMock()]
-    page.vm.groups[0].group_id = "g1"
-    page.vm.groups[0].file_count = 2
+    page.vm.groups = [
+        ReviewGroupProjection(
+            group_id="g1",
+            group_size=1024,
+            file_count=2,
+            verification_level="full_hash",
+            confidence_label="Exact",
+            reclaimable_bytes=512,
+            review_status="unreviewed",
+            risk_flags=(),
+            keeper_candidate="/a/file.jpg",
+            thumbnail_capable=True,
+            metadata_summary="2 × 1.0 KB",
+            primary_filename="file.jpg",
+        )
+    ]
     page.vm.keep_selections = {"g1": "/a/file.jpg"}
 
     with (
