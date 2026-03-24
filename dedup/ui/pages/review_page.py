@@ -126,29 +126,26 @@ class ReviewPage(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(2, weight=1)
 
-        # ── Page Header (tighter vertical padding → more room for workspace) ─
+        # Build path: header + ribbon + body + zero-state + shortcuts.
+        self._build_header()
+        self._build_provenance_ribbon()
+        self._build_main_body()
+        self._build_zero_state_panel()
+        self._init_key_bindings()
+
+    def _build_header(self) -> None:
+        """Top section with title, hint, and workspace mode toggle."""
         hdr = ttk.Frame(self, padding=(_PAD_PAGE, _GAP_MD, _PAD_PAGE, _GAP_SM))
         hdr.grid(row=0, column=0, sticky="ew")
         hdr.columnconfigure(1, weight=1)
 
-        # Accent badge
         badge = ttk.Frame(hdr, style="Accent.TFrame", padding=(_GAP_SM, _GAP_XS, _GAP_SM, _GAP_XS))
         badge.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(0, _GAP_MD))
-        ttk.Label(
-            badge,
-            text=IC.REVIEW,
-            style="Accent.TLabel",
-            font=font_tuple("section_title"),
-        ).pack()
+        ttk.Label(badge, text=IC.REVIEW, style="Accent.TLabel", font=font_tuple("section_title")).pack()
 
-        # Title block
         title_block = ttk.Frame(hdr)
         title_block.grid(row=0, column=1, sticky="w")
-        ttk.Label(
-            title_block,
-            text="Decision Studio",
-            font=font_tuple("page_title"),
-        ).pack(side="top", anchor="w")
+        ttk.Label(title_block, text="Decision Studio", font=font_tuple("page_title")).pack(side="top", anchor="w")
         ttk.Label(
             title_block,
             text="Groups  ·  Workspace  ·  Decision & Safety",
@@ -156,53 +153,30 @@ class ReviewPage(ttk.Frame):
             font=font_tuple("page_subtitle"),
         ).pack(side="top", anchor="w", pady=(_GAP_XS, 0))
 
-        # State hint
-        self._state_hint = tk.StringVar(
-            value="No review data yet. Run a scan, then return here to make decisions."
+        self._state_hint = tk.StringVar(value="No review data yet. Run a scan, then return here to make decisions.")
+        ttk.Label(hdr, textvariable=self._state_hint, style="Muted.TLabel", font=font_tuple("caption")).grid(
+            row=1, column=1, sticky="w", pady=(_GAP_XS, 0)
         )
-        ttk.Label(
-            hdr,
-            textvariable=self._state_hint,
-            style="Muted.TLabel",
-            font=font_tuple("caption"),
-        ).grid(row=1, column=1, sticky="w", pady=(_GAP_XS, 0))
 
-        # View-mode segmented control — framed group of radiobuttons, right-aligned
         self._mode_var = tk.StringVar(value="table")
-        mode_frame = ttk.Frame(
-            hdr, style="Card.TFrame", padding=(_GAP_XS, _GAP_XS, _GAP_XS, _GAP_XS)
-        )
+        mode_frame = ttk.Frame(hdr, style="Card.TFrame", padding=(_GAP_XS, _GAP_XS, _GAP_XS, _GAP_XS))
         mode_frame.grid(row=0, column=2, rowspan=2, sticky="e", padx=(_GAP_MD, 0))
-        self._compare_mode_rb: Optional[ttk.Radiobutton] = None
+        self._compare_mode_rb = None
         for label, val in [("⊞ Table", "table"), ("⊟ Gallery", "gallery"), ("⧉ Compare", "compare")]:
-            rb = ttk.Radiobutton(
-                mode_frame,
-                text=label,
-                variable=self._mode_var,
-                value=val,
-                command=self._on_mode_change,
-                width=10,
-            )
+            rb = ttk.Radiobutton(mode_frame, text=label, variable=self._mode_var, value=val, command=self._on_mode_change, width=10)
             rb.pack(side="left", padx=(_GAP_XS, _GAP_XS), ipady=_GAP_XS)
             if val == "compare":
                 self._compare_mode_rb = rb
 
-        # Thin accent separator beneath header
-        ttk.Separator(self, orient="horizontal").grid(
-            row=0, column=0, sticky="ews", padx=_PAD_PAGE,
-        )
+        ttk.Separator(self, orient="horizontal").grid(row=0, column=0, sticky="ews", padx=_PAD_PAGE)
 
-        # ── Provenance ribbon ──────────────────────────────────────────
+    def _build_provenance_ribbon(self) -> None:
+        """Session provenance appears directly under header."""
         self._prov = ProvenanceRibbon(self)
-        self._prov.grid(
-            row=1,
-            column=0,
-            sticky="ew",
-            padx=_PAD_PAGE,
-            pady=(_GAP_XS, _GAP_SM),
-        )
+        self._prov.grid(row=1, column=0, sticky="ew", padx=_PAD_PAGE, pady=(_GAP_XS, _GAP_SM))
 
-        # ── 3-pane body (center column gets extra horizontal weight) ───
+    def _build_main_body(self) -> None:
+        """Three-pane review surface: navigator, workspace, safety rail."""
         body = ttk.Frame(self)
         body.grid(row=2, column=0, sticky="nsew", padx=_PAD_PAGE, pady=(0, _PAD_PAGE))
         body.rowconfigure(0, weight=1)
@@ -210,17 +184,14 @@ class ReviewPage(ttk.Frame):
         body.columnconfigure(1, weight=3, minsize=260)
         body.columnconfigure(2, weight=1, minsize=100)
 
-        # Left: Group Navigator
         left = SectionCard(body, title=f"{IC.GROUPS}  Group Navigator")
         left.grid(row=0, column=0, sticky="nsew", padx=(0, _GAP_MD))
         self._build_group_navigator(left.body)
 
-        # Center: Workspace
         center = SectionCard(body, title=f"{IC.REVIEW}  Workspace")
         center.grid(row=0, column=1, sticky="nsew", padx=(0, _GAP_MD))
         self._build_workspace(center.body)
 
-        # Right: Decision & Safety Rail
         right_frame = ttk.Frame(body)
         right_frame.grid(row=0, column=2, sticky="nsew")
         right_frame.rowconfigure(1, weight=1)
@@ -229,37 +200,20 @@ class ReviewPage(ttk.Frame):
         smart_card = SectionCard(right_frame, title=f"{IC.SETTINGS}  Smart Rules")
         smart_card.grid(row=0, column=0, sticky="ew", pady=(0, _GAP_MD))
         self._build_smart_rules_rail(smart_card.body)
-
         self._safety_panel = SafetyPanel(
-            right_frame,
-            on_dry_run=self._on_preview_intent,
-            on_execute=self._on_execute_intent,
-            on_undo_hint=self._on_undo_hint,
+            right_frame, on_dry_run=self._on_preview_intent, on_execute=self._on_execute_intent, on_undo_hint=self._on_undo_hint
         )
         self._safety_panel.grid(row=1, column=0, sticky="nsew")
 
-        # ── Zero-state panel ───────────────────────────────────────────
-        self._zero_panel = ttk.Frame(
-            self,
-            style="Panel.TFrame",
-            padding=(_PAD_PAGE, _GAP_LG, _PAD_PAGE, _GAP_LG),
-        )
+    def _build_zero_state_panel(self) -> None:
+        """Collapsed panel shown when latest scan has no duplicates."""
+        self._zero_panel = ttk.Frame(self, style="Panel.TFrame", padding=(_PAD_PAGE, _GAP_LG, _PAD_PAGE, _GAP_LG))
         self._zero_panel.grid(row=3, column=0, sticky="ew", padx=_PAD_PAGE, pady=(0, _PAD_PAGE))
         self._zero_panel.columnconfigure(0, weight=1)
-
-        # Icon + title + subtitle + CTA — stacked, left-aligned
-        ttk.Label(
-            self._zero_panel,
-            text="✓",
-            style="Panel.Success.TLabel",
-            font=font_tuple("page_title"),
-        ).grid(row=0, column=0, sticky="w", pady=(0, _GAP_XS))
-        self._zero_title = ttk.Label(
-            self._zero_panel,
-            text="All clear",
-            style="Panel.Success.TLabel",
-            font=font_tuple("section_title"),
+        ttk.Label(self._zero_panel, text="✓", style="Panel.Success.TLabel", font=font_tuple("page_title")).grid(
+            row=0, column=0, sticky="w", pady=(0, _GAP_XS)
         )
+        self._zero_title = ttk.Label(self._zero_panel, text="All clear", style="Panel.Success.TLabel", font=font_tuple("section_title"))
         self._zero_title.grid(row=1, column=0, sticky="w")
         ttk.Label(
             self._zero_panel,
@@ -269,42 +223,35 @@ class ReviewPage(ttk.Frame):
         ).grid(row=2, column=0, sticky="w", pady=(_GAP_XS, _GAP_MD))
         zbtn = ttk.Frame(self._zero_panel, style="Panel.TFrame")
         zbtn.grid(row=3, column=0, sticky="w")
-        ttk.Button(
-            zbtn,
-            text="New Scan",
-            style="Accent.TButton",
-            command=self._on_new_scan,
-        ).pack(side="left", padx=(0, _GAP_SM))
-        ttk.Button(
-            zbtn,
-            text="View History",
-            style="Ghost.TButton",
-            command=self._on_view_history,
-        ).pack(side="left")
+        ttk.Button(zbtn, text="New Scan", style="Accent.TButton", command=self._on_new_scan).pack(
+            side="left", padx=(0, _GAP_SM)
+        )
+        ttk.Button(zbtn, text="View History", style="Ghost.TButton", command=self._on_view_history).pack(side="left")
         self._zero_panel.grid_remove()
 
-        # Keyboard shortcut bindings
-        self._bind_key_next        = lambda e: self._on_key_next_group()
-        self._bind_key_prev        = lambda e: self._on_key_prev_group()
-        self._bind_key_down        = lambda e: self._on_key_arrow_down(e)
-        self._bind_key_up          = lambda e: self._on_key_arrow_up(e)
-        self._bind_key_return      = lambda e: self._on_key_activate_group(e)
-        self._bind_mode_gallery    = lambda e: self._set_mode_shortcut("gallery")
-        self._bind_mode_table      = lambda e: self._set_mode_shortcut("table")
-        self._bind_mode_compare    = lambda e: self._set_mode_shortcut("compare")
-        self._bind_quick_look      = lambda e: self._quick_look()
-        self._bind_execute         = lambda e: self._on_execute_intent()
-        self._bind_set_keep        = lambda e: self._set_keep_selected()
-        self._bind_clear_keep      = lambda e: self._on_clear_keep()
-        self._bind_preview         = lambda e: self._on_preview_intent()
-        self._bind_undo_hint       = lambda e: self._on_undo_hint()
-        self._bind_apply_smart     = lambda e: self._on_apply_smart_rule_intent()
-        self._bind_compare_prev    = lambda e: self._run_if_compare_allowed(self._workspace.compare_prev)
-        self._bind_compare_next    = lambda e: self._run_if_compare_allowed(self._workspace.compare_next)
-        self._bind_escape          = lambda e: self._on_key_escape(e)
-        self._bind_ctrl_mode_1     = lambda e: self._set_mode_shortcut("table")
-        self._bind_ctrl_mode_2     = lambda e: self._set_mode_shortcut("gallery")
-        self._bind_ctrl_mode_3     = lambda e: self._set_mode_shortcut("compare")
+    def _init_key_bindings(self) -> None:
+        """Centralize binding lambdas for predictable on_show/on_hide wiring."""
+        self._bind_key_next = lambda e: self._on_key_next_group()
+        self._bind_key_prev = lambda e: self._on_key_prev_group()
+        self._bind_key_down = lambda e: self._on_key_arrow_down(e)
+        self._bind_key_up = lambda e: self._on_key_arrow_up(e)
+        self._bind_key_return = lambda e: self._on_key_activate_group(e)
+        self._bind_mode_gallery = lambda e: self._set_mode_shortcut("gallery")
+        self._bind_mode_table = lambda e: self._set_mode_shortcut("table")
+        self._bind_mode_compare = lambda e: self._set_mode_shortcut("compare")
+        self._bind_quick_look = lambda e: self._quick_look()
+        self._bind_execute = lambda e: self._on_execute_intent()
+        self._bind_set_keep = lambda e: self._set_keep_selected()
+        self._bind_clear_keep = lambda e: self._on_clear_keep()
+        self._bind_preview = lambda e: self._on_preview_intent()
+        self._bind_undo_hint = lambda e: self._on_undo_hint()
+        self._bind_apply_smart = lambda e: self._on_apply_smart_rule_intent()
+        self._bind_compare_prev = lambda e: self._run_if_compare_allowed(self._workspace.compare_prev)
+        self._bind_compare_next = lambda e: self._run_if_compare_allowed(self._workspace.compare_next)
+        self._bind_escape = lambda e: self._on_key_escape(e)
+        self._bind_ctrl_mode_1 = lambda e: self._set_mode_shortcut("table")
+        self._bind_ctrl_mode_2 = lambda e: self._set_mode_shortcut("gallery")
+        self._bind_ctrl_mode_3 = lambda e: self._set_mode_shortcut("compare")
 
     # ----------------------------------------------------------------
     # Sub-builders

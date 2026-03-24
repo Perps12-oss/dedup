@@ -95,8 +95,12 @@ class SettingsPage(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
 
-        # ── Page header ───────────────────────────────────────────────
-        # Title and subtitle stacked vertically (standard pattern).
+        # Top-level assembly stays intentionally short for readability.
+        self._build_header()
+        self._build_tabbed_sections()
+
+    def _build_header(self) -> None:
+        """Page title and subtitle."""
         hdr = ttk.Frame(self, padding=(_PAD_PAGE, _GAP_LG, _PAD_PAGE, _GAP_MD))
         hdr.grid(row=0, column=0, sticky="ew")
 
@@ -114,7 +118,8 @@ class SettingsPage(ttk.Frame):
             font=font_tuple("page_subtitle"),
         ).pack(side="top", anchor="w", pady=(_GAP_XS, 0))
 
-        # ── Tabbed sections (fits default window without scrolling) ───
+    def _build_tabbed_sections(self) -> None:
+        """Notebook host for appearance/behavior/advanced cards."""
         nb = ttk.Notebook(self)
         nb.grid(row=1, column=0, sticky="nsew", padx=_PAD_PAGE, pady=(0, _PAD_PAGE))
 

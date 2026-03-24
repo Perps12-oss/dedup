@@ -81,31 +81,8 @@ class HistoryPage(ttk.Frame):
         # Table expands; detail strip stays natural height at bottom.
         self.rowconfigure(2, weight=1)
 
-        # ── Page header ───────────────────────────────────────────────
-        hdr = ttk.Frame(self, padding=(_PAD_PAGE, _GAP_LG, _PAD_PAGE, _GAP_MD))
-        hdr.grid(row=0, column=0, sticky="ew")
-        hdr.columnconfigure(0, weight=1)
-
-        title_block = ttk.Frame(hdr)
-        title_block.grid(row=0, column=0, sticky="w")
-        ttk.Label(
-            title_block,
-            text=f"{IC.HISTORY}  History",
-            font=font_tuple("page_title"),
-        ).pack(side="top", anchor="w")
-        ttk.Label(
-            title_block,
-            text="Sessions · Resume · Archive",
-            style="Muted.TLabel",
-            font=font_tuple("page_subtitle"),
-        ).pack(side="top", anchor="w", pady=(_GAP_XS, 0))
-
-        tb.Button(
-            hdr,
-            text=f"{IC.REFRESH} Refresh",
-            bootstyle="secondary",
-            command=self._refresh,
-        ).grid(row=0, column=2, sticky="e", padx=(_GAP_MD, 0))
+        # Keep top-level build linear: header → summary → table → detail.
+        self._build_header()
 
         # ── Summary stats strip ───────────────────────────────────────
         stats_card = SectionCard(self, title="Summary")
@@ -131,6 +108,33 @@ class HistoryPage(ttk.Frame):
         detail_card = SectionCard(self, title=f"{IC.INFO}  Session Detail")
         detail_card.grid(row=3, column=0, sticky="ew", padx=_PAD_PAGE, pady=(0, _PAD_PAGE))
         self._build_detail(detail_card.body)
+
+    def _build_header(self) -> None:
+        """Header row with page identity and refresh action."""
+        hdr = ttk.Frame(self, padding=(_PAD_PAGE, _GAP_LG, _PAD_PAGE, _GAP_MD))
+        hdr.grid(row=0, column=0, sticky="ew")
+        hdr.columnconfigure(0, weight=1)
+
+        title_block = ttk.Frame(hdr)
+        title_block.grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            title_block,
+            text=f"{IC.HISTORY}  History",
+            font=font_tuple("page_title"),
+        ).pack(side="top", anchor="w")
+        ttk.Label(
+            title_block,
+            text="Sessions · Resume · Archive",
+            style="Muted.TLabel",
+            font=font_tuple("page_subtitle"),
+        ).pack(side="top", anchor="w", pady=(_GAP_XS, 0))
+
+        tb.Button(
+            hdr,
+            text=f"{IC.REFRESH} Refresh",
+            bootstyle="secondary",
+            command=self._refresh,
+        ).grid(row=0, column=2, sticky="e", padx=(_GAP_MD, 0))
 
     def _build_summary(self, body: ttk.Frame):
         body.columnconfigure(0, weight=1)

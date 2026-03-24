@@ -100,31 +100,8 @@ class DiagnosticsPage(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(3, weight=1)
 
-        # ── Page header ───────────────────────────────────────────────
-        hdr = ttk.Frame(self, padding=(_PAD_PAGE, _GAP_LG, _PAD_PAGE, _GAP_MD))
-        hdr.grid(row=0, column=0, sticky="ew")
-        hdr.columnconfigure(0, weight=1)
-
-        title_block = ttk.Frame(hdr)
-        title_block.grid(row=0, column=0, sticky="w")
-        ttk.Label(
-            title_block,
-            text=f"{IC.DIAGNOSTICS}  Diagnostics",
-            font=font_tuple("page_title"),
-        ).pack(side="top", anchor="w")
-        ttk.Label(
-            title_block,
-            text="Session · Phases · Compatibility · Events",
-            style="Muted.TLabel",
-            font=font_tuple("page_subtitle"),
-        ).pack(side="top", anchor="w", pady=(_GAP_XS, 0))
-
-        tb.Button(
-            hdr,
-            text=f"{IC.REFRESH} Refresh",
-            bootstyle="secondary",
-            command=self._refresh,
-        ).grid(row=0, column=2, sticky="e", padx=(_GAP_MD, 0))
+        # Keep build orchestration compact; heavy markup lives in helpers.
+        self._build_header()
 
         # ── Operational warnings ─────────────────────────────────────
         self._warn_card = SectionCard(self, title=f"{IC.WARN}  Operational Warnings")
@@ -165,6 +142,33 @@ class DiagnosticsPage(ttk.Frame):
             (self._tab_integ, "  Integrity  "),
         ]
         self._last_ui_mode: str | None = None
+
+    def _build_header(self) -> None:
+        """Header row with diagnostics identity and refresh action."""
+        hdr = ttk.Frame(self, padding=(_PAD_PAGE, _GAP_LG, _PAD_PAGE, _GAP_MD))
+        hdr.grid(row=0, column=0, sticky="ew")
+        hdr.columnconfigure(0, weight=1)
+
+        title_block = ttk.Frame(hdr)
+        title_block.grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            title_block,
+            text=f"{IC.DIAGNOSTICS}  Diagnostics",
+            font=font_tuple("page_title"),
+        ).pack(side="top", anchor="w")
+        ttk.Label(
+            title_block,
+            text="Session · Phases · Compatibility · Events",
+            style="Muted.TLabel",
+            font=font_tuple("page_subtitle"),
+        ).pack(side="top", anchor="w", pady=(_GAP_XS, 0))
+
+        tb.Button(
+            hdr,
+            text=f"{IC.REFRESH} Refresh",
+            bootstyle="secondary",
+            command=self._refresh,
+        ).grid(row=0, column=2, sticky="e", padx=(_GAP_MD, 0))
 
     def _build_overview(self, body: ttk.Frame):
         # Two-column key/value grid — right-aligned keys, _GAP_MD indent

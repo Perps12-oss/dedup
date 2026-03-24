@@ -109,35 +109,34 @@ class MissionPage(ttk.Frame):
         content.columnconfigure(0, weight=1)
         content.rowconfigure(2, weight=1)
 
-        # ── Hero zone ─────────────────────────────────────────────────
+        # Build sections top-down so navigation stays obvious.
+        self._build_hero_zone(content)
+        self._build_readiness_row(content)
+        self._build_recent_and_quick(content)
+
+        # Capability vars kept for API compatibility
+        self._cap_vars: dict[str, tk.StringVar] = {}
+
+    def _build_hero_zone(self, content: ttk.Frame) -> None:
+        """Hero banner with CTA actions and contextual hint."""
         self._hero = ttk.Frame(content)
         hero = self._hero
         hero.grid(row=0, column=0, sticky="ew", pady=(0, _GAP_LG))
         hero.columnconfigure(0, weight=1)
 
-        # Top row: badge icon + stacked title / subtitle
         top_row = ttk.Frame(hero)
         top_row.grid(row=0, column=0, sticky="ew")
         top_row.columnconfigure(1, weight=1)
 
-        # Accent badge (left of title)
         badge = ttk.Frame(top_row, style="Accent.TFrame", padding=(_GAP_SM, _GAP_XS, _GAP_SM, _GAP_XS))
         badge.grid(row=0, column=0, sticky="ns", padx=(0, _GAP_MD))
-        ttk.Label(
-            badge,
-            text=IC.SHIELD,
-            style="Accent.TLabel",
-            font=font_tuple("section_title"),
-        ).pack()
+        ttk.Label(badge, text=IC.SHIELD, style="Accent.TLabel", font=font_tuple("section_title")).pack()
 
-        # Title block
         title_block = ttk.Frame(top_row)
         title_block.grid(row=0, column=1, sticky="w")
-        ttk.Label(
-            title_block,
-            text="CEREBRO  —  Mission Control",
-            font=font_tuple("page_title"),
-        ).pack(side="top", anchor="w")
+        ttk.Label(title_block, text="CEREBRO  —  Mission Control", font=font_tuple("page_title")).pack(
+            side="top", anchor="w"
+        )
         ttk.Label(
             title_block,
             text="Your first scan takes 2 minutes.  No data leaves your device.",
@@ -145,50 +144,31 @@ class MissionPage(ttk.Frame):
             font=font_tuple("page_subtitle"),
         ).pack(side="top", anchor="w", pady=(_GAP_XS, 0))
 
-        # Thin accent separator under the title
-        sep = ttk.Separator(hero, orient="horizontal")
-        sep.grid(row=1, column=0, sticky="ew", pady=(_GAP_SM, 0))
+        ttk.Separator(hero, orient="horizontal").grid(row=1, column=0, sticky="ew", pady=(_GAP_SM, 0))
 
-        # CTA bar — Accent primary + Ghost secondaries, even horizontal gap
         cta = ttk.Frame(hero)
         cta.grid(row=2, column=0, sticky="w", pady=(_GAP_MD, 0))
+        tb.Button(cta, text=f"{IC.SCAN}  Start New Scan", bootstyle="success", command=self._on_start).grid(
+            row=0, column=0, sticky="w", padx=(0, _GAP_SM)
+        )
         tb.Button(
-            cta,
-            text=f"{IC.SCAN}  Start New Scan",
-            bootstyle="success",
-            command=self._on_start,
-        ).grid(row=0, column=0, sticky="w", padx=(0, _GAP_SM))
-        tb.Button(
-            cta,
-            text=f"{IC.RESUME}  Resume Interrupted",
-            bootstyle="info",
-            command=self._on_resume,
+            cta, text=f"{IC.RESUME}  Resume Interrupted", bootstyle="info", command=self._on_resume
         ).grid(row=0, column=1, sticky="w", padx=(0, _GAP_SM))
         self._open_review_btn = tb.Button(
-            cta,
-            text=f"{IC.REVIEW}  Open Last Review",
-            bootstyle="secondary",
-            command=self._on_open_last_review,
+            cta, text=f"{IC.REVIEW}  Open Last Review", bootstyle="secondary", command=self._on_open_last_review
         )
         self._open_review_btn.grid(row=0, column=2, sticky="w", padx=(0, _GAP_SM))
-        self._tour_btn = tb.Button(
-            cta,
-            text="Watch Tour",
-            bootstyle="secondary",
-            command=self._show_quick_tour,
-        )
+        self._tour_btn = tb.Button(cta, text="Watch Tour", bootstyle="secondary", command=self._show_quick_tour)
         self._tour_btn.grid(row=0, column=3, sticky="w")
 
         self._welcome_var = tk.StringVar(value="")
         self._welcome_lbl = ttk.Label(
-            hero,
-            textvariable=self._welcome_var,
-            style="Muted.TLabel",
-            font=font_tuple("caption"),
+            hero, textvariable=self._welcome_var, style="Muted.TLabel", font=font_tuple("caption")
         )
         self._welcome_lbl.grid(row=3, column=0, sticky="w", pady=(_GAP_XS, 0))
 
-        # ── Readiness row: 3 equal-width status cards ──────────────────
+    def _build_readiness_row(self, content: ttk.Frame) -> None:
+        """Three-card readiness row that can be relaid out by ui mode."""
         self._ready = ttk.Frame(content)
         ready = self._ready
         ready.grid(row=1, column=0, sticky="ew", pady=(0, _GAP_LG))
@@ -208,20 +188,16 @@ class MissionPage(ttk.Frame):
         self._safety_card.grid(row=0, column=2, sticky="nsew", padx=(_GAP_SM, 0))
         self._build_safety_card()
 
-        # ── Recent Sessions ────────────────────────────────────────────
+    def _build_recent_and_quick(self, content: ttk.Frame) -> None:
+        """Bottom cards: recent sessions and quick scan launcher."""
         self._recent_card = SectionCard(content, title=f"{IC.HISTORY}  Recent Sessions")
         self._recent_card.grid(row=2, column=0, sticky="nsew", pady=(0, _GAP_LG))
         self._recent_card.columnconfigure(0, weight=1)
         self._build_recent_sessions(self._recent_card.body)
 
-        # ── Quick Scan ─────────────────────────────────────────────────
         self._quick_card = SectionCard(content, title=f"{IC.SCAN}  Quick Scan")
-        quick_card = self._quick_card
-        quick_card.grid(row=3, column=0, sticky="ew", pady=(0, _GAP_MD))
-        self._build_quick_start(quick_card.body)
-
-        # Capability vars kept for API compatibility
-        self._cap_vars: dict[str, tk.StringVar] = {}
+        self._quick_card.grid(row=3, column=0, sticky="ew", pady=(0, _GAP_MD))
+        self._build_quick_start(self._quick_card.body)
 
     # ----------------------------------------------------------------
     def _build_engine_card(self):

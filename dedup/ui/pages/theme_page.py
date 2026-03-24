@@ -78,6 +78,19 @@ class ThemePage(ttk.Frame):
         hp.add(right, weight=6)
         right.columnconfigure(0, weight=1)
 
+        # Assemble the right control rail as explicit sections.
+        self._build_theme_header(right)
+        self._build_theme_presets(right)
+        self._build_gradient_editor(right)
+        self._build_theme_import_export(right)
+        self._build_theme_note(right)
+        try:
+            hp.paneconfig(self._lab, minsize=260)
+        except Exception:
+            pass
+
+    def _build_theme_header(self, right: ttk.Frame) -> None:
+        """Top heading and optional preview launcher."""
         title = ttk.Label(right, text="Themes", font=font_tuple("page_title"))
         title.grid(row=0, column=0, sticky="w")
         sub = ttk.Label(
@@ -99,6 +112,8 @@ class ThemePage(ttk.Frame):
             command=self._open_ctk_preview,
         ).pack(side="left")
 
+    def _build_theme_presets(self, right: ttk.Frame) -> None:
+        """Preset swatches and contrast snapshot group."""
         sw_frame = ttk.LabelFrame(right, text="Presets (15 + CEREBRO Noir)", padding=_S(2))
         sw_frame.grid(row=3, column=0, sticky="ew", pady=(0, _S(4)))
         self._swatches = ThemeSwatchGrid(
@@ -119,6 +134,8 @@ class ThemePage(ttk.Frame):
         )
         self._contrast_lbl.pack(anchor="w")
 
+    def _build_gradient_editor(self, right: ttk.Frame) -> None:
+        """Interactive gradient stop editor with numeric controls."""
         gf = ttk.LabelFrame(right, text="Top accent bar gradient — drag handles", padding=_S(2))
         gf.grid(row=5, column=0, sticky="ew", pady=(_S(4), 0))
         self._drag_grad = DraggableGradientEditor(gf, height=56, on_change=self._on_drag_gradient_stops)
@@ -148,6 +165,8 @@ class ThemePage(ttk.Frame):
         self._rebuild_stop_rows()
         self._drag_grad.set_stops(sorted(self._working_stops, key=lambda x: x[0]), silent=True)
 
+    def _build_theme_import_export(self, right: ttk.Frame) -> None:
+        """File IO controls for theme bundle import/export."""
         io = ttk.LabelFrame(right, text="Import / export", padding=_S(2))
         io.grid(row=6, column=0, sticky="ew", pady=(_S(4), 0))
         ior = ttk.Frame(io)
@@ -165,6 +184,8 @@ class ThemePage(ttk.Frame):
             command=self._import_theme_json,
         ).pack(side="left")
 
+    def _build_theme_note(self, right: ttk.Frame) -> None:
+        """Bottom explanatory note for bundle contents."""
         note = ttk.Label(
             right,
             text="Export includes preset key, ThemeConfig (incl. custom gradient stops), and motion/contrast UI flags. "
@@ -175,10 +196,6 @@ class ThemePage(ttk.Frame):
             justify="left",
         )
         note.grid(row=7, column=0, sticky="w", pady=(_S(3), 0))
-        try:
-            hp.paneconfig(self._lab, minsize=260)
-        except Exception:
-            pass
 
     def _on_drag_gradient_stops(self, stops: List[Tuple[float, str]]) -> None:
         self._working_stops = list(stops)

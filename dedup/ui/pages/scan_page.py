@@ -555,69 +555,8 @@ class ScanPage(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(3, weight=1)
 
-        # ── Page header ───────────────────────────────────────────────
-        hdr = ttk.Frame(self, padding=(_PAD_PAGE, _GAP_LG, _PAD_PAGE, _GAP_MD))
-        hdr.grid(row=0, column=0, sticky="ew")
-        hdr.columnconfigure(1, weight=1)
-
-        # Accent badge
-        badge = ttk.Frame(hdr, style="Accent.TFrame", padding=(_GAP_SM, _GAP_XS, _GAP_SM, _GAP_XS))
-        badge.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(0, _GAP_MD))
-        ttk.Label(
-            badge,
-            text=IC.SCAN,
-            style="Accent.TLabel",
-            font=font_tuple("section_title"),
-        ).pack()
-
-        # Title block
-        title_block = ttk.Frame(hdr)
-        title_block.grid(row=0, column=1, sticky="w")
-        self._title_lbl = ttk.Label(
-            title_block,
-            text="Live Scan Studio",
-            font=font_tuple("page_title"),
-        )
-        self._title_lbl.pack(side="top", anchor="w")
-        ttk.Label(
-            title_block,
-            text="Configure target · track phases · monitor live activity in one place.",
-            style="Muted.TLabel",
-            font=font_tuple("page_subtitle"),
-        ).pack(side="top", anchor="w", pady=(_GAP_XS, 0))
-
-        # State hint — below title
-        self._state_hint = tk.StringVar(value="No active scan. Choose a target below to start.")
-        ttk.Label(
-            hdr,
-            textvariable=self._state_hint,
-            style="Muted.TLabel",
-            font=font_tuple("caption"),
-        ).grid(row=1, column=1, sticky="w", pady=(_GAP_XS, 0))
-
-        # Action buttons — right-aligned, vertically centred in header
-        btn_group = ttk.Frame(hdr)
-        btn_group.grid(row=0, column=2, rowspan=2, sticky="e", padx=(_GAP_MD, 0))
-        self._cancel_btn = tb.Button(
-            btn_group,
-            text=f"{IC.STOPPED}  Cancel",
-            bootstyle="secondary",
-            command=self._on_cancel,
-        )
-        self._cancel_btn.pack(side="left")
-        self._go_to_review_btn = tb.Button(
-            btn_group,
-            text=f"{IC.REVIEW}  Review Results",
-            bootstyle="primary",
-            command=self._on_go_to_review,
-        )
-        self._go_to_review_btn.pack(side="left", padx=(_GAP_SM, 0))
-        self._go_to_review_btn.grid_remove()
-
-        # Thin accent separator beneath header
-        ttk.Separator(self, orient="horizontal").grid(
-            row=0, column=0, sticky="ews", padx=_PAD_PAGE,
-        )
+        # Keep orchestration linear: header, ribbon, alerts, main dashboard.
+        self._build_header()
 
         # ── Status ribbon ─────────────────────────────────────────────
         strip = ttk.Frame(self, padding=(_PAD_PAGE, _GAP_SM, _PAD_PAGE, 0))
@@ -627,7 +566,53 @@ class ScanPage(ttk.Frame):
         self._ribbon.grid(row=0, column=0, sticky="ew")
 
         # ── Alert banners ─────────────────────────────────────────────
-        # Interruption banner
+        self._build_alert_banners()
+
+        # ── Main two-column dashboard ─────────────────────────────────
+        self._build_main_dashboard()
+
+    def _build_header(self) -> None:
+        """Header title, state hint, and top-right actions."""
+        hdr = ttk.Frame(self, padding=(_PAD_PAGE, _GAP_LG, _PAD_PAGE, _GAP_MD))
+        hdr.grid(row=0, column=0, sticky="ew")
+        hdr.columnconfigure(1, weight=1)
+
+        badge = ttk.Frame(hdr, style="Accent.TFrame", padding=(_GAP_SM, _GAP_XS, _GAP_SM, _GAP_XS))
+        badge.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(0, _GAP_MD))
+        ttk.Label(badge, text=IC.SCAN, style="Accent.TLabel", font=font_tuple("section_title")).pack()
+
+        title_block = ttk.Frame(hdr)
+        title_block.grid(row=0, column=1, sticky="w")
+        self._title_lbl = ttk.Label(title_block, text="Live Scan Studio", font=font_tuple("page_title"))
+        self._title_lbl.pack(side="top", anchor="w")
+        ttk.Label(
+            title_block,
+            text="Configure target · track phases · monitor live activity in one place.",
+            style="Muted.TLabel",
+            font=font_tuple("page_subtitle"),
+        ).pack(side="top", anchor="w", pady=(_GAP_XS, 0))
+
+        self._state_hint = tk.StringVar(value="No active scan. Choose a target below to start.")
+        ttk.Label(hdr, textvariable=self._state_hint, style="Muted.TLabel", font=font_tuple("caption")).grid(
+            row=1, column=1, sticky="w", pady=(_GAP_XS, 0)
+        )
+
+        btn_group = ttk.Frame(hdr)
+        btn_group.grid(row=0, column=2, rowspan=2, sticky="e", padx=(_GAP_MD, 0))
+        self._cancel_btn = tb.Button(
+            btn_group, text=f"{IC.STOPPED}  Cancel", bootstyle="secondary", command=self._on_cancel
+        )
+        self._cancel_btn.pack(side="left")
+        self._go_to_review_btn = tb.Button(
+            btn_group, text=f"{IC.REVIEW}  Review Results", bootstyle="primary", command=self._on_go_to_review
+        )
+        self._go_to_review_btn.pack(side="left", padx=(_GAP_SM, 0))
+        self._go_to_review_btn.grid_remove()
+
+        ttk.Separator(self, orient="horizontal").grid(row=0, column=0, sticky="ews", padx=_PAD_PAGE)
+
+    def _build_alert_banners(self) -> None:
+        """Interruption/degraded/error banners share the same layout row."""
         self._interrupt_banner = ttk.Frame(
             self,
             style="Panel.TFrame",
@@ -681,7 +666,8 @@ class ScanPage(ttk.Frame):
         )
         self._error_panel.hide()
 
-        # ── Main two-column dashboard ─────────────────────────────────
+    def _build_main_dashboard(self) -> None:
+        """Main dashboard with target/timeline, detail card, and right rail."""
         self._scan_main = ttk.Frame(
             self, padding=(_PAD_PAGE, _GAP_MD, _PAD_PAGE, _PAD_PAGE)
         )
