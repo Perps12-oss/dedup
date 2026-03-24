@@ -23,6 +23,7 @@ UI Refactor (v4): Modern visual design pass.
 
 from __future__ import annotations
 
+import logging
 import math
 import time
 import tkinter as tk
@@ -69,6 +70,8 @@ _GAP_XS   = _S(1)   # 4px
 _GAP_SM   = _S(2)   # 8px
 _GAP_MD   = _S(4)   # 16px
 _GAP_LG   = _S(6)   # 24px
+
+_log = logging.getLogger(__name__)
 
 
 def _fixed_width_path(path: str, width: int = 40) -> str:
@@ -129,8 +132,8 @@ class ScanPage(ttk.Frame):
         for unsub in self._unsubs:
             try:
                 unsub()
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug("Failed to detach hub subscription: %s", e)
         self._unsubs.clear()
 
     def attach_store(self, store: "UIStateStore") -> None:
@@ -230,8 +233,8 @@ class ScanPage(ttk.Frame):
         if self._unsub_store:
             try:
                 self._unsub_store()
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug("Failed to detach store subscription: %s", e)
             self._unsub_store = None
         self._store = None
 
@@ -303,12 +306,13 @@ class ScanPage(ttk.Frame):
             if self.winfo_exists():
                 try:
                     fn()
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log.debug("Deferred UI callback failed: %s", e)
 
         try:
             self.after_idle(run)
-        except Exception:
+        except Exception as e:
+            _log.debug("after_idle scheduling failed: %s", e)
             if key:
                 self._pending_defer.discard(key)
 
@@ -403,8 +407,8 @@ class ScanPage(ttk.Frame):
         def _sync_ribbon(frac: float, indeterminate: bool) -> None:
             try:
                 self._ribbon.mirror_progress(frac, indeterminate=indeterminate)
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug("Failed to mirror progress to ribbon: %s", e)
 
         if sess == "completed" or self._scan_completed:
             rp.set_fraction(1.0, indeterminate=False)
@@ -477,8 +481,8 @@ class ScanPage(ttk.Frame):
             self._ribbon.set_detail(
                 f"{phase_lbl}  ·  {self._pct_var.get()}  ·  {self._eta_var.get()}"
             )
-        except Exception:
-            pass
+        except Exception as e:
+            _log.debug("Failed updating ribbon detail: %s", e)
 
     def _render_phase_detail(self) -> None:
         s            = self.vm.session
@@ -911,8 +915,8 @@ class ScanPage(ttk.Frame):
             return
         try:
             self._progress_bar.set_fraction(0.0, indeterminate=busy)
-        except Exception:
-            pass
+        except Exception as e:
+            _log.debug("Failed to update phase busy bar: %s", e)
 
     def _build_result_summary(self, body: ttk.Frame):
         body.columnconfigure(0, minsize=130)

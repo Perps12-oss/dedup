@@ -19,6 +19,7 @@ UI Refactor (v4): Modern visual design pass.
 
 from __future__ import annotations
 
+import logging
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -67,6 +68,8 @@ _GAP_SM   = _S(2)   # 8px
 _GAP_MD   = _S(4)   # 16px
 _GAP_LG   = _S(6)   # 24px
 _GAP_XL   = _S(8)   # 32px
+
+_log = logging.getLogger(__name__)
 
 
 class MissionPage(ttk.Frame):
@@ -762,8 +765,8 @@ class MissionPage(ttk.Frame):
             widget.drop_target_register(DND_FILES)
             widget.dnd_bind("<<Drop>>", self._on_drop)
             widget.configure(text=f"  {IC.FOLDER}   Drop folder here  ·  or click to browse  ")
-        except Exception:
-            pass
+        except Exception as e:
+            _log.debug("Drag-and-drop unavailable: %s", e)
 
     def _on_drop(self, event):
         data = (event.data or "").strip()
@@ -771,7 +774,8 @@ class MissionPage(ttk.Frame):
             return
         try:
             paths = self.tk.splitlist(data)
-        except Exception:
+        except Exception as e:
+            _log.debug("Drop parsing failed, using raw payload: %s", e)
             paths = [data]
         for p in paths:
             candidate = p.strip("{}").strip()
@@ -800,8 +804,8 @@ class MissionPage(ttk.Frame):
         }
         try:
             self.coordinator.add_recent_folder(path)
-        except Exception:
-            pass
+        except Exception as e:
+            _log.warning("Failed to add recent folder '%s': %s", path, e)
         self.on_start_scan(path, options)
 
     def _on_resume(self):
