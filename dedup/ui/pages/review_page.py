@@ -25,10 +25,10 @@ UI Refactor (v4): Modern visual design pass.
 from __future__ import annotations
 
 import tkinter as tk
-from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Callable, Optional
+
 import ttkbootstrap as tb
 
 from ...engine.models import DeletionPlan, DeletionResult, ScanResult
@@ -672,7 +672,6 @@ class ReviewPage(ttk.Frame):
         pass
 
     def _set_state_filter(self, state_key: str) -> None:
-        prev = self._active_chip_key
         self._active_chip_key = state_key
         # Update chip button styles
         for key, btn in self._chip_buttons.items():

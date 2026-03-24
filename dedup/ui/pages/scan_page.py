@@ -29,6 +29,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional
+
 import ttkbootstrap as tb
 
 from ...engine.models import ScanProgress, ScanResult
@@ -47,7 +48,7 @@ from ..projections.metrics_projection import MetricsProjection
 from ..projections.phase_projection import PHASE_ORDER, PhaseProjection
 from ..projections.session_projection import SessionProjection
 from ..theme.design_system import font_tuple
-from ..utils.formatting import fmt_bytes, fmt_duration, fmt_int, truncate_path
+from ..utils.formatting import fmt_duration, fmt_int, truncate_path
 from ..utils.icons import IC
 from ..utils.ui_state import UIState
 from ..viewmodels.scan_vm import ScanVM
@@ -570,7 +571,7 @@ class ScanPage(ttk.Frame):
         title_block.grid(row=0, column=1, sticky="w")
         self._title_lbl = ttk.Label(
             title_block,
-            text=f"Live Scan Studio",
+            text="Live Scan Studio",
             font=font_tuple("page_title"),
         )
         self._title_lbl.pack(side="top", anchor="w")
@@ -1108,7 +1109,7 @@ class ScanPage(ttk.Frame):
     def start_resume(self, scan_id: str) -> None:
         self._reset_vm()
         self._last_resume_id = scan_id
-        self._title_lbl.configure(text=f"Resuming scan…")
+        self._title_lbl.configure(text="Resuming scan…")
         self._state_hint.set("Resuming interrupted session from checkpoint.")
         self._ribbon.set_state("info", detail="Checking checkpoints…", label_override="Resume in progress")
         self._sync_phase_busy_bar(True)

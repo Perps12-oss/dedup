@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import TYPE_CHECKING, Callable, Optional
+
 import ttkbootstrap as tb
 
 if TYPE_CHECKING:

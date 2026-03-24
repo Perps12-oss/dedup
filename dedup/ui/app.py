@@ -12,9 +12,9 @@ Modern-classic operations shell with:
 
 from __future__ import annotations
 
-import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
+
 import ttkbootstrap as tb
 
 try:
@@ -45,7 +45,6 @@ from .theme import design_system
 from .theme.theme_manager import get_theme_manager, parse_gradient_stops_from_raw
 from .theme.theme_registry import get_theme
 from .utils.backdrop import try_apply_mica
-from .utils.formatting import fmt_bytes
 from .utils.ui_state import UIState
 
 

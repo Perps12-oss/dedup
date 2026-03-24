@@ -23,6 +23,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import TYPE_CHECKING, Callable, Optional
+
 import ttkbootstrap as tb
 
 from ..utils.ui_state import UIState
@@ -689,7 +690,6 @@ class MissionPage(ttk.Frame):
             action_row.columnconfigure(1, weight=1)
             # Status pill
             pill_text  = "Resumable" if status == "resumable" else status.title()
-            pill_style = "Accent.TButton" if status == "resumable" else "Ghost.TButton"
             ttk.Label(
                 action_row,
                 text=pill_text,

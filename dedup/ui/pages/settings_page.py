@@ -19,6 +19,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import Callable, Optional
+
 import ttkbootstrap as tb
 
 from ..components import SectionCard

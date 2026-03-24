@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tkinter import colorchooser, filedialog, messagebox, ttk
 from typing import Callable, List, Optional, Tuple
+
 import ttkbootstrap as tb
 
 from ..theme.contrast import contrast_ratio, format_ratio, passes_aa_normal

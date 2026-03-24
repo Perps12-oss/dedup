@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Optional
+
 import ttkbootstrap as tb
 
 from ...infrastructure.diagnostics import get_diagnostics_recorder
