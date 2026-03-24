@@ -1,14 +1,11 @@
 """Layout smoke tests for StatusStrip (Sprint 2 / P0-S1)."""
 
-from __future__ import annotations
-
-import tkinter as tk
-
-
 def test_status_strip_simple_hides_storage_and_phase_primary_color():
+    import ttkbootstrap as tb
+
     from dedup.ui.shell.status_strip import StatusStrip
 
-    root = tk.Tk()
+    root = tb.Window(themename="darkly")
     root.withdraw()
     try:
         strip = StatusStrip(root)
