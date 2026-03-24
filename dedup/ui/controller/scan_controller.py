@@ -25,6 +25,9 @@ class ScanController:
         self._coordinator = coordinator
         self._store = store
 
+    def _post_to_ui(self, fn: Callable[[], None]) -> None:
+        self._store.call_on_ui_thread(fn)
+
     def handle_start_scan(
         self,
         path: Path,
@@ -34,15 +37,21 @@ class ScanController:
         on_error: Callable[[str], None],
     ) -> None:
         """Start a new scan; set intent accepted then delegate to coordinator; on complete/error set lifecycle."""
-        self._store.set_intent_lifecycle(IntentLifecycle(status="accepted", intent_type="scan"))
+        self._post_to_ui(lambda: self._store.set_intent_lifecycle(IntentLifecycle(status="accepted", intent_type="scan")))
 
         def _on_complete(result):
-            self._store.set_intent_lifecycle(IntentLifecycle(status="completed", intent_type="scan"))
-            on_complete(result)
+            self._post_to_ui(
+                lambda: self._store.set_intent_lifecycle(IntentLifecycle(status="completed", intent_type="scan"))
+            )
+            self._post_to_ui(lambda: on_complete(result))
 
         def _on_error(err: str):
-            self._store.set_intent_lifecycle(IntentLifecycle(status="failed", intent_type="scan", message=err))
-            on_error(err)
+            self._post_to_ui(
+                lambda: self._store.set_intent_lifecycle(
+                    IntentLifecycle(status="failed", intent_type="scan", message=err)
+                )
+            )
+            self._post_to_ui(lambda: on_error(err))
 
         self._coordinator.start_scan(
             roots=[path],
@@ -60,15 +69,21 @@ class ScanController:
         on_error: Callable[[str], None],
     ) -> None:
         """Resume a scan; set intent accepted then delegate to coordinator."""
-        self._store.set_intent_lifecycle(IntentLifecycle(status="accepted", intent_type="resume"))
+        self._post_to_ui(lambda: self._store.set_intent_lifecycle(IntentLifecycle(status="accepted", intent_type="resume")))
 
         def _on_complete(result):
-            self._store.set_intent_lifecycle(IntentLifecycle(status="completed", intent_type="resume"))
-            on_complete(result)
+            self._post_to_ui(
+                lambda: self._store.set_intent_lifecycle(IntentLifecycle(status="completed", intent_type="resume"))
+            )
+            self._post_to_ui(lambda: on_complete(result))
 
         def _on_error(err: str):
-            self._store.set_intent_lifecycle(IntentLifecycle(status="failed", intent_type="resume", message=err))
-            on_error(err)
+            self._post_to_ui(
+                lambda: self._store.set_intent_lifecycle(
+                    IntentLifecycle(status="failed", intent_type="resume", message=err)
+                )
+            )
+            self._post_to_ui(lambda: on_error(err))
 
         self._coordinator.start_scan(
             roots=[],
@@ -80,7 +95,7 @@ class ScanController:
 
     def handle_cancel(self) -> None:
         """Cancel current scan; set intent idle and delegate to coordinator."""
-        self._store.set_intent_lifecycle(IntentLifecycle(status="idle", intent_type="scan"))
+        self._post_to_ui(lambda: self._store.set_intent_lifecycle(IntentLifecycle(status="idle", intent_type="scan")))
         self._coordinator.cancel_scan()
 
     def get_resumable_scan_ids(self) -> list[str]:

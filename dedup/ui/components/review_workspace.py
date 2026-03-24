@@ -14,6 +14,7 @@ import threading
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
+from queue import Empty, Queue
 from tkinter import ttk
 from typing import Any, Callable, List, Optional
 
@@ -187,6 +188,8 @@ class ReviewGalleryView(ttk.Frame):
         self._keeper_var = tk.StringVar(value="")
         self._thumb_refs: List[Any] = []
         self._thumb_cancel = threading.Event()
+        self._thumb_ui_queue: Queue[Callable[[], None]] = Queue()
+        self._thumb_drain_after_id: Optional[str] = self.after(16, self._drain_thumb_ui_queue)
         self.bind("<Destroy>", self._on_destroy, add="+")
 
         self._canvas = tk.Canvas(self, highlightthickness=0, bd=0)
@@ -213,6 +216,31 @@ class ReviewGalleryView(ttk.Frame):
 
     def _on_destroy(self, _event=None):
         self._thumb_cancel.set()
+        if self._thumb_drain_after_id:
+            try:
+                self.after_cancel(self._thumb_drain_after_id)
+            except tk.TclError:
+                pass
+            self._thumb_drain_after_id = None
+
+    def _enqueue_ui(self, fn: Callable[[], None]) -> None:
+        """Queue UI work from worker threads; drained on Tk main thread."""
+        self._thumb_ui_queue.put(fn)
+
+    def _drain_thumb_ui_queue(self) -> None:
+        self._thumb_drain_after_id = None
+        if self._thumb_cancel.is_set():
+            return
+        while True:
+            try:
+                fn = self._thumb_ui_queue.get_nowait()
+            except Empty:
+                break
+            try:
+                fn()
+            except Exception:
+                pass
+        self._thumb_drain_after_id = self.after(16, self._drain_thumb_ui_queue)
 
     def load_group(
         self,
@@ -281,8 +309,7 @@ class ReviewGalleryView(ttk.Frame):
                         hero_lbl.image = img
                     except Exception:
                         hero_lbl.configure(text="Preview unavailable", style="Panel.Muted.TLabel")
-
-                self.after(0, upd)
+                self._enqueue_ui(upd)
 
             generate_thumbnails_async(
                 [hero_path],
@@ -345,6 +372,8 @@ class ReviewCompareView(ttk.Frame):
         self._on_clear_keep = on_clear_keep or (lambda: None)
         self._thumb_refs: List[Any] = []
         self._thumb_cancel = threading.Event()
+        self._thumb_ui_queue: Queue[Callable[[], None]] = Queue()
+        self._thumb_drain_after_id: Optional[str] = self.after(16, self._drain_thumb_ui_queue)
         self._pair_index = 0
         self._left_idx = 0
         self._right_idx = 1
@@ -408,6 +437,31 @@ class ReviewCompareView(ttk.Frame):
 
     def _on_destroy(self, _event=None):
         self._thumb_cancel.set()
+        if self._thumb_drain_after_id:
+            try:
+                self.after_cancel(self._thumb_drain_after_id)
+            except tk.TclError:
+                pass
+            self._thumb_drain_after_id = None
+
+    def _enqueue_ui(self, fn: Callable[[], None]) -> None:
+        """Queue UI work from worker threads; drained on Tk main thread."""
+        self._thumb_ui_queue.put(fn)
+
+    def _drain_thumb_ui_queue(self) -> None:
+        self._thumb_drain_after_id = None
+        if self._thumb_cancel.is_set():
+            return
+        while True:
+            try:
+                fn = self._thumb_ui_queue.get_nowait()
+            except Empty:
+                break
+            try:
+                fn()
+            except Exception:
+                pass
+        self._thumb_drain_after_id = self.after(16, self._drain_thumb_ui_queue)
 
     def _compare_thumb_size(self) -> tuple[int, int]:
         """Size thumbnails from available width and height (compare pane fills space)."""
@@ -561,9 +615,8 @@ class ReviewCompareView(ttk.Frame):
                             ttk.Label(img_cell, text="[no preview]", style="Panel.Muted.TLabel").grid(
                                 row=0, column=0, sticky="n"
                             )
-
                     if not self._thumb_cancel.is_set():
-                        self.after(0, upd)
+                        self._enqueue_ui(upd)
 
                 generate_thumbnails_async(
                     [f.path],

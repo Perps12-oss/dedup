@@ -93,13 +93,15 @@ def test_review_vm_clear_keep_removes_selection():
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def tk_root():
     """Tk root for widget tests. Skips if Tk unavailable (e.g. headless CI)."""
     import tkinter as tk
 
+    import ttkbootstrap as tb
+
     try:
-        root = tk.Tk()
+        root = tb.Window(themename="darkly")
     except (tk.TclError, OSError, Exception) as e:
         pytest.skip(f"Tk unavailable: {e}")
     root.withdraw()
