@@ -487,50 +487,42 @@ class ReviewPage(ttk.Frame):
         self._push_deletion_plan_ui()
 
     def on_show(self):
-        self.bind_all("<Control-Right>",   self._bind_key_next,      add="+")
-        self.bind_all("<Control-Left>",    self._bind_key_prev,      add="+")
-        self.bind_all("<Key-g>",           self._bind_mode_gallery,  add="+")
-        self.bind_all("<Key-t>",           self._bind_mode_table,    add="+")
-        self.bind_all("<Key-c>",           self._bind_mode_compare,  add="+")
-        self.bind_all("<space>",           self._bind_quick_look,    add="+")
-        self.bind_all("<Control-Return>",  self._bind_execute,       add="+")
-        self.bind_all("<Key-k>",           self._bind_set_keep,      add="+")
-        self.bind_all("<Key-K>",           self._bind_clear_keep,    add="+")
-        self.bind_all("<Key-p>",           self._bind_preview,       add="+")
-        self.bind_all("<Key-u>",           self._bind_undo_hint,     add="+")
-        self.bind_all("<Key-a>",           self._bind_apply_smart,   add="+")
-        self.bind_all("<Key-bracketleft>", self._bind_compare_prev,  add="+")
-        self.bind_all("<Key-bracketright>",self._bind_compare_next,  add="+")
-        self.bind_all("<Down>",            self._bind_key_down,      add="+")
-        self.bind_all("<Up>",              self._bind_key_up,        add="+")
-        self.bind_all("<Return>",          self._bind_key_return,    add="+")
-        self.bind_all("<Escape>",          self._bind_escape,        add="+")
-        self.bind_all("<Control-Key-1>",   self._bind_ctrl_mode_1,   add="+")
-        self.bind_all("<Control-Key-2>",   self._bind_ctrl_mode_2,   add="+")
-        self.bind_all("<Control-Key-3>",   self._bind_ctrl_mode_3,   add="+")
+        self._toggle_shortcuts(enabled=True)
 
     def on_hide(self):
-        self.unbind_all("<Control-Right>")
-        self.unbind_all("<Control-Left>")
-        self.unbind_all("<Key-g>")
-        self.unbind_all("<Key-t>")
-        self.unbind_all("<Key-c>")
-        self.unbind_all("<space>")
-        self.unbind_all("<Control-Return>")
-        self.unbind_all("<Key-k>")
-        self.unbind_all("<Key-K>")
-        self.unbind_all("<Key-p>")
-        self.unbind_all("<Key-u>")
-        self.unbind_all("<Key-a>")
-        self.unbind_all("<Key-bracketleft>")
-        self.unbind_all("<Key-bracketright>")
-        self.unbind_all("<Down>")
-        self.unbind_all("<Up>")
-        self.unbind_all("<Return>")
-        self.unbind_all("<Escape>")
-        self.unbind_all("<Control-Key-1>")
-        self.unbind_all("<Control-Key-2>")
-        self.unbind_all("<Control-Key-3>")
+        self._toggle_shortcuts(enabled=False)
+
+    def _toggle_shortcuts(self, *, enabled: bool) -> None:
+        """Single source for review keyboard shortcut wiring."""
+        bindings = [
+            ("<Control-Right>", self._bind_key_next),
+            ("<Control-Left>", self._bind_key_prev),
+            ("<Key-g>", self._bind_mode_gallery),
+            ("<Key-t>", self._bind_mode_table),
+            ("<Key-c>", self._bind_mode_compare),
+            ("<space>", self._bind_quick_look),
+            ("<Control-Return>", self._bind_execute),
+            ("<Key-k>", self._bind_set_keep),
+            ("<Key-K>", self._bind_clear_keep),
+            ("<Key-p>", self._bind_preview),
+            ("<Key-u>", self._bind_undo_hint),
+            ("<Key-a>", self._bind_apply_smart),
+            ("<Key-bracketleft>", self._bind_compare_prev),
+            ("<Key-bracketright>", self._bind_compare_next),
+            ("<Down>", self._bind_key_down),
+            ("<Up>", self._bind_key_up),
+            ("<Return>", self._bind_key_return),
+            ("<Escape>", self._bind_escape),
+            ("<Control-Key-1>", self._bind_ctrl_mode_1),
+            ("<Control-Key-2>", self._bind_ctrl_mode_2),
+            ("<Control-Key-3>", self._bind_ctrl_mode_3),
+        ]
+        if enabled:
+            for seq, cb in bindings:
+                self.bind_all(seq, cb, add="+")
+            return
+        for seq, _ in bindings:
+            self.unbind_all(seq)
 
     # ----------------------------------------------------------------
     # Group navigator

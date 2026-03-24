@@ -594,6 +594,7 @@ class MissionPage(ttk.Frame):
                 var.set("—")
 
     def _update_recent_sessions(self):
+        """Repaint recent session cards from the latest VM snapshot."""
         for w in self._recent_cards.winfo_children():
             w.destroy()
         resumable = set(
@@ -610,84 +611,71 @@ class MissionPage(ttk.Frame):
         max_cards = 3
         cols      = 3
         for i, item in enumerate(self.vm.recent_sessions[:max_cards]):
-            scan_id   = item.get("scan_id", "")
-            started   = fmt_dt(item.get("started_at", ""))
-            roots     = item.get("roots") or []
-            roots_str = ", ".join(Path(r).name for r in roots[:2])
-            if len(roots) > 2:
-                roots_str += "…"
-            files   = fmt_int(item.get("files_scanned",    0))
-            groups  = fmt_int(item.get("duplicates_found", 0))
-            reclaim = fmt_bytes(item.get("reclaimable_bytes", 0))
+            scan_id = item.get("scan_id", "")
             status  = item.get("status", "—")
             if scan_id in resumable:
                 status = "resumable"
-
-            # Session card — clean left border accent + structured layout
-            card = ttk.Frame(
-                self._recent_cards,
-                style="Panel.TFrame",
-                padding=(_GAP_MD, _GAP_MD),
-            )
             row = i // cols
             col = i % cols
             self._recent_cards.columnconfigure(col, weight=1)
-            card.grid(row=row, column=col, sticky="nsew", padx=_GAP_SM, pady=_GAP_SM)
-            card.columnconfigure(0, weight=1)
+            self._build_recent_session_card(item=item, status=status, row=row, col=col)
 
-            # Session name
-            ttk.Label(
-                card,
-                text=roots_str or "Recent scan",
-                style="Panel.Secondary.TLabel",
-                font=font_tuple("body_bold"),
-            ).grid(row=0, column=0, sticky="w")
-            # Timestamp
-            ttk.Label(
-                card,
-                text=started,
-                style="Panel.Muted.TLabel",
-                font=font_tuple("caption"),
-            ).grid(row=1, column=0, sticky="w", pady=(_GAP_XS, _GAP_XS))
-            # File / group counts
-            ttk.Label(
-                card,
-                text=f"{files} files  ·  {groups} groups",
-                style="Panel.TLabel",
-                font=font_tuple("body"),
-            ).grid(row=2, column=0, sticky="w")
-            # Reclaimable — prominent
-            ttk.Label(
-                card,
-                text=f"{IC.RECLAIM}  Reclaimable: {reclaim}",
-                style="Panel.Success.TLabel",
-                font=font_tuple("body_bold"),
-            ).grid(row=3, column=0, sticky="w", pady=(_GAP_XS, _GAP_MD))
-            # Status pill + action button on same row
-            action_row = ttk.Frame(card, style="Panel.TFrame")
-            action_row.grid(row=4, column=0, sticky="ew")
-            action_row.columnconfigure(1, weight=1)
-            # Status pill
-            pill_text  = "Resumable" if status == "resumable" else status.title()
-            ttk.Label(
-                action_row,
-                text=pill_text,
-                style="Panel.Accent.TLabel" if status == "resumable" else "Panel.Muted.TLabel",
-                font=font_tuple("caption"),
-            ).grid(row=0, column=0, sticky="w")
-            # Action CTA
-            action_text = "Resume" if status == "resumable" else "Review"
-            action_cmd  = (
-                (lambda sid=scan_id: self.on_resume_scan(sid))
-                if status == "resumable"
-                else self._on_open_last_review
-            )
-            tb.Button(
-                action_row,
-                text=action_text,
-                bootstyle="success" if status == "resumable" else "secondary",
-                command=action_cmd,
-            ).grid(row=0, column=2, sticky="e")
+    def _build_recent_session_card(self, *, item: dict, status: str, row: int, col: int) -> None:
+        """Render one recent-session card; extracted to keep list renderer compact."""
+        scan_id = item.get("scan_id", "")
+        started = fmt_dt(item.get("started_at", ""))
+        roots_str = self._recent_roots_label(item.get("roots") or [])
+        files = fmt_int(item.get("files_scanned", 0))
+        groups = fmt_int(item.get("duplicates_found", 0))
+        reclaim = fmt_bytes(item.get("reclaimable_bytes", 0))
+
+        card = ttk.Frame(self._recent_cards, style="Panel.TFrame", padding=(_GAP_MD, _GAP_MD))
+        card.grid(row=row, column=col, sticky="nsew", padx=_GAP_SM, pady=_GAP_SM)
+        card.columnconfigure(0, weight=1)
+
+        ttk.Label(
+            card, text=roots_str or "Recent scan", style="Panel.Secondary.TLabel", font=font_tuple("body_bold")
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(card, text=started, style="Panel.Muted.TLabel", font=font_tuple("caption")).grid(
+            row=1, column=0, sticky="w", pady=(_GAP_XS, _GAP_XS)
+        )
+        ttk.Label(card, text=f"{files} files  ·  {groups} groups", style="Panel.TLabel", font=font_tuple("body")).grid(
+            row=2, column=0, sticky="w"
+        )
+        ttk.Label(
+            card,
+            text=f"{IC.RECLAIM}  Reclaimable: {reclaim}",
+            style="Panel.Success.TLabel",
+            font=font_tuple("body_bold"),
+        ).grid(row=3, column=0, sticky="w", pady=(_GAP_XS, _GAP_MD))
+
+        action_row = ttk.Frame(card, style="Panel.TFrame")
+        action_row.grid(row=4, column=0, sticky="ew")
+        action_row.columnconfigure(1, weight=1)
+        pill_text = "Resumable" if status == "resumable" else status.title()
+        ttk.Label(
+            action_row,
+            text=pill_text,
+            style="Panel.Accent.TLabel" if status == "resumable" else "Panel.Muted.TLabel",
+            font=font_tuple("caption"),
+        ).grid(row=0, column=0, sticky="w")
+        action_text = "Resume" if status == "resumable" else "Review"
+        action_cmd = (
+            (lambda sid=scan_id: self.on_resume_scan(sid)) if status == "resumable" else self._on_open_last_review
+        )
+        tb.Button(
+            action_row,
+            text=action_text,
+            bootstyle="success" if status == "resumable" else "secondary",
+            command=action_cmd,
+        ).grid(row=0, column=2, sticky="e")
+
+    def _recent_roots_label(self, roots: list[str]) -> str:
+        """Compact root labels for cards; cap to two entries."""
+        roots_str = ", ".join(Path(r).name for r in roots[:2])
+        if len(roots) > 2:
+            roots_str += "…"
+        return roots_str
 
     def _show_quick_tour(self) -> None:
         messagebox.showinfo(

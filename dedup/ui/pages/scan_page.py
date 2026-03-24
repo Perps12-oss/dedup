@@ -512,26 +512,11 @@ class ScanPage(ttk.Frame):
         if snapshot == self._last_events_snapshot:
             return
         self._last_events_snapshot = snapshot
-        critical: list[str] = []
-        progress: list[str] = []
-        details:  list[str] = []
-        for entry in display:
-            zone = self._classify_event_zone(entry)
-            if zone == "critical":
-                critical.append(entry)
-            elif zone == "progress":
-                progress.append(entry)
-            else:
-                details.append(entry)
-        self._events_critical.delete(0, "end")
-        self._events_progress.delete(0, "end")
-        self._events_detail.delete(0, "end")
-        for e in critical[:30]:
-            self._events_critical.insert("end", e)
-        for e in progress[:30]:
-            self._events_progress.insert("end", e)
-        for e in details[:50]:
-            self._events_detail.insert("end", e)
+        # Keep classification and widget writes separate for readability.
+        critical, progress, details = self._partition_events_by_zone(display)
+        self._replace_events_list(self._events_critical, critical[:30])
+        self._replace_events_list(self._events_progress, progress[:30])
+        self._replace_events_list(self._events_detail, details[:50])
         if critical:
             self._events_critical.see("end")
         if progress:
@@ -539,6 +524,27 @@ class ScanPage(ttk.Frame):
         if details:
             self._events_detail.see("end")
         self._details_toggle_var.set(f"Show details ({len(details)})")
+
+    def _partition_events_by_zone(self, entries: list[str]) -> tuple[list[str], list[str], list[str]]:
+        """Split events into critical/progress/detail buckets."""
+        critical: list[str] = []
+        progress: list[str] = []
+        details: list[str] = []
+        for entry in entries:
+            zone = self._classify_event_zone(entry)
+            if zone == "critical":
+                critical.append(entry)
+            elif zone == "progress":
+                progress.append(entry)
+            else:
+                details.append(entry)
+        return critical, progress, details
+
+    def _replace_events_list(self, widget: tk.Listbox, rows: list[str]) -> None:
+        """Full replace keeps listboxes in sync with current projection snapshot."""
+        widget.delete(0, "end")
+        for row in rows:
+            widget.insert("end", row)
 
     def _classify_event_zone(self, entry: str) -> str:
         text = (entry or "").lower()
