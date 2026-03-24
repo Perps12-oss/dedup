@@ -13,14 +13,32 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import traceback
 from pathlib import Path
 
 
-def run_gui():
+def run_gui(ui_backend: str = "ttk"):
     """Run the graphical interface."""
-    from dedup.ui import DedupApp
+    if ui_backend == "ctk":
+        try:
+            from dedup.ui.ctk_app import CerebroCTKApp
+        except ImportError:
+            print("Error: CustomTkinter backend requested but dependency is missing.")
+            print("Install with: pip install customtkinter")
+            sys.exit(1)
+        try:
+            app = CerebroCTKApp()
+            app.run()
+        except Exception as ex:
+            print("CTK backend failed during startup/runtime.")
+            print(f"{type(ex).__name__}: {ex}")
+            print(traceback.format_exc())
+            raise
+        return
 
+    from dedup.ui import DedupApp
     app = DedupApp()
     app.run()
 
@@ -84,6 +102,12 @@ Examples:
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
 
     parser.add_argument("--version", action="version", version="%(prog)s 1.0.0")
+    parser.add_argument(
+        "--ui-backend",
+        choices=["ttk", "ctk"],
+        default=os.environ.get("DEDUP_UI_BACKEND", "ttk"),
+        help="GUI backend to launch (default: ttk; experimental: ctk)",
+    )
 
     args = parser.parse_args()
 
@@ -108,7 +132,7 @@ Examples:
     if args.path:
         run_cli_scan(args.path, min_size, args.verbose)
     else:
-        run_gui()
+        run_gui(ui_backend=args.ui_backend)
 
 
 if __name__ == "__main__":

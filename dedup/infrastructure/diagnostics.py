@@ -34,6 +34,7 @@ class DiagnosticEntry:
     message: str
     detail: str = ""
     timestamp: float = field(default_factory=time.monotonic)
+    wall_time: float = field(default_factory=time.time)
 
 
 class DiagnosticsRecorder:
@@ -65,7 +66,15 @@ class DiagnosticsRecorder:
         )
         with self._lock:
             self._counts[category] += 1
-            self._entries.append(DiagnosticEntry(category=category, message=message, detail=detail))
+            self._entries.append(
+                DiagnosticEntry(
+                    category=category,
+                    message=message,
+                    detail=detail,
+                    timestamp=time.monotonic(),
+                    wall_time=time.time(),
+                )
+            )
             if len(self._entries) > self._max_entries:
                 self._entries.pop(0)
 

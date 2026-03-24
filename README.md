@@ -4,6 +4,7 @@ Duplicate-aware scanning and the **CEREBRO** Tk operations shell (Mission, Scan,
 The shell uses `ttkbootstrap` theming and UI-thread-marshaled store updates for safer Tk rendering under background scan activity.
 
 **Install, usage, and feature overview:** [docs/README.md](docs/README.md)
+Launch experimental CTK shell with `python -m dedup --ui-backend ctk` (or `DEDUP_UI_BACKEND=ctk`) after `pip install -r requirements-ctk.txt`.
 
 **Contributing & tooling:** [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)
 

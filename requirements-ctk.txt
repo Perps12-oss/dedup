@@ -1,0 +1,3 @@
+# Optional: experimental CustomTkinter UI (--ui-backend ctk)
+# Install: pip install -r requirements-ctk.txt
+customtkinter>=5.2.0

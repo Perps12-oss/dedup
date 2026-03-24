@@ -44,6 +44,8 @@ python -m dedup
 
 ```bash
 python -m dedup
+# Experimental CustomTkinter shell
+python -m dedup --ui-backend ctk
 ```
 
 ### CLI
