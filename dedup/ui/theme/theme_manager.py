@@ -168,6 +168,15 @@ class ThemeManager:
         style.configure(
             "TProgressbar", background=acc, troughcolor=elev, bordercolor=bsoft, lightcolor=acc, darkcolor=acc
         )
+        style.configure(
+            "Thick.Horizontal.TProgressbar",
+            background=acc,
+            troughcolor=elev,
+            bordercolor=bsoft,
+            lightcolor=acc,
+            darkcolor=acc,
+            thickness=14,
+        )
         style.configure("TNotebook", background=bg, bordercolor=bsoft, tabmargins=0)
         style.configure("TNotebook.Tab", background=panel, foreground=fg2, padding=[12, 4], bordercolor=bsoft)
 
@@ -245,7 +254,18 @@ class ThemeManager:
             padding=[16, 10],
             font=font_tuple("body_bold"),
         )
-        style.map("Danger.TButton", background=[("active", t.get("danger_hover", danger))])
+        style.map(
+            "Danger.TButton",
+            background=[
+                ("active", t.get("danger_hover", danger)),
+                ("disabled", danger),
+            ],
+            foreground=[("disabled", bg)],
+            bordercolor=[
+                ("active", t.get("danger_hover", danger)),
+                ("disabled", danger),
+            ],
+        )
 
         style.configure(
             "Ghost.TButton",

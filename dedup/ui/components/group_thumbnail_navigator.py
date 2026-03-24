@@ -27,6 +27,17 @@ CELL_W = 108
 CELL_H = 118
 
 
+def _safe_int_for_display(obj, attr: str, default: int = 0) -> int:
+    try:
+        return int(getattr(obj, attr, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _fmt_group_size(obj) -> str:
+    return fmt_bytes(_safe_int_for_display(obj, "group_size", 0))
+
+
 class GroupThumbnailNavigator(ttk.Frame):
     """Scrollable 2-column thumbnail grid with windowed rendering."""
 
@@ -200,7 +211,7 @@ class GroupThumbnailNavigator(ttk.Frame):
         ).grid(row=1, column=0, sticky="w")
         ttk.Label(
             wrap,
-            text=f"{fmt_bytes(ge.group_size)} · {ge.file_count} files",
+            text=f"{_fmt_group_size(ge)} · {_safe_int_for_display(ge, 'file_count', 0)} files",
             style="Panel.Muted.TLabel",
             font=("Segoe UI", 7),
         ).grid(row=2, column=0, sticky="w")

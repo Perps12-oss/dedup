@@ -37,7 +37,7 @@ class StatusStrip(tk.Frame):
         self._apply_colors(self._tm.tokens)
 
     def _build(self) -> None:
-        self._sep = tk.Frame(self, height=1)
+        self._sep = tk.Frame(self, height=3)
         self._sep.pack(fill="x")
 
         row = tk.Frame(self)

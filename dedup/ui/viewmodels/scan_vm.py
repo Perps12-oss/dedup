@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 
 from ..projections.compatibility_projection import EMPTY_COMPAT, CompatibilityProjection
 from ..projections.metrics_projection import EMPTY_METRICS, MetricsProjection
-from ..projections.phase_projection import PhaseProjection, initial_phase_map
+from ..projections.phase_projection import PhaseProjection, canonical_phase, initial_phase_map
 from ..projections.session_projection import EMPTY_SESSION, SessionProjection
 
 
@@ -173,10 +173,26 @@ class ScanVM:
             sm.run_mode = "incremental"
 
         pm = self.phase_metrics
-        if proj.current_phase_name:
-            pm.phase_name = proj.current_phase_name
-        pm.completed_units = int(proj.current_phase_rows_processed or 0)
-        pm.total_units = int(proj.current_phase_total_units) if proj.current_phase_total_units is not None else None
+        incoming_raw = (proj.current_phase_name or "").strip()
+        nc = int(proj.current_phase_rows_processed or 0)
+        tu = int(proj.current_phase_total_units) if proj.current_phase_total_units is not None else None
+
+        inc_c = canonical_phase(incoming_raw) if incoming_raw else ""
+        prev_c = canonical_phase(pm.phase_name) if (pm.phase_name or "").strip() else ""
+
+        if incoming_raw and inc_c and prev_c and inc_c != prev_c:
+            pm.phase_name = incoming_raw
+            pm.completed_units = nc
+            pm.total_units = tu
+        elif incoming_raw:
+            pm.phase_name = incoming_raw
+            pm.completed_units = max(pm.completed_units, nc)
+            if tu is not None:
+                pm.total_units = tu
+        else:
+            pm.completed_units = max(pm.completed_units, nc)
+            if tu is not None:
+                pm.total_units = tu
         pm.elapsed_phase_s = float(proj.current_phase_elapsed_s or 0.0)
         pm.current_item_label = proj.current_file or ""
         if proj.current_phase_name:

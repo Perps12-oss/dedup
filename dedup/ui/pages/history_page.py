@@ -7,7 +7,7 @@ Layout:
   Row 2: Session table (full-width)
   Row 3: Session detail panel
 
-UI Refactor (v2): Aligned to shared 8px design system.
+UI Refactor (v4): Aligned to shared 8px design system.
   - Header: stacked title_block with Refresh button top-right (standard pattern).
   - Summary cards: _GAP_XS padding instead of hardcoded 4px.
   - Table toolbar: _GAP_MD gap between filter checkboxes, _GAP_SM bottom gap.
