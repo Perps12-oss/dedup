@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tkinter import colorchooser, filedialog, messagebox, ttk
 from typing import Callable, List, Optional, Tuple
+import ttkbootstrap as tb
 
 from ..theme.contrast import contrast_ratio, format_ratio, passes_aa_normal
 from ..theme.design_system import font_tuple
@@ -90,10 +91,10 @@ class ThemePage(ttk.Frame):
 
         ctk_row = ttk.Frame(right)
         ctk_row.grid(row=2, column=0, sticky="ew", pady=(0, _S(2)))
-        ttk.Button(
+        tb.Button(
             ctk_row,
             text="Optional CustomTkinter preview…",
-            style="Ghost.TButton",
+            bootstyle="secondary",
             command=self._open_ctk_preview,
         ).pack(side="left")
 
@@ -134,13 +135,13 @@ class ThemePage(ttk.Frame):
         self._stops_inner.pack(fill="x")
         gbtns = ttk.Frame(gf)
         gbtns.pack(fill="x", pady=(_S(2), 0))
-        ttk.Button(gbtns, text="Add stop", style="Ghost.TButton", command=self._add_gradient_stop).pack(
+        tb.Button(gbtns, text="Add stop", bootstyle="secondary", command=self._add_gradient_stop).pack(
             side="left", padx=(0, _S(2))
         )
-        ttk.Button(gbtns, text="Apply", style="Accent.TButton", command=self._apply_gradient).pack(
+        tb.Button(gbtns, text="Apply", bootstyle="primary", command=self._apply_gradient).pack(
             side="left", padx=(0, _S(2))
         )
-        ttk.Button(gbtns, text="Reset to preset", style="Ghost.TButton", command=self._reset_gradient).pack(side="left")
+        tb.Button(gbtns, text="Reset to preset", bootstyle="secondary", command=self._reset_gradient).pack(side="left")
 
         self._working_stops = self._load_editor_stops()
         self._rebuild_stop_rows()
@@ -150,16 +151,16 @@ class ThemePage(ttk.Frame):
         io.grid(row=6, column=0, sticky="ew", pady=(_S(4), 0))
         ior = ttk.Frame(io)
         ior.pack(fill="x")
-        ttk.Button(
+        tb.Button(
             ior,
             text="Export theme JSON…",
-            style="Ghost.TButton",
+            bootstyle="secondary",
             command=self._export_theme_json,
         ).pack(side="left", padx=(0, _S(2)))
-        ttk.Button(
+        tb.Button(
             ior,
             text="Import theme JSON…",
-            style="Ghost.TButton",
+            bootstyle="secondary",
             command=self._import_theme_json,
         ).pack(side="left")
 
@@ -336,14 +337,14 @@ class ThemePage(ttk.Frame):
             sp.bind("<Return>", lambda e, idx=i, v=var: self._spin_pos_commit(idx, v))
             chip = tk.Label(row, text="   ", width=4, background=col, relief="solid", borderwidth=1)
             chip.pack(side="left", padx=(0, _S(2)))
-            ttk.Button(
-                row, text="Color…", style="Ghost.TButton", command=lambda idx=i: self._pick_stop_color(idx)
+            tb.Button(
+                row, text="Color…", bootstyle="secondary", command=lambda idx=i: self._pick_stop_color(idx)
             ).pack(side="left", padx=(0, _S(2)))
             rm_state = "disabled" if len(self._working_stops) <= 2 else "normal"
-            ttk.Button(
+            tb.Button(
                 row,
                 text="Remove",
-                style="Ghost.TButton",
+                bootstyle="secondary",
                 command=lambda idx=i: self._remove_stop(idx),
                 state=rm_state,
             ).pack(side="left")

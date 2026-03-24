@@ -27,7 +27,7 @@ setup(
         ],
     },
     install_requires=[
-        # Core has no required dependencies - uses standard library only
+        "ttkbootstrap",
     ],
     extras_require={
         "recommended": [

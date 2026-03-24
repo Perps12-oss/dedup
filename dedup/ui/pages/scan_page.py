@@ -29,6 +29,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional
+import ttkbootstrap as tb
 
 from ...engine.models import ScanProgress, ScanResult
 from ...orchestration.coordinator import ScanCoordinator
@@ -592,17 +593,17 @@ class ScanPage(ttk.Frame):
         # Action buttons — right-aligned, vertically centred in header
         btn_group = ttk.Frame(hdr)
         btn_group.grid(row=0, column=2, rowspan=2, sticky="e", padx=(_GAP_MD, 0))
-        self._cancel_btn = ttk.Button(
+        self._cancel_btn = tb.Button(
             btn_group,
             text=f"{IC.STOPPED}  Cancel",
-            style="Ghost.TButton",
+            bootstyle="secondary",
             command=self._on_cancel,
         )
         self._cancel_btn.pack(side="left")
-        self._go_to_review_btn = ttk.Button(
+        self._go_to_review_btn = tb.Button(
             btn_group,
             text=f"{IC.REVIEW}  Review Results",
-            style="Accent.TButton",
+            bootstyle="primary",
             command=self._on_go_to_review,
         )
         self._go_to_review_btn.pack(side="left", padx=(_GAP_SM, 0))
@@ -639,22 +640,22 @@ class ScanPage(ttk.Frame):
         ).pack(anchor="w")
         _ibtn = ttk.Frame(self._interrupt_banner, style="Panel.TFrame")
         _ibtn.pack(anchor="w", pady=(_GAP_XS, 0))
-        ttk.Button(
+        tb.Button(
             _ibtn,
             text="Resume",
-            style="Accent.TButton",
+            bootstyle="primary",
             command=self._on_resume_interrupted,
         ).pack(side="left", padx=(0, _GAP_SM))
-        ttk.Button(
+        tb.Button(
             _ibtn,
             text="Restart",
-            style="Ghost.TButton",
+            bootstyle="secondary",
             command=self._on_restart_interrupted,
         ).pack(side="left", padx=(0, _GAP_SM))
-        ttk.Button(
+        tb.Button(
             _ibtn,
             text="Dismiss",
-            style="Ghost.TButton",
+            bootstyle="secondary",
             command=self._on_dismiss_interrupt,
         ).pack(side="left")
         self._interrupt_banner.grid_remove()
@@ -766,10 +767,10 @@ class ScanPage(ttk.Frame):
             target_row,
             textvariable=self._target_path_var,
         ).grid(row=0, column=0, sticky="ew", padx=(0, _GAP_SM), ipady=_GAP_XS)
-        ttk.Button(
+        tb.Button(
             target_row,
             text="Browse…",
-            style="Ghost.TButton",
+            bootstyle="secondary",
             command=self._on_browse_target,
         ).grid(row=0, column=1)
 
@@ -796,22 +797,22 @@ class ScanPage(ttk.Frame):
         actions.columnconfigure(0, weight=1)
         actions.columnconfigure(1, weight=1)
         actions.columnconfigure(2, weight=1)
-        ttk.Button(
+        tb.Button(
             actions,
             text=f"{IC.SCAN}  Start Scan",
-            style="Accent.TButton",
+            bootstyle="success",
             command=self._on_start_from_target,
         ).grid(row=0, column=0, sticky="ew", padx=(0, _GAP_SM), ipady=_GAP_SM)
-        ttk.Button(
+        tb.Button(
             actions,
             text=f"{IC.RESUME}  Resume",
-            style="Ghost.TButton",
+            bootstyle="primary",
             command=self._on_resume_interrupted,
         ).grid(row=0, column=1, sticky="ew", padx=(0, _GAP_SM), ipady=_GAP_SM)
-        ttk.Button(
+        tb.Button(
             actions,
             text=f"{IC.STOPPED}  Cancel",
-            style="Ghost.TButton",
+            bootstyle="secondary",
             command=self._on_cancel,
         ).grid(row=0, column=2, sticky="ew", ipady=_GAP_SM)
 
@@ -1012,10 +1013,10 @@ class ScanPage(ttk.Frame):
         ctrl.grid(row=4, column=0, sticky="ew", pady=(_GAP_MD, _GAP_XS))
         self._details_visible    = tk.BooleanVar(value=False)
         self._details_toggle_var = tk.StringVar(value="Show details (0)")
-        ttk.Button(
+        tb.Button(
             ctrl,
             textvariable=self._details_toggle_var,
-            style="Ghost.TButton",
+            bootstyle="secondary",
             command=self._toggle_details,
         ).pack(side="left")
 

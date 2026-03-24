@@ -19,6 +19,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import Callable, Optional
+import ttkbootstrap as tb
 
 from ..components import SectionCard
 from ..theme.design_system import font_tuple
@@ -423,16 +424,16 @@ class SettingsPage(ttk.Frame):
         # Action buttons
         btn_frame = ttk.Frame(body, style="Panel.TFrame")
         btn_frame.grid(row=2, column=0, sticky="ew")
-        ttk.Button(
+        tb.Button(
             btn_frame,
             text="Reset to Defaults",
-            style="Ghost.TButton",
+            bootstyle="secondary",
             command=self._on_reset,
         ).pack(side="left", padx=(0, _GAP_SM))
-        ttk.Button(
+        tb.Button(
             btn_frame,
             text="Export Settings",
-            style="Ghost.TButton",
+            bootstyle="secondary",
             command=self._on_export,
         ).pack(side="left")
 

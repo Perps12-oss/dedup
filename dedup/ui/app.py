@@ -15,6 +15,7 @@ from __future__ import annotations
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
+import ttkbootstrap as tb
 
 try:
     from tkinterdnd2 import TkinterDnD  # type: ignore
@@ -103,7 +104,7 @@ class CerebroApp:
         if TkinterDnD is not None:
             self.root = TkinterDnD.Tk()
         else:
-            self.root = tk.Tk()
+            self.root = tb.Window(themename="darkly")
 
         self.root.title(f"{self.APP_NAME} Dedup Engine v{self.APP_VERSION}")
         self.root.minsize(self.MIN_WIDTH, self.MIN_HEIGHT)

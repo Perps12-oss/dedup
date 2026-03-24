@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Optional
+import ttkbootstrap as tb
 
 from ...infrastructure.diagnostics import get_diagnostics_recorder
 from ...orchestration.coordinator import ScanCoordinator
@@ -117,10 +118,10 @@ class DiagnosticsPage(ttk.Frame):
             font=font_tuple("page_subtitle"),
         ).pack(side="top", anchor="w", pady=(_GAP_XS, 0))
 
-        ttk.Button(
+        tb.Button(
             hdr,
             text=f"{IC.REFRESH} Refresh",
-            style="Ghost.TButton",
+            bootstyle="secondary",
             command=self._refresh,
         ).grid(row=0, column=2, sticky="e", padx=(_GAP_MD, 0))
 

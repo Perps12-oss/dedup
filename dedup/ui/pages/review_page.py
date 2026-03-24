@@ -29,6 +29,7 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Callable, Optional
+import ttkbootstrap as tb
 
 from ...engine.models import DeletionPlan, DeletionResult, ScanResult
 from ...orchestration.coordinator import ScanCoordinator
@@ -336,11 +337,10 @@ class ReviewPage(ttk.Frame):
         for i, (state_key, label) in enumerate(chip_specs):
             chips.columnconfigure(i, weight=1)
             var           = tk.StringVar(value=label)
-            initial_style = "Accent.TButton" if state_key == "all" else "Ghost.TButton"
-            btn = ttk.Button(
+            btn = tb.Button(
                 chips,
                 textvariable=var,
-                style=initial_style,
+                bootstyle="primary" if state_key == "all" else "secondary",
                 command=lambda s=state_key: self._set_state_filter(s),
             )
             btn.grid(
@@ -420,10 +420,10 @@ class ReviewPage(ttk.Frame):
             justify="left",
         ).grid(row=0, column=0, sticky="w", padx=(0, _GAP_MD))
 
-        self._workspace_delete_btn = ttk.Button(
+        self._workspace_delete_btn = tb.Button(
             footer,
             text="DELETE — select keep files to enable",
-            style="Danger.TButton",
+            bootstyle="danger",
             command=self._on_execute_intent,
             state="disabled",
         )
@@ -462,16 +462,16 @@ class ReviewPage(ttk.Frame):
         ).grid(row=2, column=0, sticky="w", pady=(0, _GAP_SM))
 
         # Action buttons — full-width stacked
-        ttk.Button(
+        tb.Button(
             body,
             text="Apply to Group",
-            style="Accent.TButton",
+            bootstyle="primary",
             command=self._on_apply_smart_rule_intent,
         ).grid(row=3, column=0, sticky="ew", pady=(0, _GAP_XS))
-        ttk.Button(
+        tb.Button(
             body,
             text="Reset defaults",
-            style="Ghost.TButton",
+            bootstyle="secondary",
             command=self._on_clear_smart_rule_intent,
         ).grid(row=4, column=0, sticky="ew")
 
@@ -676,7 +676,7 @@ class ReviewPage(ttk.Frame):
         self._active_chip_key = state_key
         # Update chip button styles
         for key, btn in self._chip_buttons.items():
-            btn.configure(style="Accent.TButton" if key == state_key else "Ghost.TButton")
+            btn.configure(bootstyle="primary" if key == state_key else "secondary")
         self.vm.filter_state = state_key
         self._refresh_group_list()
 
@@ -1008,21 +1008,22 @@ class ReviewPage(ttk.Frame):
 
         footer = ttk.Frame(dlg, padding=(_GAP_LG, _GAP_SM, _GAP_LG, _GAP_MD))
         footer.pack(fill="x")
-        ttk.Button(
+        tb.Button(
             footer,
             text="Cancel",
+            bootstyle="secondary",
             command=lambda: _done("cancel"),
         ).pack(side="left")
-        ttk.Button(
+        tb.Button(
             footer,
             text="Preview Effects",
-            style="Ghost.TButton",
+            bootstyle="info",
             command=lambda: _done("preview"),
         ).pack(side="left", padx=(_GAP_SM, 0))
-        ttk.Button(
+        tb.Button(
             footer,
             text="DELETE",
-            style="Danger.TButton",
+            bootstyle="danger",
             command=lambda: _done("delete"),
         ).pack(side="right")
 
