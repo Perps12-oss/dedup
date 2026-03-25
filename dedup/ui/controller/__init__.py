@@ -1,8 +1,8 @@
 """
-UI controller — handles intents and delegates to coordinator/services.
+UI controller — handles intents and delegates to application services (not orchestration directly).
 
-ScanController: handles StartScan, StartResume, CancelScan; drives scan intent lifecycle.
-ReviewController: handles SetKeep, ClearKeep, PreviewDeletion, ExecuteDeletion.
+ScanController: StartScan, StartResume, CancelScan; scan intent lifecycle in store.
+ReviewController: SetKeep, ClearKeep, PreviewDeletion, ExecuteDeletion via ReviewApplicationService.
 """
 
 from .review_controller import IReviewCallbacks, ReviewController

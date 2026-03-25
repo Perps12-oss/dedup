@@ -10,19 +10,19 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-from ...orchestration.coordinator import ScanCoordinator
+from ...application.services import ScanApplicationService
 from ..state.store import IntentLifecycle, UIStateStore
 
 
 class ScanController:
     """
     Handles scan commands. Updates store intent lifecycle (accepted/completed/failed);
-    delegates start/cancel to coordinator. Callbacks (on_progress, on_complete, on_error)
+    delegates start/cancel to ScanApplicationService. Callbacks (on_progress, on_complete, on_error)
     are passed at invoke time from the page.
     """
 
-    def __init__(self, coordinator: ScanCoordinator, store: UIStateStore):
-        self._coordinator = coordinator
+    def __init__(self, scan_service: ScanApplicationService, store: UIStateStore):
+        self._scan = scan_service
         self._store = store
 
     def _post_to_ui(self, fn: Callable[[], None]) -> None:
@@ -54,8 +54,8 @@ class ScanController:
             )
             self._post_to_ui(lambda: on_error(err))
 
-        return self._coordinator.start_scan(
-            roots=[path],
+        return self._scan.start_scan(
+            [path],
             on_progress=on_progress,
             on_complete=_on_complete,
             on_error=_on_error,
@@ -88,8 +88,8 @@ class ScanController:
             )
             self._post_to_ui(lambda: on_error(err))
 
-        return self._coordinator.start_scan(
-            roots=[],
+        return self._scan.start_scan(
+            [],
             resume_scan_id=scan_id,
             on_progress=on_progress,
             on_complete=_on_complete,
@@ -100,11 +100,8 @@ class ScanController:
     def handle_cancel(self) -> None:
         """Cancel current scan; set intent idle and delegate to coordinator."""
         self._post_to_ui(lambda: self._store.set_intent_lifecycle(IntentLifecycle(status="idle", intent_type="scan")))
-        self._coordinator.cancel_scan()
+        self._scan.cancel_scan()
 
     def get_resumable_scan_ids(self) -> list[str]:
         """Expose resumable scans for interruption zero-state actions."""
-        try:
-            return list(self._coordinator.get_resumable_scan_ids() or [])
-        except Exception:
-            return []
+        return self._scan.get_resumable_scan_ids()

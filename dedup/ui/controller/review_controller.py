@@ -1,8 +1,8 @@
 """
-ReviewController — handles review intents from store + coordinator only.
+ReviewController — handles review intents from store + ReviewApplicationService only.
 
 ReviewPage and SafetyPanel emit intents; controller updates store (review selection)
-and uses coordinator for plan/execute. UI refresh is via a single callbacks interface
+and uses application services for plan/execute. UI refresh is via a single callbacks interface
 (no page reference, no lambdas closing over page internals).
 """
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional, Protocol
 
-from ...orchestration.coordinator import ScanCoordinator
+from ...application.services import ReviewApplicationService
 from ..state.selectors import review_selection
 from ..state.store import ReviewSelectionState, UIStateStore
 from ..utils.formatting import fmt_bytes
@@ -30,18 +30,18 @@ class IReviewCallbacks(Protocol):
 
 class ReviewController:
     """
-    Handles review intents. Fed from store and coordinator only.
+    Handles review intents. Fed from store and ReviewApplicationService only.
     Takes a single callbacks object (IReviewCallbacks); no page reference.
     """
 
     def __init__(
         self,
-        coordinator: ScanCoordinator,
+        review_service: ReviewApplicationService,
         store: UIStateStore,
         callbacks: IReviewCallbacks,
         toast_notify: Optional[Callable[[str, int], None]] = None,
     ):
-        self._coordinator = coordinator
+        self._review = review_service
         self._store = store
         self._cb = callbacks
         self._toast_notify = toast_notify
@@ -166,7 +166,7 @@ class ReviewController:
         if not result:
             self._cb.set_preview_result("No scan result.")
             return
-        plan = self._coordinator.create_deletion_plan(
+        plan = self._review.create_deletion_plan(
             result,
             keep_strategy="first",
             group_keep_paths=keep_paths or None,
@@ -198,7 +198,7 @@ class ReviewController:
         if not result:
             messagebox.showinfo("Delete", "No scan result.")
             return
-        plan = self._coordinator.create_deletion_plan(
+        plan = self._review.create_deletion_plan(
             result,
             keep_strategy="first",
             group_keep_paths=keep_paths or None,
@@ -210,7 +210,10 @@ class ReviewController:
             from ...engine.deletion import preview_deletion
 
             prev = preview_deletion(plan)
-        except Exception:
+        except Exception as e:
+            import logging
+
+            logging.getLogger(__name__).warning("preview_deletion (execute path) failed: %s", e)
             prev = {"total_files": "?", "human_readable_size": "?"}
         if self._toast_notify:
             self._toast_notify(
@@ -228,7 +231,7 @@ class ReviewController:
         if self._toast_notify:
             self._toast_notify(f"Deleting {n_files} files ({size_h})…", 3800)
         self._cb.on_execute_start()
-        result_out = self._coordinator.execute_deletion(plan)
+        result_out = self._review.execute_deletion(plan)
         deleted_n = len(result_out.deleted_files)
         failed_n = len(result_out.failed_files)
         reclaimed = getattr(result_out, "bytes_reclaimed", 0) or 0

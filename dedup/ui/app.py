@@ -23,6 +23,7 @@ except Exception:
     TkinterDnD = None
 
 from .. import __version__
+from ..application.runtime import ApplicationRuntime
 from ..engine.models import DeletionResult, ScanResult
 from ..infrastructure.config import load_config, save_config
 from ..orchestration.coordinator import ScanCoordinator
@@ -173,8 +174,9 @@ class CerebroApp:
         self._toast = ToastManager(self.root)
         self._last_scan_toast_id: str | None = None
 
-        # ── Coordinator ───────────────────────────────────────────────
+        # ── Coordinator + application facades (UI uses services via controllers) ──
         self.coordinator = ScanCoordinator()
+        self._runtime = ApplicationRuntime(self.coordinator)
 
         # ── Apply initial theme (density affects ttk font sizes / Treeview row height)
         design_system.set_ui_density(self.state.settings.density or "comfortable")
@@ -288,7 +290,7 @@ class CerebroApp:
         self.shell.register_page("mission", self._mission)
         self._mission.attach_store(self.store)
 
-        self._scan_controller = ScanController(self.coordinator, self.store)
+        self._scan_controller = ScanController(self._runtime.scan, self.store)
         self._scan = ScanPage(
             content,
             on_complete=self._on_scan_complete,
@@ -307,7 +309,7 @@ class CerebroApp:
             store=self.store,
         )
         self._review_controller = ReviewController(
-            self.coordinator,
+            self._runtime.review,
             self.store,
             callbacks=self._review,
             toast_notify=lambda msg, ms: self._toast.show(msg, ms=ms),
