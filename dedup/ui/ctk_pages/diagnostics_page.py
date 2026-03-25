@@ -41,6 +41,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
     ) -> None:
         super().__init__(parent, **kwargs)
         self._coordinator = coordinator
+        self._store: Any | None = None
         self._selected_session_id: Optional[str] = None
         self._history_cache: list[dict[str, Any]] = []  # Cache for performance
         self._history_lookup: dict[str, dict[str, Any]] = {}  # Fast lookup by scan_id
@@ -48,6 +49,14 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(3, weight=1)
         self._build()
+
+    def attach_store(self, store: Any) -> None:
+        """Attach shared UI store for API parity with other pages.
+
+        DiagnosticsPageCTK currently pulls runtime/session data from the coordinator,
+        but `ctk_app.py` expects every page to expose `attach_store`.
+        """
+        self._store = store
 
     def _build(self) -> None:
         # Header
@@ -64,6 +73,19 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
         
         # Load initial data
         self.reload()
+
+    def apply_theme_tokens(self, tokens: dict) -> None:
+        panel = str(tokens.get("bg_panel", "#161b22"))
+        acc = str(tokens.get("accent_primary", "#3B8ED0"))
+        elev = str(tokens.get("bg_elevated", "#21262d"))
+        for name in ("_diag_status_frame", "_diag_overview_frame", "_diag_tab_container"):
+            fr = getattr(self, name, None)
+            if fr is not None:
+                fr.configure(fg_color=panel)
+        if hasattr(self, "_refresh_diag_btn"):
+            self._refresh_diag_btn.configure(fg_color=acc)
+        if hasattr(self, "_export_diag_btn"):
+            self._export_diag_btn.configure(fg_color=elev)
 
     def _build_header(self) -> None:
         header = ctk.CTkFrame(self, fg_color="transparent")
@@ -87,23 +109,26 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
         actions = ctk.CTkFrame(header, fg_color="transparent")
         actions.grid(row=0, column=1, sticky="e", padx=(0, 20))
         
-        ctk.CTkButton(
+        self._refresh_diag_btn = ctk.CTkButton(
             actions,
             text="Refresh",
             width=100,
             command=self.reload,
-        ).pack(side="left", padx=(0, 8))
-        
-        ctk.CTkButton(
+        )
+        self._refresh_diag_btn.pack(side="left", padx=(0, 8))
+
+        self._export_diag_btn = ctk.CTkButton(
             actions,
             text="Export JSON",
             width=120,
             fg_color=("gray35", "gray50"),
             command=self._export_json,
-        ).pack(side="left")
+        )
+        self._export_diag_btn.pack(side="left")
 
     def _build_runtime_status(self) -> None:
         status = ctk.CTkFrame(self, corner_radius=12)
+        self._diag_status_frame = status
         status.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 12))
         status.grid_columnconfigure(0, weight=1)
         
@@ -151,6 +176,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
     def _build_session_overview(self) -> None:
         overview = ctk.CTkFrame(self, corner_radius=12)
+        self._diag_overview_frame = overview
         overview.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 12))
         overview.grid_columnconfigure(0, weight=1)
         
@@ -207,6 +233,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
     def _build_tabbed_content(self) -> None:
         # Tab view container
         tab_container = ctk.CTkFrame(self, corner_radius=12)
+        self._diag_tab_container = tab_container
         tab_container.grid(row=3, column=0, sticky="nsew", padx=20, pady=(0, 20))
         tab_container.grid_columnconfigure(0, weight=1)
         
@@ -323,7 +350,13 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
         ).grid(row=0, column=1, sticky="e", padx=(8, 0))
         
         # Events log
-        self._events_scroll = ctk.CTkTextbox(self._tab_content, wrap="word")
+        self._events_scroll = ctk.CTkTextbox(
+            self._tab_content,
+            wrap="word",
+            # Use fixed hex colors so CTk theme switching doesn't remap "grayXX" token names.
+            fg_color=("#F3F4F6", "#11151d"),
+            text_color=("#111827", "#E5E7EB"),
+        )
         self._events_scroll.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 12))
 
     def _build_artifacts_content(self) -> None:
@@ -406,6 +439,13 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
     def _populate_phases(self) -> None:
         """Populate the phases table."""
+        # Ensure widget exists - create default tab content if needed
+        if not hasattr(self, '_phases_scroll') or self._phases_scroll is None:
+            # Clear and build phases content first
+            for widget in self._tab_content.winfo_children():
+                widget.destroy()
+            self._build_phases_content()
+            
         # Clear existing content
         for widget in self._phases_scroll.winfo_children():
             widget.destroy()
@@ -427,6 +467,12 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
     def _populate_events(self) -> None:
         """Populate the events log."""
+        # Ensure widget exists
+        if not hasattr(self, '_events_scroll') or self._events_scroll is None:
+            for widget in self._tab_content.winfo_children():
+                widget.destroy()
+            self._build_events_content()
+            
         # Clear existing content
         self._events_scroll.delete("1.0", "end")
         
@@ -450,6 +496,12 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
     def _populate_artifacts(self) -> None:
         """Populate the artifacts listing."""
+        # Ensure widget exists
+        if not hasattr(self, '_artifacts_scroll') or self._artifacts_scroll is None:
+            for widget in self._tab_content.winfo_children():
+                widget.destroy()
+            self._build_artifacts_content()
+            
         # Clear existing content
         for widget in self._artifacts_scroll.winfo_children():
             widget.destroy()
@@ -471,6 +523,12 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
     def _populate_compatibility(self) -> None:
         """Populate the compatibility checks."""
+        # Ensure widget exists
+        if not hasattr(self, '_compat_scroll') or self._compat_scroll is None:
+            for widget in self._tab_content.winfo_children():
+                widget.destroy()
+            self._build_compatibility_content()
+            
         # Clear existing content
         for widget in self._compat_scroll.winfo_children():
             widget.destroy()

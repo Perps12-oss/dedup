@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import math
 import tkinter as tk
-from typing import List, Optional, Sequence, Tuple
+from typing import Any, List, Optional, Sequence, Tuple
 
 
 def hex_to_rgb(hex_color: str) -> Tuple[int, int, int]:
@@ -85,6 +86,78 @@ def draw_horizontal_gradient(
         x0 = i * step_w
         x1 = x0 + step_w + 1
         canvas.create_rectangle(x0, 0, x1, height, fill=color, outline="", tags="gradient")
+
+
+def cinematic_chrome_color(tokens: dict[str, Any], *, reduced: bool) -> str:
+    """
+    Single hex approximating the gradient wash for CTk surfaces that cannot show a live Canvas through.
+    Strong blend toward gradient_mid / gradient_end so the main column reads gold, not flat grey-blue.
+    """
+    base = str(tokens.get("bg_base", "#0f131c"))
+    gm = str(tokens.get("gradient_mid", tokens.get("accent_primary", base)))
+    ge = str(tokens.get("gradient_end", gm))
+    amt = 0.38 if reduced else 0.64
+    a = lerp_color(base, gm, amt)
+    return lerp_color(a, ge, 0.26)
+
+
+def paint_cinematic_backdrop(
+    canvas: tk.Canvas,
+    width: int,
+    height: int,
+    tokens: dict[str, Any],
+    *,
+    reduced: bool,
+) -> None:
+    """
+    Full-area Tk Canvas fill: multi-stop gold / accent wash blended into bg_base.
+    Used behind an inset CTk shell (Spine 2) — gradient shows in the outer margin.
+    """
+    canvas.delete("backdrop")
+    w = max(2, int(width))
+    h = max(2, int(height))
+    base = str(tokens.get("bg_base", "#0f131c"))
+    canvas.configure(bg=base)
+
+    if reduced:
+        gmid = str(tokens.get("gradient_mid", base))
+        c_top = lerp_color(base, gmid, 0.18)
+        c_bot = lerp_color(base, gmid, 0.10)
+        draw_vertical_gradient(canvas, w, h, c_top, c_bot, steps=56)
+        return
+
+    stops_raw = tokens.get("_multi_gradient_stops")
+    stops: List[Tuple[float, str]] | None = None
+    if isinstance(stops_raw, list) and len(stops_raw) >= 2:
+        norm: List[Tuple[float, str]] = []
+        for item in stops_raw:
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                try:
+                    norm.append((float(item[0]), str(item[1])))
+                except (TypeError, ValueError):
+                    continue
+        if len(norm) >= 2:
+            stops = sorted(norm, key=lambda x: x[0])
+
+    if stops is None or len(stops) < 2:
+        g0 = str(tokens.get("gradient_start", base))
+        g1 = str(tokens.get("gradient_mid", g0))
+        g2 = str(tokens.get("gradient_end", base))
+        stops = [(0.0, g0), (0.5, g1), (1.0, g2)]
+
+    nbands = max(48, min(96, h // 8))
+    band_h = max(1, h // nbands)
+    for i in range(nbands + 2):
+        y0 = i * band_h
+        if y0 >= h:
+            break
+        y1 = min(h, y0 + band_h + 1)
+        uy = ((y0 + y1) * 0.5) / h
+        u_wave = uy * 0.72 + 0.14 * math.sin(uy * math.pi)
+        u_wave = max(0.0, min(1.0, u_wave))
+        sweep = color_at_gradient_position(stops, u_wave)
+        col = lerp_color(base, sweep, 0.84)
+        canvas.create_rectangle(0, y0, w, y1, fill=col, outline="", tags="backdrop")
 
 
 def draw_vertical_gradient(

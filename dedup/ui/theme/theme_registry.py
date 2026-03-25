@@ -43,7 +43,9 @@ THEMES: Dict[str, ThemeDict] = {
     "silver_horizon": SILVER_HORIZON,
 }
 
-DEFAULT_THEME = "cerebro_noir"
+# Default theme for new installs / fresh settings.
+# "Obsidian Gold" is the most premium base for CTK experiments.
+DEFAULT_THEME = "obsidian_gold"
 
 
 def get_theme_names() -> List[str]:

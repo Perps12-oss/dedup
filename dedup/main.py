@@ -40,7 +40,9 @@ def run_gui(ui_backend: str = "ttk"):
             raise
         return
 
-    from dedup.ui import DedupApp
+    # Import the classic app directly to avoid importing `dedup.ui` (which is shared with CTK).
+    from dedup.ui.app import DedupApp
+
     app = DedupApp()
     app.run()
 

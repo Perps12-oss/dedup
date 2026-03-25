@@ -8,6 +8,7 @@ with the classic UI; only widgets differ.
 from __future__ import annotations
 
 from pathlib import Path
+import tkinter as tk
 from tkinter import messagebox
 
 import customtkinter as ctk
@@ -34,6 +35,8 @@ from .state.store import LastScanSummaryState, MissionState, UIStateStore
 from .utils.formatting import fmt_bytes
 from .utils.ui_state import UIState
 from .ctk_shortcuts import CTKShortcutRegistry
+from .theme.theme_manager import parse_gradient_stops_from_raw
+from .theme.gradients import GradientBar, cinematic_chrome_color, paint_cinematic_backdrop
 
 
 class CerebroCTKApp:
@@ -58,7 +61,7 @@ class CerebroCTKApp:
         self.state = UIState()
         self._coordinator = ScanCoordinator()
         self.store = UIStateStore(tk_root=self.root)
-        self.hub = ProjectionHub(event_bus=self.coordinator.event_bus, tk_root=self.root)
+        self.hub = ProjectionHub(event_bus=self._coordinator.event_bus, tk_root=self.root)
         self._hub_store_adapter = ProjectionHubStoreAdapter(self.hub, self.store)
         self._hub_store_adapter.start()
         self.store.set_ui_mode("advanced" if self.state.settings.advanced_mode else "simple")
@@ -66,10 +69,11 @@ class CerebroCTKApp:
         # Theme manager for CTK themes
         from .theme.theme_manager import get_theme_manager
         self._tm = get_theme_manager()
+        self._tm.subscribe(self._on_theme_tokens)
 
         self._toast = ToastManager(self.root)
         self._last_scan_toast_id: str | None = None
-        self._scan_controller = ScanController(self.coordinator, self.store)
+        self._scan_controller = ScanController(self._coordinator, self.store)
 
         self.root.grid_columnconfigure(1, weight=1)
         self.root.grid_rowconfigure(0, weight=1)
@@ -78,18 +82,121 @@ class CerebroCTKApp:
         self._nav_buttons: dict[str, ctk.CTkButton] = {}
         self._active_page: str = "Welcome"
         self._content_host: ctk.CTkFrame | None = None
+        self._nav: ctk.CTkFrame | None = None
+        self._content: ctk.CTkFrame | None = None
+        self._main_stack: tk.Frame | None = None
+        self._cinematic_canvas: tk.Canvas | None = None
         self._default_keep_policy: KeepPolicy = "newest"
         self._post_scan_route: PostScanRoute = "review"
         self._last_scan_mode: ScanMode = "files"
         self._active_scan_id: str = ""
         self._review_controller: ReviewController | None = None
 
+        # Apply persisted theme early so CTk's internal Tk widgets (Canvas in scrollables)
+        # inherit correct defaults and don't "flash white" on repaint.
+        self._apply_theme_from_settings()
+
         self._build_nav()
         self._build_content()
         self._wire_pages()
         self._bind_global_shortcuts()
         self._show_page("Welcome")
+        try:
+            self.root.after(80, self._paint_cinematic_backdrop)
+            self.root.after(300, self._paint_cinematic_backdrop)
+        except Exception:
+            pass
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _apply_theme_from_settings(self) -> None:
+        from .theme.theme_registry import DEFAULT_THEME
+
+        key = (self.state.settings.theme_key or "").strip() or DEFAULT_THEME
+        stops = parse_gradient_stops_from_raw(self.state.settings.custom_gradient_stops)
+        try:
+            # This applies tk defaults via option_add (Canvas/Listbox/etc) which CTk relies on internally.
+            self._tm.apply(key, self.root, gradient_stops=stops, sun_valley=False)
+        except Exception:
+            # Never block app startup on styling.
+            pass
+
+    def _main_chrome_color(self, tokens: dict) -> str:
+        """Solid fill for the main column (must match gradient tokens — CTk cannot show Canvas through)."""
+        return cinematic_chrome_color(
+            tokens,
+            reduced=bool(getattr(self.state.settings, "reduced_gradients", False)),
+        )
+
+    def _on_theme_tokens(self, tokens: dict) -> None:
+        """Apply token changes to CTK surfaces (nav/content)."""
+        try:
+            bg = str(tokens.get("bg_base", "#0f131c"))
+            sidebar = str(tokens.get("bg_sidebar", "#141924"))
+            acc = str(tokens.get("accent_primary", "#3B8ED0"))
+            chrome = self._main_chrome_color(tokens)
+            if hasattr(self, "_top_gradient") and self._top_gradient is not None:
+                try:
+                    self._top_gradient.configure(bg=bg)
+                    # Multi-stop aware (uses tokens["_multi_gradient_stops"] when present)
+                    self._top_gradient.update_from_tokens(tokens)
+                except Exception:
+                    pass
+            # Root background (CTk + underlying Tk)
+            try:
+                self.root.configure(fg_color=bg)
+            except Exception:
+                pass
+            try:
+                self.root.configure(background=bg)
+            except Exception:
+                pass
+            if self._nav is not None:
+                self._nav.configure(fg_color=sidebar)
+            if self._main_stack is not None:
+                try:
+                    self._main_stack.configure(bg=bg)
+                except Exception:
+                    pass
+            self._paint_cinematic_backdrop()
+            # Inset CTk column: solid chrome on top of cinematic margin (not full-bleed CTk over canvas).
+            if self._content is not None:
+                self._content.configure(fg_color=chrome)
+            if self._content_host is not None:
+                self._content_host.configure(fg_color="transparent")
+            for page in self._pages.values():
+                if hasattr(page, "apply_theme_tokens"):
+                    try:
+                        page.apply_theme_tokens(tokens)
+                    except Exception:
+                        pass
+            # Nav buttons: keep selection logic but use accent as base.
+            for name, btn in self._nav_buttons.items():
+                if name == self._active_page:
+                    btn.configure(fg_color=("#2B6CB0", acc))
+                else:
+                    btn.configure(fg_color=("#234E70", "#1f538d"))
+        except Exception:
+            pass
+
+    def _paint_cinematic_backdrop(self, _event: object = None) -> None:
+        """Spine 2: full-area Tk Canvas behind an inset CTk shell (multi-stop wash)."""
+        c = self._cinematic_canvas
+        if c is None:
+            return
+        try:
+            w = max(2, int(c.winfo_width() or 0))
+            h = max(2, int(c.winfo_height() or 0))
+            if w < 8 or h < 8:
+                return
+            paint_cinematic_backdrop(
+                c,
+                w,
+                h,
+                self._tm.tokens,
+                reduced=bool(getattr(self.state.settings, "reduced_gradients", False)),
+            )
+        except Exception:
+            pass
 
     def _toast_notify(self, msg: str, ms: int = 3200) -> None:
         self._toast.show(msg, ms=ms, reduced_motion=bool(self.state.settings.reduced_motion))
@@ -108,7 +215,7 @@ class CerebroCTKApp:
         review = self._pages.get("Review")
         if isinstance(review, ReviewPageCTK):
             self._review_controller = ReviewController(
-                self.coordinator,
+                self._coordinator,
                 self.store,
                 callbacks=review,
                 toast_notify=lambda m, ms: self._toast_notify(m, ms),
@@ -117,15 +224,15 @@ class CerebroCTKApp:
 
     def _push_mission_store(self) -> None:
         try:
-            raw = self.coordinator.get_history(limit=8) or []
+            raw = self._coordinator.get_history(limit=8) or []
         except Exception:
             raw = []
         try:
-            resumable_ids = tuple(self.coordinator.get_resumable_scan_ids() or [])
+            resumable_ids = tuple(self._coordinator.get_resumable_scan_ids() or [])
         except Exception:
             resumable_ids = ()
         try:
-            recent_folders = tuple(self.coordinator.get_recent_folders() or [])[:10]
+            recent_folders = tuple(self._coordinator.get_recent_folders() or [])[:10]
         except Exception:
             recent_folders = ()
         last_scan = None
@@ -162,16 +269,20 @@ class CerebroCTKApp:
 
     def _push_history_store(self) -> None:
         try:
-            proj = build_history_from_coordinator(self.coordinator)
+            proj = build_history_from_coordinator(self._coordinator)
             self.store.set_history(proj)
         except Exception:
             pass
 
     def _build_nav(self) -> None:
-        nav = ctk.CTkFrame(self.root, corner_radius=0, width=220)
+        # Give nav a real background so child widgets never "flash" white.
+        t = self._tm.tokens
+        sidebar = str(t.get("bg_sidebar", "#141924"))
+        nav = ctk.CTkFrame(self.root, corner_radius=0, width=220, fg_color=sidebar)
         nav.grid(row=0, column=0, sticky="nsew")
         nav.grid_rowconfigure(99, weight=1)
         nav.grid_propagate(False)
+        self._nav = nav
 
         ctk.CTkLabel(nav, text="CEREBRO", font=ctk.CTkFont(size=22, weight="bold")).grid(
             row=0, column=0, padx=20, pady=(20, 8), sticky="w"
@@ -202,27 +313,63 @@ class CerebroCTKApp:
             self._nav_buttons[title] = btn
 
     def _build_content(self) -> None:
-        content = ctk.CTkFrame(self.root, corner_radius=0)
-        content.grid(row=0, column=1, sticky="nsew")
+        t = self._tm.tokens
+        bg = str(t.get("bg_base", "#0f131c"))
+        chrome = self._main_chrome_color(t)
+        # Spine 2: tk.Canvas cinematic fill; CTk sits inset so the gradient shows as a real border.
+        rel_inset = 0.058
+        main_stack = tk.Frame(self.root, bg=bg, highlightthickness=0, bd=0)
+        main_stack.grid(row=0, column=1, sticky="nsew")
+        self._main_stack = main_stack
+
+        cnv = tk.Canvas(main_stack, highlightthickness=0, borderwidth=0, bd=0, background=bg)
+        cnv.place(x=0, y=0, relwidth=1.0, relheight=1.0)
+        cnv.bind("<Configure>", self._paint_cinematic_backdrop)
+        self._cinematic_canvas = cnv
+
+        content = ctk.CTkFrame(main_stack, corner_radius=0, fg_color=chrome)
+        content.place(relx=rel_inset, rely=rel_inset, relwidth=1.0 - 2 * rel_inset, relheight=1.0 - 2 * rel_inset)
         content.grid_columnconfigure(0, weight=1)
-        content.grid_rowconfigure(3, weight=1)
+        content.grid_rowconfigure(4, weight=1)
+        self._content = content
+
+        # Premium gradient strip (multi-stop) — updates live from theme tokens.
+        self._top_gradient = GradientBar(
+            content,
+            height=6,
+            color_start=str(t.get("gradient_start", "#1f6feb")),
+            color_end=str(t.get("gradient_end", "#58a6ff")),
+            bg=bg,
+        )
+        self._top_gradient.grid(row=0, column=0, sticky="ew")
+        try:
+            self._top_gradient.update_from_tokens(self._tm.tokens)
+        except Exception:
+            pass
 
         self._title_var = ctk.StringVar(value="Welcome")
         ctk.CTkLabel(content, textvariable=self._title_var, font=ctk.CTkFont(size=28, weight="bold")).grid(
-            row=0, column=0, padx=24, pady=(24, 8), sticky="w"
+            row=1, column=0, padx=24, pady=(18, 8), sticky="w"
         )
         ctk.CTkLabel(
             content,
             text="Live scan state: ProjectionHub → UIStateStore (same pipeline as the ttk shell).",
             justify="left",
             text_color=("gray35", "gray65"),
-        ).grid(row=1, column=0, padx=24, pady=(0, 16), sticky="w")
+        ).grid(row=2, column=0, padx=24, pady=(0, 16), sticky="w")
 
         self._content_host = ctk.CTkFrame(content, fg_color="transparent")
-        self._content_host.grid(row=3, column=0, padx=0, pady=(0, 0), sticky="nsew")
+        self._content_host.grid(row=4, column=0, padx=0, pady=(0, 0), sticky="nsew")
         self._content_host.grid_columnconfigure(0, weight=1)
         self._content_host.grid_rowconfigure(0, weight=1)
 
+        try:
+            self._top_gradient.tkraise()
+        except Exception:
+            pass
+
+        # Page roots: transparent → inherit main column chrome (see cinematic_chrome_color).
+        _tp = {"fg_color": "transparent"}
         self._pages["Welcome"] = WelcomePageCTK(
             self._content_host,
             on_scan_photos=lambda: self._start_scan_mode("photos"),
@@ -230,6 +377,7 @@ class CerebroCTKApp:
             on_scan_files=lambda: self._start_scan_mode("files"),
             on_resume_scan=self._resume_scan_latest,
             on_open_last_review=self._open_last_review,
+            **_tp,
         )
         self._pages["Mission"] = MissionPageCTK(
             self._content_host,
@@ -237,27 +385,31 @@ class CerebroCTKApp:
             on_resume_scan=self._resume_scan_latest,
             on_open_last_review=self._open_last_review,
             on_quick_scan=self._handle_mission_quick_scan,
+            **_tp,
         )
         self._pages["Scan"] = ScanPageCTK(
             self._content_host,
             on_start=self._handle_start_scan_payload,
             on_resume=self._resume_scan_latest,
             on_cancel=self._on_scan_cancel,
+            **_tp,
         )
-        self._pages["Review"] = ReviewPageCTK(self._content_host, store=self.store)
+        self._pages["Review"] = ReviewPageCTK(self._content_host, store=self.store, **_tp)
         self._pages["Review"].set_refresh_callback(self._coordinator.get_last_result)  # type: ignore[attr-defined]
         self._pages["History"] = HistoryPageCTK(
             self._content_host,
             get_history=lambda: self._coordinator.get_history(30),
             on_load_scan=self._open_history_scan_in_review,
             on_resume_scan=self._resume_scan_latest,
+            **_tp,
         )
-        self._pages["Diagnostics"] = DiagnosticsPageCTK(self._content_host, coordinator=self._coordinator)
+        self._pages["Diagnostics"] = DiagnosticsPageCTK(self._content_host, coordinator=self._coordinator, **_tp)
         self._pages["Themes"] = ThemesPageCTK(
             self._content_host,
             on_theme_change=self._on_theme_change,
             on_preference_changed=self._on_theme_preference_changed,
             on_toast=self._toast_notify,
+            **_tp,
         )
         self._pages["Settings"] = SettingsPageCTK(
             self._content_host,
@@ -267,8 +419,8 @@ class CerebroCTKApp:
             on_open_diagnostics=lambda: self._show_page("Diagnostics"),
             on_settings_changed=self._on_settings_changed,
             on_toast=self._toast_notify,
+            **_tp,
         )
-
     def _show_page(self, title: str) -> None:
         if self._content_host is None or title not in self._pages:
             return
@@ -281,6 +433,8 @@ class CerebroCTKApp:
         self._title_var.set(title)
         for name, btn in self._nav_buttons.items():
             btn.configure(fg_color=("gray75", "gray25") if name == title else ("#3a7ebf", "#1f538d"))
+        # Re-apply token-derived colors after selection changes.
+        self._on_theme_tokens(self._tm.tokens)
         if title == "Mission":
             self._push_mission_store()
         elif title == "History":
@@ -492,6 +646,8 @@ class CerebroCTKApp:
         """Handle theme selection change - persist theme_key to settings."""
         self.state.settings.theme_key = key
         self.state.save()
+        # Apply to running CTK app: tk defaults + observers.
+        self._apply_theme_from_settings()
         self._toast_notify(f"Theme: {key}")
 
     def _on_theme_preference_changed(self) -> None:
@@ -508,6 +664,10 @@ class CerebroCTKApp:
         """Handle settings changes from Settings page."""
         # Settings are already saved; refresh any UI that depends on them
         self.store.set_ui_mode("advanced" if self.state.settings.advanced_mode else "simple")
+        try:
+            self._on_theme_tokens(self._tm.tokens)
+        except Exception:
+            pass
 
     def _on_close(self) -> None:
         if self._coordinator.is_scanning:

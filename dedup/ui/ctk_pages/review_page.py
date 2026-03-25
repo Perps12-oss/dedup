@@ -153,7 +153,8 @@ class ReviewPageCTK(ctk.CTkFrame):
         row.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 12))
         self._execute_btn = ctk.CTkButton(row, text="Execute Deletion", command=self._execute)
         self._execute_btn.pack(side="left", padx=(0, 8))
-        ctk.CTkButton(row, text="Refresh Last Scan", fg_color="gray35", command=self._refresh_callback).pack(side="left")
+        self._refresh_btn = ctk.CTkButton(row, text="Refresh Last Scan", fg_color="gray35", command=self._refresh_callback)
+        self._refresh_btn.pack(side="left")
 
         ctk.CTkFrame(right, fg_color="transparent").grid(row=5, column=0, sticky="nsew")
 
@@ -168,10 +169,27 @@ class ReviewPageCTK(ctk.CTkFrame):
             row=1, column=0, sticky="w", padx=16, pady=(0, 12)
         )
 
-        self._details = ctk.CTkTextbox(self, wrap="word")
+        self._details = ctk.CTkTextbox(
+            self,
+            wrap="word",
+            # Use fixed hex colors so CTk theme switching doesn't remap "grayXX" token names.
+            fg_color=("#F3F4F6", "#11151d"),
+            text_color=("#111827", "#E5E7EB"),
+        )
         self._details.grid(row=3, column=0, columnspan=3, sticky="nsew", padx=20, pady=(0, 20))
         self._details.insert("end", "Load a scan result to review duplicate groups.\n")
         self._details.configure(state="disabled")
+
+        self._themed_sections = [top, left, center, right, self._result_panel]
+
+    def apply_theme_tokens(self, tokens: dict) -> None:
+        panel = str(tokens.get("bg_panel", "#161b22"))
+        elev = str(tokens.get("bg_elevated", "#21262d"))
+        acc = str(tokens.get("accent_primary", "#3B8ED0"))
+        for f in self._themed_sections:
+            f.configure(fg_color=panel)
+        self._execute_btn.configure(fg_color=acc)
+        self._refresh_btn.configure(fg_color=elev)
 
     def set_refresh_callback(self, callback: Callable[[], ScanResult | None]) -> None:
         self._refresh_callback = lambda: self.load_result(callback())

@@ -68,6 +68,23 @@ class HistoryPageCTK(ctk.CTkFrame):
         # Load initial data
         self.reload()
 
+    def apply_theme_tokens(self, tokens: dict) -> None:
+        panel = str(tokens.get("bg_panel", "#161b22"))
+        elev = str(tokens.get("bg_elevated", "#21262d"))
+        acc = str(tokens.get("accent_primary", "#3B8ED0"))
+        for name in ("_summary_frame", "_table_section", "_detail_frame"):
+            fr = getattr(self, name, None)
+            if fr is not None:
+                fr.configure(fg_color=panel)
+        for c in getattr(self, "_stat_cards", []):
+            c.configure(fg_color=elev)
+        if hasattr(self, "_load_btn"):
+            self._load_btn.configure(fg_color=acc)
+        if hasattr(self, "_resume_btn"):
+            self._resume_btn.configure(fg_color=acc)
+        if hasattr(self, "_export_btn"):
+            self._export_btn.configure(fg_color=elev)
+
     def _build_header(self) -> None:
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 12))
@@ -96,6 +113,7 @@ class HistoryPageCTK(ctk.CTkFrame):
 
     def _build_summary(self) -> None:
         summary = ctk.CTkFrame(self, corner_radius=12)
+        self._summary_frame = summary
         summary.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 12))
         summary.grid_columnconfigure(0, weight=1)
         
@@ -126,9 +144,11 @@ class HistoryPageCTK(ctk.CTkFrame):
         ctk.CTkLabel(rec_card, text="Avg Reclaimable", font=ctk.CTkFont(size=11, weight="bold")).pack(pady=(8, 2))
         self._reclaim_label = ctk.CTkLabel(rec_card, text="—", font=ctk.CTkFont(size=20, weight="bold"))
         self._reclaim_label.pack(pady=(0, 8))
+        self._stat_cards = [total_card, dur_card, rec_card]
 
     def _build_table_section(self) -> None:
         table_section = ctk.CTkFrame(self, corner_radius=12)
+        self._table_section = table_section
         table_section.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 12))
         table_section.grid_columnconfigure(0, weight=1)
         table_section.grid_rowconfigure(1, weight=1)
@@ -160,12 +180,16 @@ class HistoryPageCTK(ctk.CTkFrame):
         search_frame.grid_columnconfigure(0, weight=1)
         
         ctk.CTkLabel(search_frame, text="Search:").pack(side="left", padx=(0, 8))
-        ctk.CTkEntry(
+        search_entry = ctk.CTkEntry(
             search_frame,
             textvariable=self._search_text,
             placeholder_text="Scan ID, root path, or status...",
-            command=self._apply_filters,
-        ).pack(side="left", fill="x", expand=True)
+        )
+        search_entry.pack(side="left", fill="x", expand=True)
+        # Bind Enter key to apply filters
+        search_entry.bind("<Return>", lambda e: self._apply_filters())
+        # Bind text change to apply filters with delay
+        search_entry.bind("<KeyRelease>", lambda e: self.after(300, self._apply_filters))
         
         # Scrollable table
         self._scroll = ctk.CTkScrollableFrame(table_section, corner_radius=8)
@@ -215,6 +239,7 @@ class HistoryPageCTK(ctk.CTkFrame):
 
     def _build_detail_panel(self) -> None:
         detail = ctk.CTkFrame(self, corner_radius=12)
+        self._detail_frame = detail
         detail.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 20))
         detail.grid_columnconfigure(0, weight=1)
         

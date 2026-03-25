@@ -111,8 +111,11 @@ class MissionPageCTK(ctk.CTkFrame):
             self._unsub_store = None
 
     def _build(self) -> None:
+        self._themed_sections: list[ctk.CTkFrame] = []
+        self._metric_cards: list[ctk.CTkFrame] = []
         # Header + CTA row
         hero = ctk.CTkFrame(self, corner_radius=12)
+        self._themed_sections.append(hero)
         hero.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 12))
         hero.grid_columnconfigure(0, weight=1)
 
@@ -127,13 +130,14 @@ class MissionPageCTK(ctk.CTkFrame):
 
         cta = ctk.CTkFrame(hero, fg_color="transparent")
         cta.grid(row=2, column=0, sticky="w", padx=18, pady=(0, 16))
-        ctk.CTkButton(cta, text="Start New Scan", width=170, command=self._on_start_scan).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(cta, text="Resume Interrupted", width=170, command=self._on_resume_scan).pack(
-            side="left", padx=(0, 8)
-        )
-        ctk.CTkButton(
+        self._cta_start = ctk.CTkButton(cta, text="Start New Scan", width=170, command=self._on_start_scan)
+        self._cta_start.pack(side="left", padx=(0, 8))
+        self._cta_resume = ctk.CTkButton(cta, text="Resume Interrupted", width=170, command=self._on_resume_scan)
+        self._cta_resume.pack(side="left", padx=(0, 8))
+        self._cta_review = ctk.CTkButton(
             cta, text="Open Last Review", width=170, fg_color="gray35", command=self._on_open_last_review
-        ).pack(side="left")
+        )
+        self._cta_review.pack(side="left")
 
         # Readiness row
         ready = ctk.CTkFrame(self, fg_color="transparent")
@@ -160,18 +164,28 @@ class MissionPageCTK(ctk.CTkFrame):
         )
 
         recent = ctk.CTkFrame(self, corner_radius=12)
+        self._themed_sections.append(recent)
         recent.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 12))
         recent.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(recent, text="Recent Sessions", font=ctk.CTkFont(size=20, weight="bold")).grid(
             row=0, column=0, sticky="w", padx=16, pady=(14, 6)
         )
-        recent_box = ctk.CTkTextbox(recent, height=100, wrap="word", activate_scrollbars=True)
+        recent_box = ctk.CTkTextbox(
+            recent,
+            height=100,
+            wrap="word",
+            activate_scrollbars=True,
+            # Use fixed hex colors so CTk theme switching doesn't remap "grayXX" token names.
+            fg_color=("#F3F4F6", "#11151d"),
+            text_color=("#111827", "#E5E7EB"),
+        )
         recent_box.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 14))
         recent_box.insert("1.0", self._recent_var.get())
         recent_box.configure(state="disabled")
         self._recent_box = recent_box
 
         quick = ctk.CTkFrame(self, corner_radius=12)
+        self._themed_sections.append(quick)
         quick.grid(row=3, column=0, sticky="nsew", padx=20, pady=(0, 20))
         quick.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(quick, text="Quick Scan", font=ctk.CTkFont(size=20, weight="bold")).grid(
@@ -189,10 +203,24 @@ class MissionPageCTK(ctk.CTkFrame):
         )
         qb = ctk.CTkFrame(quick, fg_color="transparent")
         qb.grid(row=3, column=0, sticky="w", padx=16, pady=(0, 16))
-        ctk.CTkButton(qb, text="Browse…", width=120, fg_color="gray35", command=self._quick_browse).pack(
-            side="left", padx=(0, 8)
-        )
-        ctk.CTkButton(qb, text="Start Quick Scan", width=160, command=self._quick_start).pack(side="left")
+        self._quick_browse_btn = ctk.CTkButton(qb, text="Browse…", width=120, fg_color="gray35", command=self._quick_browse)
+        self._quick_browse_btn.pack(side="left", padx=(0, 8))
+        self._quick_start_btn = ctk.CTkButton(qb, text="Start Quick Scan", width=160, command=self._quick_start)
+        self._quick_start_btn.pack(side="left")
+
+    def apply_theme_tokens(self, tokens: dict) -> None:
+        panel = str(tokens.get("bg_panel", "#161b22"))
+        elev = str(tokens.get("bg_elevated", "#21262d"))
+        acc = str(tokens.get("accent_primary", "#3B8ED0"))
+        for f in self._themed_sections:
+            f.configure(fg_color=panel)
+        for f in self._metric_cards:
+            f.configure(fg_color=panel)
+        self._cta_start.configure(fg_color=acc)
+        self._cta_resume.configure(fg_color=acc)
+        self._cta_review.configure(fg_color=elev)
+        self._quick_browse_btn.configure(fg_color=elev)
+        self._quick_start_btn.configure(fg_color=acc)
 
     def _quick_browse(self) -> None:
         path = filedialog.askdirectory(title="Select Folder for Quick Scan")
@@ -229,6 +257,7 @@ class MissionPageCTK(ctk.CTkFrame):
         rows: list[tuple[str, str | ctk.StringVar]],
     ) -> None:
         card = ctk.CTkFrame(parent, corner_radius=12)
+        self._metric_cards.append(card)
         card.grid(row=0, column=col, sticky="ew", padx=6, pady=0)
         ctk.CTkLabel(card, text=title, font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=14, pady=(12, 8))
         for k, v in rows:

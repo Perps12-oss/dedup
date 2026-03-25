@@ -23,7 +23,7 @@ import customtkinter as ctk
 from ..theme.gradients import color_at_gradient_position, draw_horizontal_multi_stop
 from ..theme.theme_config import ThemeConfig
 from ..theme.theme_manager import get_theme_manager, parse_gradient_stops_from_raw
-from ..theme.theme_registry import THEMES, get_theme, get_theme_names
+from ..theme.theme_registry import DEFAULT_THEME, THEMES, get_theme, get_theme_names
 from ..theme.contrast import contrast_ratio, format_ratio, passes_aa_normal
 
 
@@ -49,7 +49,7 @@ class ThemesPageCTK(ctk.CTkFrame):
         self._on_toast = on_toast
         self._tm = get_theme_manager()
         self._working_stops: List[Tuple[float, str]] = []
-        self._current_theme_key = "cerebro_noir"
+        self._current_theme_key = DEFAULT_THEME
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -59,8 +59,11 @@ class ThemesPageCTK(ctk.CTkFrame):
         self._on_tokens_update(self._tm.tokens)
 
     def _build(self) -> None:
+        self._panel_sections: list[ctk.CTkFrame] = []
         # Main scrollable container
-        self._scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        # Avoid "transparent" here: CTkScrollableFrame uses an internal Tk Canvas which can
+        # repaint with raw Tk defaults (white) on hover/scroll unless we give it a real color.
+        self._scroll = ctk.CTkScrollableFrame(self, fg_color=("#F6F7F9", "#0f131c"))
         self._scroll.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
         self._scroll.grid_columnconfigure(0, weight=1)
 
@@ -153,6 +156,7 @@ class ThemesPageCTK(ctk.CTkFrame):
     def _build_appearance_section(self, parent: ctk.CTkFrame) -> None:
         """Appearance mode selector."""
         section = ctk.CTkFrame(parent, fg_color=("gray95", "gray15"))
+        self._panel_sections.append(section)
         section.grid(row=0, column=0, sticky="ew", pady=(0, 16))
         section.grid_columnconfigure(0, weight=1)
 
@@ -181,6 +185,7 @@ class ThemesPageCTK(ctk.CTkFrame):
     def _build_gradient_section(self, parent: ctk.CTkFrame) -> None:
         """Accent gradient editor with canvas-based preview."""
         section = ctk.CTkFrame(parent, fg_color=("gray95", "gray15"))
+        self._panel_sections.append(section)
         section.grid(row=1, column=0, sticky="ew", pady=(0, 16))
         section.grid_columnconfigure(0, weight=1)
 
@@ -198,12 +203,15 @@ class ThemesPageCTK(ctk.CTkFrame):
         ).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 8))
 
         # Gradient preview canvas
+        # NOTE: Tk `Canvas` does not understand "transparent" as a color name.
+        # Use the CTk frame's resolved `fg_color` so Tk gets a valid color string.
+        canvas_bg = section._apply_appearance_mode(section._fg_color)
         self._grad_canvas = tk.Canvas(
             section,
             height=56,
             highlightthickness=0,
             borderwidth=0,
-            bg="transparent",
+            bg=canvas_bg,
         )
         self._grad_canvas.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 8))
         self._grad_canvas.bind("<Configure>", self._paint_gradient)
@@ -268,6 +276,7 @@ class ThemesPageCTK(ctk.CTkFrame):
     def _build_import_export(self, parent: ctk.CTkFrame) -> None:
         """Import/export theme bundles."""
         section = ctk.CTkFrame(parent, fg_color=("gray95", "gray15"))
+        self._panel_sections.append(section)
         section.grid(row=3, column=0, sticky="ew")
         section.grid_columnconfigure(0, weight=1)
 
@@ -597,6 +606,20 @@ class ThemesPageCTK(ctk.CTkFrame):
                 )
             else:
                 btn.configure(border_width=0)
+
+    def apply_theme_tokens(self, tokens: dict) -> None:
+        panel = str(tokens.get("bg_panel", "#161b22"))
+        bg = str(tokens.get("bg_base", "#0f131c"))
+        for f in self._panel_sections:
+            f.configure(fg_color=panel)
+        if hasattr(self, "_scroll"):
+            self._scroll.configure(fg_color=("#F6F7F9", bg))
+        if hasattr(self, "_grad_canvas"):
+            parent = self._grad_canvas.master
+            if parent is not None and hasattr(parent, "_apply_appearance_mode"):
+                cb = parent._apply_appearance_mode(parent._fg_color)
+                self._grad_canvas.configure(bg=cb)
+            self._paint_gradient()
 
     def on_show(self) -> None:
         """Called when page becomes visible."""

@@ -50,8 +50,12 @@ class SettingsPageCTK(ctk.CTkFrame):
             self._db_var.set(path)
 
     def _build(self) -> None:
+        self._section_frames: list[ctk.CTkFrame] = []
         # Scrollable container
-        scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        # Avoid "transparent" here: CTkScrollableFrame uses an internal Tk Canvas which can
+        # repaint with raw Tk defaults (white) on hover/scroll unless we give it a real color.
+        scroll = ctk.CTkScrollableFrame(self, fg_color=("#F6F7F9", "#0f131c"))
+        self._scroll = scroll
         scroll.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
         scroll.grid_columnconfigure(0, weight=1)
 
@@ -99,6 +103,7 @@ class SettingsPageCTK(ctk.CTkFrame):
 
     def _build_appearance_section(self, parent: ctk.CTkFrame) -> None:
         section = ctk.CTkFrame(parent, fg_color=("gray95", "gray15"))
+        self._section_frames.append(section)
         section.grid(row=0, column=0, sticky="ew", pady=(0, 16))
         section.grid_columnconfigure(0, weight=1)
 
@@ -146,14 +151,16 @@ class SettingsPageCTK(ctk.CTkFrame):
         # Open Themes button
         btn_row = ctk.CTkFrame(section, fg_color="transparent")
         btn_row.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 12))
-        ctk.CTkButton(
+        self._themes_btn = ctk.CTkButton(
             btn_row,
             text="Open Themes…",
             command=self._on_open_themes,
-        ).pack(side="left")
+        )
+        self._themes_btn.pack(side="left")
 
     def _build_behavior_section(self, parent: ctk.CTkFrame) -> None:
         section = ctk.CTkFrame(parent, fg_color=("gray95", "gray15"))
+        self._section_frames.append(section)
         section.grid(row=1, column=0, sticky="ew")
         section.grid_columnconfigure(0, weight=1)
 
@@ -187,6 +194,7 @@ class SettingsPageCTK(ctk.CTkFrame):
 
     def _build_data_section(self, parent: ctk.CTkFrame) -> None:
         section = ctk.CTkFrame(parent, fg_color=("gray95", "gray15"))
+        self._section_frames.append(section)
         section.grid(row=0, column=0, sticky="ew", pady=(0, 16))
         section.grid_columnconfigure(0, weight=1)
 
@@ -211,15 +219,17 @@ class SettingsPageCTK(ctk.CTkFrame):
         # Open Diagnostics button
         btn_row = ctk.CTkFrame(section, fg_color="transparent")
         btn_row.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 12))
-        ctk.CTkButton(
+        self._diag_btn = ctk.CTkButton(
             btn_row,
             text="Open Diagnostics…",
             fg_color=("gray35", "gray50"),
             command=self._on_open_diagnostics,
-        ).pack(side="left")
+        )
+        self._diag_btn.pack(side="left")
 
     def _build_view_section(self, parent: ctk.CTkFrame) -> None:
         section = ctk.CTkFrame(parent, fg_color=("gray95", "gray15"))
+        self._section_frames.append(section)
         section.grid(row=1, column=0, sticky="ew")
         section.grid_columnconfigure(0, weight=1)
 
@@ -293,6 +303,20 @@ class SettingsPageCTK(ctk.CTkFrame):
                 self._on_toast("Settings saved")
             except Exception:
                 pass
+
+    def apply_theme_tokens(self, tokens: dict) -> None:
+        panel = str(tokens.get("bg_panel", "#161b22"))
+        elev = str(tokens.get("bg_elevated", "#21262d"))
+        acc = str(tokens.get("accent_primary", "#3B8ED0"))
+        for f in self._section_frames:
+            f.configure(fg_color=panel)
+        if hasattr(self, "_scroll"):
+            bg = str(tokens.get("bg_base", "#0f131c"))
+            self._scroll.configure(fg_color=("#F6F7F9", bg))
+        if hasattr(self, "_themes_btn"):
+            self._themes_btn.configure(fg_color=acc)
+        if hasattr(self, "_diag_btn"):
+            self._diag_btn.configure(fg_color=elev)
 
     def on_show(self) -> None:
         """Called when page becomes visible - refresh from state."""

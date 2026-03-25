@@ -327,10 +327,15 @@ class ThemeManager:
         fg = t["text_primary"]
         panel = t["bg_panel"]
         sel = t["selection_bg"]
-        root.option_add("*Background", bg)
-        root.option_add("*Foreground", fg)
-        root.option_add("*HighlightBackground", bg)
-        root.option_add("*HighlightColor", fg)
+        # IMPORTANT: Avoid setting broad Tk defaults (e.g. "*Background") when running
+        # under CustomTkinter (CTk). CTk manages colors internally and global option_add
+        # rules can cause "white repaint blocks" and incorrect label backgrounds.
+        is_ctk_root = "customtkinter" in (type(root).__module__ or "").lower()
+        if not is_ctk_root:
+            root.option_add("*Background", bg)
+            root.option_add("*Foreground", fg)
+            root.option_add("*HighlightBackground", bg)
+            root.option_add("*HighlightColor", fg)
         root.option_add("*Listbox*Background", panel)
         root.option_add("*Listbox*Foreground", fg)
         root.option_add("*Listbox*SelectBackground", sel)

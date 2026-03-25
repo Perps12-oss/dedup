@@ -100,9 +100,8 @@ class ScanPageCTK(ctk.CTkFrame):
         ctk.CTkEntry(target, textvariable=self._path_var, placeholder_text="Choose a folder...").grid(
             row=1, column=0, sticky="ew", padx=16, pady=(0, 10)
         )
-        ctk.CTkButton(target, text="Browse...", width=120, fg_color="gray35", command=self._browse).grid(
-            row=1, column=1, padx=(0, 16), pady=(0, 10), sticky="e"
-        )
+        self._browse_btn = ctk.CTkButton(target, text="Browse...", width=120, fg_color="gray35", command=self._browse)
+        self._browse_btn.grid(row=1, column=1, padx=(0, 16), pady=(0, 10), sticky="e")
 
         # Decisions that used to concentrate in Review are moved earlier to Scan setup.
         routing = ctk.CTkFrame(self, corner_radius=12)
@@ -217,7 +216,13 @@ class ScanPageCTK(ctk.CTkFrame):
         ctk.CTkLabel(meta, textvariable=self._pct_var).pack(side="left")
         ctk.CTkLabel(meta, textvariable=self._eta_var, text_color=("gray40", "gray70")).pack(side="right")
 
-        self._info = ctk.CTkTextbox(self, wrap="word")
+        self._info = ctk.CTkTextbox(
+            self,
+            wrap="word",
+            # Use fixed hex colors so CTk theme switching doesn't remap "grayXX" token names.
+            fg_color=("#F3F4F6", "#11151d"),
+            text_color=("#111827", "#E5E7EB"),
+        )
         self._info.grid(row=7, column=0, sticky="nsew", padx=20, pady=(0, 20))
         self._info.insert(
             "end",
@@ -230,6 +235,21 @@ class ScanPageCTK(ctk.CTkFrame):
             "- Post-scan destination is configured here.\n",
         )
         self._info.configure(state="disabled")
+
+        self._themed_sections = [header, target, routing, actions, self._ready, metrics, prog]
+
+    def apply_theme_tokens(self, tokens: dict) -> None:
+        """Sync panel surfaces with CEREBRO semantic tokens (CTk defaults do not follow ThemeManager)."""
+        panel = str(tokens.get("bg_panel", "#161b22"))
+        elev = str(tokens.get("bg_elevated", "#21262d"))
+        acc = str(tokens.get("accent_primary", "#3B8ED0"))
+        for f in self._themed_sections:
+            f.configure(fg_color=panel)
+        self._start_btn.configure(fg_color=acc)
+        self._resume_btn.configure(fg_color=acc)
+        self._browse_btn.configure(fg_color=elev)
+        self._cancel_btn.configure(fg_color=elev)
+        self._route_btn.configure(fg_color=acc)
 
     def set_scan_busy(self, busy: bool) -> None:
         """Disable start/resume while a scan worker is active (shell syncs via coordinator)."""
