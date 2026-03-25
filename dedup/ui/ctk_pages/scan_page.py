@@ -292,7 +292,8 @@ class ScanPageCTK(ctk.CTkFrame):
                 if eta_lbl and eta_lbl != "—":
                     self._eta_var.set(f"ETA: {eta_lbl}")
 
-        self._unsub_store = store.subscribe(on_state, fire_immediately=True)
+        self._unsub_store = store.subscribe(on_state, fire_immediately=False)
+        self._bind_scan_shortcuts()
 
     def detach_store(self) -> None:
         if self._unsub_store:
@@ -429,3 +430,27 @@ class ScanPageCTK(ctk.CTkFrame):
         if mode == "videos":
             return {"media_category": "videos", "scan_mode": "deep", "include_hidden": False, "scan_subfolders": True}
         return {"media_category": "all", "scan_mode": "deep", "include_hidden": False, "scan_subfolders": True}
+
+    def _bind_scan_shortcuts(self) -> None:
+        """Bind scan page specific keyboard shortcuts."""
+        # Use page-local bindings instead of global to avoid conflicts
+        self.bind("<Control-Key-Return>", lambda e: self._start_scan())
+        self.bind("<Escape>", lambda e: self._on_cancel())
+
+    def _start_scan(self) -> None:
+        """Start the scan with current settings."""
+        if hasattr(self, '_start_btn') and self._start_btn.winfo_exists():
+            try:
+                if self._start_btn.cget('state') == 'normal':
+                    self._start_btn.invoke()
+            except Exception:
+                pass  # Button may be destroyed or in invalid state
+
+    def _on_cancel(self) -> None:
+        """Cancel the current scan."""
+        if hasattr(self, '_cancel_btn') and self._cancel_btn.winfo_exists():
+            try:
+                if self._cancel_btn.cget('state') == 'normal':
+                    self._cancel_btn.invoke()
+            except Exception:
+                pass  # Button may be destroyed or in invalid state

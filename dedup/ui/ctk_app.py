@@ -33,6 +33,7 @@ from .state.hub_adapter import ProjectionHubStoreAdapter
 from .state.store import LastScanSummaryState, MissionState, UIStateStore
 from .utils.formatting import fmt_bytes
 from .utils.ui_state import UIState
+from .ctk_shortcuts import CTKShortcutRegistry
 
 
 class CerebroCTKApp:
@@ -49,6 +50,10 @@ class CerebroCTKApp:
         self.root.title(f"{self.APP_NAME} Dedup Engine v{self.APP_VERSION}")
         self.root.geometry("1180x760")
         self.root.minsize(760, 480)
+        
+        # Accessibility improvements
+        self.root.option_add('*tearOff', False)  # Disable tear-off menus
+        self.root.focus_set()  # Set initial focus
 
         self.state = UIState()
         self._coordinator = ScanCoordinator()
@@ -82,6 +87,7 @@ class CerebroCTKApp:
         self._build_nav()
         self._build_content()
         self._wire_pages()
+        self._bind_global_shortcuts()
         self._show_page("Welcome")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -179,6 +185,20 @@ class CerebroCTKApp:
         ):
             btn = ctk.CTkButton(nav, text=title, anchor="w", command=lambda t=title: self._show_page(t))
             btn.grid(row=i, column=0, padx=14, pady=6, sticky="ew")
+            # Store shortcuts separately for help display
+            shortcuts = {
+                "Welcome": None,
+                "Mission": "Ctrl+1",
+                "Scan": "Ctrl+2", 
+                "Review": "Ctrl+3",
+                "History": "Ctrl+4",
+                "Diagnostics": "Ctrl+5",
+                "Themes": "Ctrl+7",
+                "Settings": "Ctrl+,"
+            }
+            # Store shortcut for this button (used in help)
+            if shortcuts.get(title):
+                btn.shortcut_hint = shortcuts[title]
             self._nav_buttons[title] = btn
 
     def _build_content(self) -> None:
@@ -230,6 +250,7 @@ class CerebroCTKApp:
             self._content_host,
             get_history=lambda: self._coordinator.get_history(30),
             on_load_scan=self._open_history_scan_in_review,
+            on_resume_scan=self._resume_scan_latest,
         )
         self._pages["Diagnostics"] = DiagnosticsPageCTK(self._content_host, coordinator=self._coordinator)
         self._pages["Themes"] = ThemesPageCTK(
@@ -517,6 +538,70 @@ class CerebroCTKApp:
         except Exception:
             pass
         self.root.destroy()
+
+    def _bind_global_shortcuts(self) -> None:
+        """Global keyboard shortcuts for navigation and common actions."""
+        reg = CTKShortcutRegistry(self.root)
+        
+        # Navigation shortcuts
+        reg.register("<Control-Key-1>", "Mission Control", lambda e: self._show_page("Mission"))
+        reg.register("<Control-Key-2>", "Live Scan Studio", lambda e: self._show_page("Scan"))
+        reg.register("<Control-Key-3>", "Decision Studio", lambda e: self._show_page("Review"))
+        reg.register("<Control-Key-4>", "History", lambda e: self._show_page("History"))
+        reg.register("<Control-Key-5>", "Diagnostics", lambda e: self._show_page("Diagnostics"))
+        reg.register("<Control-Key-7>", "Themes", lambda e: self._show_page("Themes"))
+        reg.register("<Control-comma>", "Settings", lambda e: self._show_page("Settings"))
+        
+        # Action shortcuts
+        reg.register("<Control-Key-o>", "Open last review", lambda e: self._open_last_review())
+        reg.register("<Control-Key-r>", "Resume last scan", lambda e: self._resume_scan_latest())
+        reg.register("<Control-n>", "New scan", lambda e: self._show_page("Scan"))
+        reg.register("<F5>", "Refresh current page", lambda e: self._refresh_current_page())
+        
+        # Help shortcut
+        reg.register("?", "Shortcut help", lambda e: self._show_shortcuts_help())
+        
+        self._shortcut_registry = reg
+
+    def _refresh_current_page(self) -> None:
+        """Refresh the current page if it supports reloading."""
+        if hasattr(self, '_active_page'):
+            page = self._pages.get(self._active_page)
+            if hasattr(page, 'reload'):
+                page.reload()
+
+    def _show_shortcuts_help(self) -> None:
+        """Show keyboard shortcuts help dialog."""
+        from tkinter import messagebox
+        
+        shortcuts = [
+            "Keyboard Shortcuts:",
+            "",
+            "Navigation:",
+        ] + self._shortcut_registry.describe_lines() + [
+            "",
+            "Page-specific shortcuts:",
+            "  Ctrl+O                Open last review (from any page)",
+            "  Ctrl+R                Resume last scan (from any page)",
+            "  Ctrl+N                Start new scan (from any page)",
+            "  F5                   Refresh current page",
+            "",
+            "Review page:",
+            "  Space                 Keep selected file",
+            "  Delete               Delete selected file",
+            "  Ctrl+A               Select all files",
+            "  Ctrl+D               Deselect all files",
+            "",
+            "Scan page:",
+            "  Ctrl+Enter           Start scan",
+            "  Escape               Cancel scan",
+        ]
+        
+        messagebox.showinfo(
+            "Keyboard Shortcuts",
+            "\n".join(shortcuts),
+            parent=self.root
+        )
 
     def run(self) -> None:
         self.root.mainloop()

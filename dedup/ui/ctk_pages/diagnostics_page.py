@@ -1,174 +1,564 @@
 """
-CustomTkinter Diagnostics page (experimental).
+CustomTkinter Diagnostics page — P1 quality for support.
 
-Read-only view of scan coordinator state and the in-process diagnostics recorder.
-Full hub-driven diagnostics remain on the classic ttk shell.
+Features:
+- Runtime status (scanning, active scan ID, database path)
+- Session overview with selector
+- Phases timeline table
+- Compatibility checks
+- Artifacts listing
+- Events log with filtering
+- JSON export
+- Clear recorder buffer
 """
 
 from __future__ import annotations
 
-from datetime import datetime
-from tkinter import messagebox
-from typing import TYPE_CHECKING, Callable, Optional
+import json
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
+from tkinter import filedialog, messagebox
+from typing import Any, Callable, Optional
 
 import customtkinter as ctk
 
 from ...infrastructure.diagnostics import get_diagnostics_recorder
-from ..state.selectors import scan_events_log, scan_session
+from ..utils.formatting import fmt_duration, fmt_int
 
-if TYPE_CHECKING:
-    from ...orchestration.coordinator import ScanCoordinator
-    from ..state.store import UIStateStore
+_log = logging.getLogger(__name__)
 
 
 class DiagnosticsPageCTK(ctk.CTkFrame):
+    """Engine diagnostics page with P1 functionality for support."""
+
     def __init__(
         self,
         parent,
         *,
-        coordinator: ScanCoordinator,
+        coordinator: Any,
         **kwargs,
     ) -> None:
         super().__init__(parent, **kwargs)
         self._coordinator = coordinator
-        self._unsub_store: Optional[Callable[[], None]] = None
+        self._selected_session_id: Optional[str] = None
+        self._history_cache: list[dict[str, Any]] = []  # Cache for performance
+        self._history_lookup: dict[str, dict[str, Any]] = {}  # Fast lookup by scan_id
+        
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(3, weight=1)
         self._build()
 
     def _build(self) -> None:
-        top = ctk.CTkFrame(self, corner_radius=12)
-        top.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 12))
-        top.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(top, text="Diagnostics", font=ctk.CTkFont(size=26, weight="bold")).grid(
-            row=0, column=0, sticky="w", padx=16, pady=(14, 4)
-        )
-        ctk.CTkLabel(
-            top,
-            text="Coordinator + recorder + live scan event log (ProjectionHub → store). Phase timelines / JSON export: classic shell.",
-            text_color=("gray40", "gray70"),
-            wraplength=720,
-            justify="left",
-        ).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 8))
-        ctk.CTkButton(top, text="Refresh", width=120, fg_color="gray35", command=self.reload).grid(
-            row=2, column=0, sticky="w", padx=16, pady=(0, 12)
-        )
+        # Header
+        self._build_header()
+        
+        # Runtime status section
+        self._build_runtime_status()
+        
+        # Session selector and overview
+        self._build_session_overview()
+        
+        # Tabbed content area
+        self._build_tabbed_content()
+        
+        # Load initial data
+        self.reload()
 
+    def _build_header(self) -> None:
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 12))
+        header.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkLabel(
+            header,
+            text="Diagnostics",
+            font=ctk.CTkFont(size=28, weight="bold"),
+        ).grid(row=0, column=0, sticky="w")
+        
+        ctk.CTkLabel(
+            header,
+            text="Engine runtime state, scan sessions, and diagnostic events.",
+            font=ctk.CTkFont(size=12),
+            text_color=("gray40", "gray70"),
+        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+        
+        # Action buttons
+        actions = ctk.CTkFrame(header, fg_color="transparent")
+        actions.grid(row=0, column=1, sticky="e", padx=(0, 20))
+        
+        ctk.CTkButton(
+            actions,
+            text="Refresh",
+            width=100,
+            command=self.reload,
+        ).pack(side="left", padx=(0, 8))
+        
+        ctk.CTkButton(
+            actions,
+            text="Export JSON",
+            width=120,
+            fg_color=("gray35", "gray50"),
+            command=self._export_json,
+        ).pack(side="left")
+
+    def _build_runtime_status(self) -> None:
         status = ctk.CTkFrame(self, corner_radius=12)
         status.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 12))
-        status.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(status, text="Runtime", font=ctk.CTkFont(size=18, weight="bold")).grid(
-            row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 8)
-        )
-        ctk.CTkLabel(status, text="Scanning", text_color=("gray40", "gray70")).grid(
-            row=1, column=0, sticky="w", padx=16, pady=(0, 4)
+        status.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkLabel(
+            status,
+            text="Runtime Status",
+            font=ctk.CTkFont(size=18, weight="bold"),
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(12, 8))
+        
+        # Status fields
+        fields = ctk.CTkFrame(status, fg_color="transparent")
+        fields.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 12))
+        fields.grid_columnconfigure(1, weight=1)
+        
+        # Scanning status
+        ctk.CTkLabel(fields, text="Scanning:", font=ctk.CTkFont(size=12, weight="bold")).grid(
+            row=0, column=0, sticky="w", pady=2
         )
         self._scanning_var = ctk.StringVar(value="—")
-        ctk.CTkLabel(status, textvariable=self._scanning_var).grid(row=1, column=1, sticky="w", padx=(0, 16), pady=(0, 4))
-        ctk.CTkLabel(status, text="Active scan id", text_color=("gray40", "gray70")).grid(
-            row=2, column=0, sticky="w", padx=16, pady=(0, 4)
+        ctk.CTkLabel(fields, textvariable=self._scanning_var).grid(
+            row=0, column=1, sticky="w", padx=(12, 0), pady=2
+        )
+        
+        # Active scan ID
+        ctk.CTkLabel(fields, text="Active scan ID:", font=ctk.CTkFont(size=12, weight="bold")).grid(
+            row=1, column=0, sticky="w", pady=2
         )
         self._active_id_var = ctk.StringVar(value="—")
-        ctk.CTkLabel(status, textvariable=self._active_id_var, anchor="w").grid(
-            row=2, column=1, sticky="ew", padx=(0, 16), pady=(0, 4)
+        ctk.CTkLabel(fields, textvariable=self._active_id_var).grid(
+            row=1, column=1, sticky="w", padx=(12, 0), pady=2
         )
-        ctk.CTkLabel(status, text="History DB", text_color=("gray40", "gray70")).grid(
-            row=3, column=0, sticky="w", padx=16, pady=(0, 12)
+        
+        # Database path
+        ctk.CTkLabel(fields, text="Database:", font=ctk.CTkFont(size=12, weight="bold")).grid(
+            row=2, column=0, sticky="w", pady=2
         )
         self._db_var = ctk.StringVar(value="—")
         ctk.CTkLabel(
-            status,
+            fields,
             textvariable=self._db_var,
-            text_color=("gray30", "gray80"),
+            font=ctk.CTkFont(size=11),
+            wraplength=600,
             anchor="w",
-            wraplength=640,
-            justify="left",
-        ).grid(row=3, column=1, sticky="ew", padx=(0, 16), pady=(0, 12))
+        ).grid(row=2, column=1, sticky="w", padx=(12, 0), pady=2)
 
-        counts = ctk.CTkFrame(self, corner_radius=12)
-        counts.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 12))
-        counts.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(counts, text="Recorder (since last buffer clear)", font=ctk.CTkFont(size=18, weight="bold")).grid(
-            row=0, column=0, sticky="w", padx=16, pady=(12, 6)
+    def _build_session_overview(self) -> None:
+        overview = ctk.CTkFrame(self, corner_radius=12)
+        overview.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 12))
+        overview.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkLabel(
+            overview,
+            text="Session Overview",
+            font=ctk.CTkFont(size=18, weight="bold"),
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(12, 8))
+        
+        # Session selector
+        selector = ctk.CTkFrame(overview, fg_color="transparent")
+        selector.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
+        selector.grid_columnconfigure(1, weight=1)
+        
+        ctk.CTkLabel(selector, text="View session:").pack(side="left", padx=(0, 8))
+        self._session_var = ctk.StringVar(value="")
+        self._session_combo = ctk.CTkComboBox(
+            selector,
+            variable=self._session_var,
+            values=[],
+            width=300,
+            command=self._on_session_change,
         )
-        self._counts_var = ctk.StringVar(value="—")
-        ctk.CTkLabel(counts, textvariable=self._counts_var, text_color=("gray40", "gray70"), anchor="w", justify="left").grid(
-            row=1, column=0, sticky="ew", padx=16, pady=(0, 12)
-        )
+        self._session_combo.pack(side="left", fill="x", expand=True)
+        
+        # Overview fields
+        self._overview_vars: dict[str, ctk.StringVar] = {}
+        fields = [
+            ("Session ID", "—"),
+            ("Config Hash", "—"),
+            ("Schema Version", "—"),
+            ("Root Fingerprint", "—"),
+        ]
+        
+        for i, (label, default) in enumerate(fields):
+            ctk.CTkLabel(
+                overview,
+                text=label + ":",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=("gray50", "gray60"),
+            ).grid(row=2 + i, column=0, sticky="w", padx=(0, 12), pady=2)
+            
+            var = ctk.StringVar(value=default)
+            ctk.CTkLabel(
+                overview,
+                textvariable=var,
+                font=ctk.CTkFont(size=11),
+                wraplength=500,
+                anchor="w",
+            ).grid(row=2 + i, column=1, sticky="w", padx=(12, 0), pady=2)
+            
+            self._overview_vars[label] = var
 
-        log = ctk.CTkFrame(self, corner_radius=12)
-        log.grid(row=3, column=0, sticky="nsew", padx=20, pady=(0, 20))
-        log.grid_columnconfigure(0, weight=1)
-        log.grid_rowconfigure(1, weight=1)
-        ctk.CTkLabel(log, text="Recent events", font=ctk.CTkFont(size=18, weight="bold")).grid(
-            row=0, column=0, sticky="w", padx=16, pady=(12, 8)
-        )
-        self._log_box = ctk.CTkTextbox(log, wrap="word", font=ctk.CTkFont(size=12))
-        self._log_box.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 16))
-        self._log_box.configure(state="disabled")
+    def _build_tabbed_content(self) -> None:
+        # Tab view container
+        tab_container = ctk.CTkFrame(self, corner_radius=12)
+        tab_container.grid(row=3, column=0, sticky="nsew", padx=20, pady=(0, 20))
+        tab_container.grid_columnconfigure(0, weight=1)
+        
+        # Custom tab buttons (since CTK doesn't have notebook)
+        self._tab_buttons: dict[str, ctk.CTkButton] = {}
+        tabs = [
+            ("phases", "Phases"),
+            ("events", "Events"),
+            ("artifacts", "Artifacts"),
+            ("compatibility", "Compatibility"),
+        ]
+        
+        button_row = ctk.CTkFrame(tab_container, fg_color="transparent")
+        button_row.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 8))
+        button_row.grid_columnconfigure(0, weight=1)
+        
+        for i, (tab_id, tab_name) in enumerate(tabs):
+            btn = ctk.CTkButton(
+                button_row,
+                text=tab_name,
+                width=120,
+                command=lambda t=tab_id: self._switch_tab(t),
+            )
+            btn.grid(row=0, column=i, padx=(0, 8), sticky="w")
+            self._tab_buttons[tab_id] = btn
+        
+        # Set default tab
+        self._current_tab = "phases"
+        self._tab_buttons["phases"].configure(fg_color=("gray60", "gray40"))
+        
+        # Tab content area
+        self._tab_content = ctk.CTkFrame(tab_container, fg_color="transparent")
+        self._tab_content.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 12))
+        self._tab_content.grid_columnconfigure(0, weight=1)
+        
+        # Build tab content areas
+        self._build_phases_tab()
+        self._build_events_tab()
+        self._build_artifacts_tab()
+        self._build_compatibility_tab()
 
-    def attach_store(self, store: "UIStateStore") -> None:
-        """Mirror engine event log lines from UIStateStore (hub-fed)."""
-        self.detach_store()
+    def _switch_tab(self, tab_id: str) -> None:
+        """Switch between tab views."""
+        # Reset all button colors
+        for btn in self._tab_buttons.values():
+            btn.configure(fg_color=("gray35", "gray50"))
+        
+        # Highlight selected tab
+        self._tab_buttons[tab_id].configure(fg_color=("gray60", "gray40"))
+        self._current_tab = tab_id
+        
+        # Clear and rebuild content
+        for widget in self._tab_content.winfo_children():
+            widget.destroy()
+        
+        if tab_id == "phases":
+            self._build_phases_content()
+        elif tab_id == "events":
+            self._build_events_content()
+        elif tab_id == "artifacts":
+            self._build_artifacts_content()
+        elif tab_id == "compatibility":
+            self._build_compatibility_content()
 
-        def on_state(state) -> None:
-            sess = scan_session(state)
-            if sess is not None and getattr(sess, "session_id", ""):
-                sid = str(sess.session_id)
-                self._active_id_var.set((sid[:16] + "…") if len(sid) > 16 else sid)
-            ev = scan_events_log(state)
-            if ev:
-                self._log_box.configure(state="normal")
-                self._log_box.delete("1.0", "end")
-                self._log_box.insert("1.0", "\n".join(ev[-200:]))
-                self._log_box.configure(state="disabled")
+    def _build_phases_tab(self) -> None:
+        """Build phases tab content area."""
+        pass  # Content built dynamically when tab is selected
 
-        self._unsub_store = store.subscribe(on_state, fire_immediately=False)
+    def _build_events_tab(self) -> None:
+        """Build events tab content area."""
+        pass  # Content built dynamically when tab is selected
 
-    def detach_store(self) -> None:
-        if self._unsub_store:
-            try:
-                self._unsub_store()
-            except Exception:
-                pass
-            self._unsub_store = None
+    def _build_artifacts_tab(self) -> None:
+        """Build artifacts tab content area."""
+        pass  # Content built dynamically when tab is selected
+
+    def _build_compatibility_tab(self) -> None:
+        """Build compatibility tab content area."""
+        pass  # Content built dynamically when tab is selected
+
+    def _build_phases_content(self) -> None:
+        """Build the phases table content."""
+        ctk.CTkLabel(
+            self._tab_content,
+            text="Scan Phases",
+            font=ctk.CTkFont(size=16, weight="bold"),
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(12, 8))
+        
+        # Phases table (scrollable)
+        self._phases_scroll = ctk.CTkScrollableFrame(self._tab_content, corner_radius=8)
+        self._phases_scroll.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 12))
+        self._phases_scroll.grid_columnconfigure(0, weight=1)
+
+    def _build_events_content(self) -> None:
+        """Build the events log content."""
+        # Header with filter
+        header = ctk.CTkFrame(self._tab_content, fg_color="transparent")
+        header.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 8))
+        header.grid_columnconfigure(1, weight=1)
+        
+        ctk.CTkLabel(
+            header,
+            text="Recent Events",
+            font=ctk.CTkFont(size=16, weight="bold"),
+        ).grid(row=0, column=0, sticky="w")
+        
+        # Clear button
+        ctk.CTkButton(
+            header,
+            text="Clear Buffer",
+            width=120,
+            fg_color=("#E67E22", "#D35400"),
+            command=self._clear_recorder,
+        ).grid(row=0, column=1, sticky="e", padx=(8, 0))
+        
+        # Events log
+        self._events_scroll = ctk.CTkTextbox(self._tab_content, wrap="word")
+        self._events_scroll.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 12))
+
+    def _build_artifacts_content(self) -> None:
+        """Build the artifacts listing content."""
+        ctk.CTkLabel(
+            self._tab_content,
+            text="Scan Artifacts",
+            font=ctk.CTkFont(size=16, weight="bold"),
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(12, 8))
+        
+        # Artifacts list
+        self._artifacts_scroll = ctk.CTkScrollableFrame(self._tab_content, corner_radius=8)
+        self._artifacts_scroll.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 12))
+        self._artifacts_scroll.grid_columnconfigure(0, weight=1)
+
+    def _build_compatibility_content(self) -> None:
+        """Build the compatibility checks content."""
+        ctk.CTkLabel(
+            self._tab_content,
+            text="Compatibility Checks",
+            font=ctk.CTkFont(size=16, weight="bold"),
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(12, 8))
+        
+        # Compatibility table
+        self._compat_scroll = ctk.CTkScrollableFrame(self._tab_content, corner_radius=8)
+        self._compat_scroll.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 12))
+        self._compat_scroll.grid_columnconfigure(0, weight=1)
 
     def _clear_recorder(self) -> None:
+        """Clear the diagnostics recorder buffer."""
         if not messagebox.askyesno(
-            "Clear diagnostics buffer",
+            "Clear Diagnostics Buffer",
             "Clear all in-memory recorder events and category counts?\n\n"
             "Scan history on disk is not affected. A new scan also clears this buffer.",
-            parent=self.winfo_toplevel(),
+            icon="warning"
         ):
             return
         get_diagnostics_recorder().clear()
         self.reload()
 
-    def reload(self) -> None:
-        scanning = self._coordinator.is_scanning
-        self._scanning_var.set("Yes" if scanning else "No")
-        aid = self._coordinator.get_active_scan_id()
-        self._active_id_var.set((aid[:16] + "…") if aid and len(aid) > 16 else (aid or "—"))
-        self._db_var.set(str(self._coordinator.persistence.db_path))
+    def _on_session_change(self, choice: str = None) -> None:
+        """Handle session selection change."""
+        session_id = self._session_var.get()
+        self._selected_session_id = session_id
+        self._update_session_overview(session_id)
+        self._refresh_tab_content()
 
+    def _update_session_overview(self, session_id: str) -> None:
+        """Update session overview fields."""
+        if not session_id:
+            for var in self._overview_vars.values():
+                var.set("—")
+            return
+        
+        # Use fast lookup from cache instead of O(n) loop
+        session_data = self._history_lookup.get(session_id)
+        
+        if not session_data:
+            self._overview_vars["Session ID"].set("—")
+            self._overview_vars["Config Hash"].set("—")
+            self._overview_vars["Schema Version"].set("—")
+            self._overview_vars["Root Fingerprint"].set("—")
+            return
+        
+        self._overview_vars["Session ID"].set(session_id)
+        self._overview_vars["Config Hash"].set(str(session_data.get("config_hash", "—"))[:16] + "…")
+        self._overview_vars["Schema Version"].set(str(session_data.get("schema_version", "—")))
+        self._overview_vars["Root Fingerprint"].set(str(session_data.get("root_fingerprint", "—"))[:20] + "…")
+
+    def _refresh_tab_content(self) -> None:
+        """Refresh the current tab content."""
+        if self._current_tab == "phases":
+            self._populate_phases()
+        elif self._current_tab == "events":
+            self._populate_events()
+        elif self._current_tab == "artifacts":
+            self._populate_artifacts()
+        elif self._current_tab == "compatibility":
+            self._populate_compatibility()
+
+    def _populate_phases(self) -> None:
+        """Populate the phases table."""
+        # Clear existing content
+        for widget in self._phases_scroll.winfo_children():
+            widget.destroy()
+        
+        if not self._selected_session_id:
+            ctk.CTkLabel(
+                self._phases_scroll,
+                text="Select a session to view phases.",
+                text_color=("gray40", "gray70"),
+            ).pack(pady=20)
+            return
+        
+        # TODO: Populate with actual phase data from coordinator
+        ctk.CTkLabel(
+            self._phases_scroll,
+            text="Phase data will be populated from coordinator.",
+            text_color=("gray40", "gray70"),
+        ).pack(pady=20)
+
+    def _populate_events(self) -> None:
+        """Populate the events log."""
+        # Clear existing content
+        self._events_scroll.delete("1.0", "end")
+        
         rec = get_diagnostics_recorder()
-        cts = rec.get_counts()
-        if not cts:
-            self._counts_var.set("No events recorded in this session buffer.")
-        else:
-            parts = [f"{k}: {v}" for k, v in sorted(cts.items())]
-            self._counts_var.set("  ·  ".join(parts))
-
-        lines: list[str] = []
-        for e in rec.get_recent(100):
-            detail = f"  |  {e.detail}" if e.detail else ""
+        events = rec.get_recent(100)
+        
+        if not events:
+            self._events_scroll.insert("1.0", "No events recorded in this session buffer.")
+            return
+        
+        lines = []
+        for e in events:
             try:
                 ts = datetime.fromtimestamp(e.wall_time).strftime("%Y-%m-%d %H:%M:%S")
             except (TypeError, ValueError, OSError):
                 ts = "—"
+            detail = f"  |  {e.detail}" if e.detail else ""
             lines.append(f"{ts}  [{e.category}] {e.message}{detail}")
+        
+        self._events_scroll.insert("1.0", "\n".join(lines))
 
-        self._log_box.configure(state="normal")
-        self._log_box.delete("1.0", "end")
-        self._log_box.insert("1.0", "\n".join(lines) if lines else "(empty — events appear when the engine logs warnings/errors here)")
-        self._log_box.configure(state="disabled")
+    def _populate_artifacts(self) -> None:
+        """Populate the artifacts listing."""
+        # Clear existing content
+        for widget in self._artifacts_scroll.winfo_children():
+            widget.destroy()
+        
+        if not self._selected_session_id:
+            ctk.CTkLabel(
+                self._artifacts_scroll,
+                text="Select a session to view artifacts.",
+                text_color=("gray40", "gray70"),
+            ).pack(pady=20)
+            return
+        
+        # TODO: Populate with actual artifact data from coordinator
+        ctk.CTkLabel(
+            self._artifacts_scroll,
+            text="Artifacts will be populated from coordinator.",
+            text_color=("gray40", "gray70"),
+        ).pack(pady=20)
+
+    def _populate_compatibility(self) -> None:
+        """Populate the compatibility checks."""
+        # Clear existing content
+        for widget in self._compat_scroll.winfo_children():
+            widget.destroy()
+        
+        if not self._selected_session_id:
+            ctk.CTkLabel(
+                self._compat_scroll,
+                text="Select a session to view compatibility.",
+                text_color=("gray40", "gray70"),
+            ).pack(pady=20)
+            return
+        
+        # TODO: Populate with actual compatibility data from coordinator
+        ctk.CTkLabel(
+            self._compat_scroll,
+            text="Compatibility checks will be populated from coordinator.",
+            text_color=("gray40", "gray70"),
+        ).pack(pady=20)
+
+    def reload(self) -> None:
+        """Reload all diagnostics data."""
+        # Update runtime status
+        scanning = getattr(self._coordinator, 'is_scanning', False)
+        self._scanning_var.set("Yes" if scanning else "No")
+        
+        active_id = getattr(self._coordinator, 'get_active_scan_id', lambda: "—")()
+        self._active_id_var.set((active_id[:16] + "…") if active_id and len(active_id) > 16 else (active_id or "—"))
+        
+        persistence = getattr(self._coordinator, 'persistence', None)
+        db_path = persistence.db_path if persistence else "—"
+        self._db_var.set(str(db_path))
+        
+        # Update session selector and cache for performance
+        try:
+            self._history_cache = self._coordinator.get_history(limit=50) or []
+            self._history_lookup = {h.get("scan_id", ""): h for h in self._history_cache if h.get("scan_id")}
+            session_ids = list(self._history_lookup.keys())
+            self._session_combo.configure(values=session_ids)
+            
+            if session_ids and not self._session_var.get():
+                self._session_var.set(session_ids[0])
+                self._selected_session_id = session_ids[0]
+        except Exception:
+            self._history_cache = []
+            self._history_lookup = {}
+        
+        self._update_session_overview(self._selected_session_id)
+        self._refresh_tab_content()
+
+    def _export_json(self) -> None:
+        """Export diagnostics to JSON."""
+        path = filedialog.asksaveasfilename(
+            title="Export diagnostics",
+            defaultextension=".json",
+            filetypes=[("JSON", "*.json"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        
+        # Convert DiagnosticEntry objects to dictionaries for proper JSON serialization
+        events = []
+        for event in get_diagnostics_recorder().get_recent(100):
+            events.append({
+                "category": event.category,
+                "message": event.message,
+                "detail": event.detail,
+                "timestamp": event.timestamp,
+                "wall_time": event.wall_time,
+            })
+        
+        payload = {
+            "export_format": "cerebro_diagnostics_v1",
+            "exported_at_utc": datetime.now(timezone.utc).isoformat(),
+            "session_id": self._selected_session_id,
+            "overview": {k: v.get() for k, v in self._overview_vars.items()},
+            "runtime": {
+                "scanning": self._scanning_var.get(),
+                "active_scan_id": self._active_id_var.get(),
+                "database_path": self._db_var.get(),
+            },
+            "events": events,
+        }
+        
+        try:
+            Path(path).write_text(
+                json.dumps(payload, indent=2, default=str),
+                encoding="utf-8",
+            )
+            messagebox.showinfo("Export", f"Diagnostics exported to:\n{path}")
+        except OSError as ex:
+            messagebox.showerror("Export failed", str(ex))

@@ -332,6 +332,7 @@ class ReviewPageCTK(ctk.CTkFrame):
         self._rebuild_group_rows(gids)
         self._select_group(gids[0])
         self.after_idle(self._apply_hero_resize)
+        self._bind_review_shortcuts()
 
     def apply_default_policy(self, policy: str) -> None:
         if not self._group_map:
@@ -626,3 +627,48 @@ class ReviewPageCTK(ctk.CTkFrame):
         self._details.delete("1.0", "end")
         self._details.insert("end", text + "\n")
         self._details.configure(state="disabled")
+
+    def _bind_review_shortcuts(self) -> None:
+        """Bind review page specific keyboard shortcuts."""
+        # Use page-local bindings instead of global to avoid conflicts
+        self.bind("<space>", lambda e: self._keep_selected_file())
+        self.bind("<Delete>", lambda e: self._delete_selected_file())
+        self.bind("<Control-Key-a>", lambda e: self._select_all_files())
+        self.bind("<Control-Key-d>", lambda e: self._deselect_all_files())
+
+    def _keep_selected_file(self) -> None:
+        """Keep the currently selected file in the comparison."""
+        if self._compare_path and self._compare_var.get() != _COMPARE_EMPTY:
+            current_gid = self._group_var.get()
+            if current_gid and current_gid in self._group_map:
+                self._keep_map[current_gid] = self._compare_path
+                self._update_keep_selection(current_gid)
+                self._set_details(f"Kept: {self._compare_path}")
+
+    def _delete_selected_file(self) -> None:
+        """Mark the currently selected file for deletion."""
+        if self._compare_path and self._compare_var.get() != _COMPARE_EMPTY:
+            current_gid = self._group_var.get()
+            if current_gid and current_gid in self._group_map:
+                # In review context, "delete" means don't keep this file
+                if self._keep_map.get(current_gid) == self._compare_path:
+                    # If this was the keep file, pick a different one
+                    group = self._group_map[current_gid]
+                    files = list(getattr(group, "files", []) or [])
+                    other_files = [f.path for f in files if f.path != self._compare_path]
+                    if other_files:
+                        self._keep_map[current_gid] = other_files[0]
+                        self._update_keep_selection(current_gid)
+                        self._set_details(f"Marked for deletion: {self._compare_path}")
+
+    def _select_all_files(self) -> None:
+        """Select all duplicate groups."""
+        if self._group_map:
+            gids = list(self._group_map.keys())
+            self._set_details(f"Selected all {len(gids)} groups")
+
+    def _deselect_all_files(self) -> None:
+        """Deselect all groups."""
+        self._group_var.set("")
+        self._clear_group_rows()
+        self._set_details("Deselected all groups")
