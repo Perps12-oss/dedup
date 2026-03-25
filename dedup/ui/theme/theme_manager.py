@@ -7,6 +7,7 @@ Uses a 'clam' base for full cross-platform colour control.
 
 from __future__ import annotations
 
+import logging
 import tkinter as tk
 from tkinter import ttk
 from typing import Any, Callable, List, Optional, Tuple
@@ -18,6 +19,7 @@ from .theme_registry import DEFAULT_THEME, get_theme
 from .theme_tokens import ThemeDict
 
 _INSTANCE: Optional["ThemeManager"] = None
+_log = logging.getLogger(__name__)
 
 
 def parse_gradient_stops_from_raw(raw: Any) -> Optional[List[Tuple[float, str]]]:
@@ -109,8 +111,8 @@ class ThemeManager:
         for cb in self._observers:
             try:
                 cb(self._tokens)
-            except Exception:
-                pass
+            except Exception as e:
+                _log.warning("Theme observer failed: %s", e)
 
     def _configure_styles(self, root: tk.Tk) -> None:
         t = self._tokens
@@ -365,8 +367,8 @@ class ThemeManager:
         for cb in self._observers:
             try:
                 cb(self._tokens)
-            except Exception:
-                pass
+            except Exception as e:
+                _log.warning("Theme observer failed (set_custom_gradient_stops): %s", e)
 
     def clear_custom_gradient_stops(self) -> None:
         """Clear custom gradient stops and revert to preset defaults."""
@@ -375,8 +377,8 @@ class ThemeManager:
         for cb in self._observers:
             try:
                 cb(self._tokens)
-            except Exception:
-                pass
+            except Exception as e:
+                _log.warning("Theme observer failed (clear_custom_gradient_stops): %s", e)
 
     def apply_theme(self, theme_key: str) -> None:
         """Apply a theme by key (without tk root for CTK usage)."""
@@ -386,8 +388,8 @@ class ThemeManager:
         for cb in self._observers:
             try:
                 cb(self._tokens)
-            except Exception:
-                pass
+            except Exception as e:
+                _log.warning("Theme observer failed (apply_theme): %s", e)
 
     def t(self, key: str) -> str:
         """Shorthand token lookup."""

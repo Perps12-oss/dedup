@@ -19,11 +19,14 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from tkinter import filedialog, messagebox
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 import customtkinter as ctk
 
 from ...infrastructure.diagnostics import get_diagnostics_recorder
+
+if TYPE_CHECKING:
+    from ...application.runtime import ApplicationRuntime
 from ..utils.formatting import fmt_duration, fmt_int
 
 _log = logging.getLogger(__name__)
@@ -36,11 +39,12 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
         self,
         parent,
         *,
-        coordinator: Any,
+        runtime: "ApplicationRuntime",
         **kwargs,
     ) -> None:
         super().__init__(parent, **kwargs)
-        self._coordinator = coordinator
+        self._rt = runtime
+        self._coordinator = runtime.coordinator
         self._store: Any | None = None
         self._selected_session_id: Optional[str] = None
         self._history_cache: list[dict[str, Any]] = []  # Cache for performance

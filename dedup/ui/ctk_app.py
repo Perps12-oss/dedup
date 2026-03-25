@@ -7,6 +7,7 @@ with the classic UI; only widgets differ.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox
@@ -14,6 +15,7 @@ from tkinter import messagebox
 import customtkinter as ctk
 
 from .. import __version__
+from ..application.runtime import ApplicationRuntime
 from ..engine.models import ScanResult
 from ..orchestration.coordinator import ScanCoordinator
 from .components.toast_manager import ToastManager
@@ -60,6 +62,7 @@ class CerebroCTKApp:
 
         self.state = UIState()
         self._coordinator = ScanCoordinator()
+        self._runtime = ApplicationRuntime(self._coordinator)
         self.store = UIStateStore(tk_root=self.root)
         self.hub = ProjectionHub(event_bus=self._coordinator.event_bus, tk_root=self.root)
         self._hub_store_adapter = ProjectionHubStoreAdapter(self.hub, self.store)
@@ -73,7 +76,7 @@ class CerebroCTKApp:
 
         self._toast = ToastManager(self.root)
         self._last_scan_toast_id: str | None = None
-        self._scan_controller = ScanController(self._coordinator, self.store)
+        self._scan_controller = ScanController(self._runtime.scan, self.store)
 
         self.root.grid_columnconfigure(1, weight=1)
         self.root.grid_rowconfigure(0, weight=1)
@@ -104,8 +107,8 @@ class CerebroCTKApp:
         try:
             self.root.after(80, self._paint_cinematic_backdrop)
             self.root.after(300, self._paint_cinematic_backdrop)
-        except Exception:
-            pass
+        except (tk.TclError, RuntimeError) as e:
+            _log.warning("Could not schedule cinematic backdrop paint: %s", e)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _apply_theme_from_settings(self) -> None:
@@ -116,9 +119,8 @@ class CerebroCTKApp:
         try:
             # This applies tk defaults via option_add (Canvas/Listbox/etc) which CTk relies on internally.
             self._tm.apply(key, self.root, gradient_stops=stops, sun_valley=False)
-        except Exception:
-            # Never block app startup on styling.
-            pass
+        except Exception as e:
+            _log.warning("Theme apply failed (degraded styling): %s", e)
 
     def _main_chrome_color(self, tokens: dict) -> str:
         """Solid fill for the main column (must match gradient tokens — CTk cannot show Canvas through)."""
@@ -139,24 +141,24 @@ class CerebroCTKApp:
                     self._top_gradient.configure(bg=bg)
                     # Multi-stop aware (uses tokens["_multi_gradient_stops"] when present)
                     self._top_gradient.update_from_tokens(tokens)
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log.warning("Top gradient update failed: %s", e)
             # Root background (CTk + underlying Tk)
             try:
                 self.root.configure(fg_color=bg)
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug("Root fg_color configure: %s", e)
             try:
                 self.root.configure(background=bg)
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug("Root background configure: %s", e)
             if self._nav is not None:
                 self._nav.configure(fg_color=sidebar)
             if self._main_stack is not None:
                 try:
                     self._main_stack.configure(bg=bg)
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log.warning("Main stack bg update failed: %s", e)
             self._paint_cinematic_backdrop()
             # Inset CTk column: solid chrome on top of cinematic margin (not full-bleed CTk over canvas).
             if self._content is not None:
@@ -167,16 +169,16 @@ class CerebroCTKApp:
                 if hasattr(page, "apply_theme_tokens"):
                     try:
                         page.apply_theme_tokens(tokens)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        _log.warning("Page apply_theme_tokens failed: %s", e)
             # Nav buttons: keep selection logic but use accent as base.
             for name, btn in self._nav_buttons.items():
                 if name == self._active_page:
                     btn.configure(fg_color=("#2B6CB0", acc))
                 else:
                     btn.configure(fg_color=("#234E70", "#1f538d"))
-        except Exception:
-            pass
+        except Exception as e:
+            _log.warning("Full theme token pass failed: %s", e)
 
     def _paint_cinematic_backdrop(self, _event: object = None) -> None:
         """Spine 2: full-area Tk Canvas behind an inset CTk shell (multi-stop wash)."""
@@ -195,8 +197,8 @@ class CerebroCTKApp:
                 self._tm.tokens,
                 reduced=bool(getattr(self.state.settings, "reduced_gradients", False)),
             )
-        except Exception:
-            pass
+        except Exception as e:
+            _log.warning("Cinematic backdrop paint failed: %s", e)
 
     def _toast_notify(self, msg: str, ms: int = 3200) -> None:
         self._toast.show(msg, ms=ms, reduced_motion=bool(self.state.settings.reduced_motion))
@@ -215,7 +217,7 @@ class CerebroCTKApp:
         review = self._pages.get("Review")
         if isinstance(review, ReviewPageCTK):
             self._review_controller = ReviewController(
-                self._coordinator,
+                self._runtime.review,
                 self.store,
                 callbacks=review,
                 toast_notify=lambda m, ms: self._toast_notify(m, ms),
@@ -224,16 +226,19 @@ class CerebroCTKApp:
 
     def _push_mission_store(self) -> None:
         try:
-            raw = self._coordinator.get_history(limit=8) or []
-        except Exception:
+            raw = self._runtime.history.get_history(limit=8) or []
+        except Exception as e:
+            _log.warning("Mission history slice failed: %s", e)
             raw = []
         try:
-            resumable_ids = tuple(self._coordinator.get_resumable_scan_ids() or [])
-        except Exception:
+            resumable_ids = tuple(self._runtime.scan.get_resumable_scan_ids() or [])
+        except Exception as e:
+            _log.warning("Mission resumable IDs failed: %s", e)
             resumable_ids = ()
         try:
-            recent_folders = tuple(self._coordinator.get_recent_folders() or [])[:10]
-        except Exception:
+            recent_folders = tuple(self._runtime.history.get_recent_folders() or [])[:10]
+        except Exception as e:
+            _log.warning("Mission recent folders failed: %s", e)
             recent_folders = ()
         last_scan = None
         if raw:
@@ -271,8 +276,8 @@ class CerebroCTKApp:
         try:
             proj = build_history_from_coordinator(self._coordinator)
             self.store.set_history(proj)
-        except Exception:
-            pass
+        except Exception as e:
+            _log.warning("History projection push failed: %s", e)
 
     def _build_nav(self) -> None:
         # Give nav a real background so child widgets never "flash" white.
@@ -344,8 +349,8 @@ class CerebroCTKApp:
         self._top_gradient.grid(row=0, column=0, sticky="ew")
         try:
             self._top_gradient.update_from_tokens(self._tm.tokens)
-        except Exception:
-            pass
+        except Exception as e:
+            _log.warning("Initial gradient bar token sync failed: %s", e)
 
         self._title_var = ctk.StringVar(value="Welcome")
         ctk.CTkLabel(content, textvariable=self._title_var, font=ctk.CTkFont(size=28, weight="bold")).grid(
@@ -365,8 +370,8 @@ class CerebroCTKApp:
 
         try:
             self._top_gradient.tkraise()
-        except Exception:
-            pass
+        except Exception as e:
+            _log.debug("Top gradient tkraise: %s", e)
 
         # Page roots: transparent → inherit main column chrome (see cinematic_chrome_color).
         _tp = {"fg_color": "transparent"}
@@ -395,15 +400,15 @@ class CerebroCTKApp:
             **_tp,
         )
         self._pages["Review"] = ReviewPageCTK(self._content_host, store=self.store, **_tp)
-        self._pages["Review"].set_refresh_callback(self._coordinator.get_last_result)  # type: ignore[attr-defined]
+        self._pages["Review"].set_refresh_callback(self._runtime.review.get_last_result)  # type: ignore[attr-defined]
         self._pages["History"] = HistoryPageCTK(
             self._content_host,
-            get_history=lambda: self._coordinator.get_history(30),
+            get_history=lambda: self._runtime.history.get_history(30),
             on_load_scan=self._open_history_scan_in_review,
             on_resume_scan=self._resume_scan_latest,
             **_tp,
         )
-        self._pages["Diagnostics"] = DiagnosticsPageCTK(self._content_host, coordinator=self._coordinator, **_tp)
+        self._pages["Diagnostics"] = DiagnosticsPageCTK(self._content_host, runtime=self._runtime, **_tp)
         self._pages["Themes"] = ThemesPageCTK(
             self._content_host,
             on_theme_change=self._on_theme_change,
@@ -519,7 +524,7 @@ class CerebroCTKApp:
     def _resume_scan_latest(self) -> None:
         self._show_page("Scan")
         self._title_var.set("Scan (Resume)")
-        ids = self._coordinator.get_resumable_scan_ids() or []
+        ids = self._runtime.scan.get_resumable_scan_ids() or []
         page = self._pages.get("Scan")
         if not isinstance(page, ScanPageCTK):
             return
@@ -542,7 +547,7 @@ class CerebroCTKApp:
 
     def _on_scan_cancel(self) -> None:
         page = self._pages.get("Scan")
-        if self._coordinator.is_scanning:
+        if self._runtime.scan.is_scanning:
             self._scan_controller.handle_cancel()
             self._active_scan_id = ""
             if isinstance(page, ScanPageCTK):
@@ -554,12 +559,12 @@ class CerebroCTKApp:
     def _open_last_review(self) -> None:
         review = self._pages.get("Review")
         if isinstance(review, ReviewPageCTK):
-            review.load_result(self._coordinator.get_last_result())
+            review.load_result(self._runtime.review.get_last_result())
             review.apply_default_policy(self._default_keep_policy)
         self._show_page("Review")
 
     def _open_history_scan_in_review(self, scan_id: str) -> None:
-        result = self._coordinator.load_scan(scan_id)
+        result = self._runtime.history.load_scan(scan_id)
         if result is None:
             sid = (scan_id[:18] + "…") if len(scan_id) > 18 else scan_id
             messagebox.showwarning(
@@ -613,8 +618,8 @@ class CerebroCTKApp:
                     f"Scan complete — {len(result.duplicate_groups):,} duplicate group(s).",
                     ms=4500,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                _log.warning("Scan complete toast failed: %s", e)
         self._route_after_scan()
 
     def _on_scan_error(self, error: str) -> None:
@@ -638,7 +643,7 @@ class CerebroCTKApp:
             return
         review = self._pages.get("Review")
         if isinstance(review, ReviewPageCTK):
-            review.load_result(self._coordinator.get_last_result())
+            review.load_result(self._runtime.review.get_last_result())
             review.apply_default_policy(self._default_keep_policy)
         self._show_page("Review")
 
@@ -666,22 +671,22 @@ class CerebroCTKApp:
         self.store.set_ui_mode("advanced" if self.state.settings.advanced_mode else "simple")
         try:
             self._on_theme_tokens(self._tm.tokens)
-        except Exception:
-            pass
+        except Exception as e:
+            _log.warning("Settings-changed theme refresh failed: %s", e)
 
     def _on_close(self) -> None:
-        if self._coordinator.is_scanning:
+        if self._runtime.scan.is_scanning:
             if not messagebox.askyesno("Scan in progress", "A scan is active. Cancel and exit?", parent=self.root):
                 return
-            self._coordinator.cancel_scan()
+            self._runtime.scan.cancel_scan()
         try:
             self.hub.shutdown()
-        except Exception:
-            pass
+        except Exception as e:
+            _log.warning("Hub shutdown failed: %s", e)
         try:
             self._hub_store_adapter.stop()
-        except Exception:
-            pass
+        except Exception as e:
+            _log.warning("Hub store adapter stop failed: %s", e)
         try:
             st = str(self.root.state() or "")
             if st.lower() == "zoomed":
@@ -695,8 +700,8 @@ class CerebroCTKApp:
                 self.state.settings.window_x = self.root.winfo_x()
                 self.state.settings.window_y = self.root.winfo_y()
             self.state.save()
-        except Exception:
-            pass
+        except Exception as e:
+            _log.warning("Persist window geometry on exit failed: %s", e)
         self.root.destroy()
 
     def _bind_global_shortcuts(self) -> None:

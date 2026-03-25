@@ -11,6 +11,7 @@ Safety features:
 
 from __future__ import annotations
 
+import logging
 import os
 import platform
 import shutil
@@ -31,6 +32,8 @@ from .models import (
     DeletionVerificationTargetStatus,
     FileMetadata,
 )
+
+_log = logging.getLogger(__name__)
 
 
 class TrashStrategy:
@@ -308,15 +311,13 @@ class DeletionEngine:
             with open(self.audit_log_path, "a", encoding="utf-8") as f:
                 f.write(f"[{timestamp}] {status} | {operation} | {path}{error_str}\n")
         except (OSError, IOError) as e:
-            import logging
-
-            logging.getLogger(__name__).warning("Audit log write failed: %s", e)
+            _log.warning("Audit log write failed: %s", e)
             try:
                 from ..infrastructure.diagnostics import CATEGORY_AUDIT_LOG, get_diagnostics_recorder
 
                 get_diagnostics_recorder().record(CATEGORY_AUDIT_LOG, "Audit log write failed", str(e))
-            except Exception:
-                pass
+            except Exception as rec_err:
+                _log.warning("Diagnostics record for audit failure also failed: %s", rec_err)
 
     def _move_to_trash_fallback(self, path: Path) -> tuple[bool, Optional[str]]:
         """Move file to ~/.dedup/trash (always works if we have write access)."""
@@ -407,9 +408,9 @@ class DeletionEngine:
                     if _verified():
                         return True, None
                 except ImportError:
-                    pass
-                except Exception:
-                    pass
+                    _log.debug("winshell not available; using fallback trash path")
+                except Exception as e:
+                    _log.warning("Windows recycle delete failed, trying fallback: %s", e)
                 return self._move_to_trash_fallback(path)
 
             # Fallback: move to ~/.dedup/trash

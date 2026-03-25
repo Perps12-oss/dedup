@@ -21,8 +21,8 @@ from pathlib import Path
 from dedup import __version__
 
 
-def run_gui(ui_backend: str = "ttk"):
-    """Run the graphical interface."""
+def run_gui(ui_backend: str = "ctk"):
+    """Run the graphical interface (default: CustomTkinter primary shell)."""
     if ui_backend == "ctk":
         try:
             from dedup.ui.ctk_app import CerebroCTKApp
@@ -40,7 +40,7 @@ def run_gui(ui_backend: str = "ttk"):
             raise
         return
 
-    # Import the classic app directly to avoid importing `dedup.ui` (which is shared with CTK).
+    # Legacy ttkbootstrap shell (non-default).
     from dedup.ui.app import DedupApp
 
     app = DedupApp()
@@ -109,8 +109,8 @@ Examples:
     parser.add_argument(
         "--ui-backend",
         choices=["ttk", "ctk"],
-        default=os.environ.get("DEDUP_UI_BACKEND", "ttk"),
-        help="GUI backend to launch (default: ttk; experimental: ctk)",
+        default=os.environ.get("DEDUP_UI_BACKEND", "ctk"),
+        help="GUI backend: ctk (primary) or ttk (legacy ttkbootstrap shell)",
     )
 
     args = parser.parse_args()
