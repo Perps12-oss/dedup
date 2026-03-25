@@ -1,10 +1,14 @@
 # dedup
 
-Duplicate-aware scanning and the **CEREBRO** Tk operations shell (Mission, Scan, Review, History, Diagnostics, Themes, Settings).
-The shell uses `ttkbootstrap` theming and UI-thread-marshaled store updates for safer Tk rendering under background scan activity.
+Duplicate-aware scanning and the **CEREBRO** desktop shell (Mission, Scan, Review, History, Diagnostics, Themes, Settings).
+
+**Primary UI:** CustomTkinter (`python -m dedup` by default). Install CTK extras: `pip install -r requirements-ctk.txt`.
+
+**Legacy UI:** ttk / `ttkbootstrap` shell — `python -m dedup --ui-backend ttk` or `DEDUP_UI_BACKEND=ttk`. See [dedup/ui/legacy/README.md](dedup/ui/legacy/README.md).
+
+**UI architecture:** [docs/UI_AUTHORITY.md](docs/UI_AUTHORITY.md)
 
 **Install, usage, and feature overview:** [docs/README.md](docs/README.md)
-Launch experimental CTK shell with `python -m dedup --ui-backend ctk` (or `DEDUP_UI_BACKEND=ctk`) after `pip install -r requirements-ctk.txt`.
 
 **Contributing & tooling:** [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)
 
