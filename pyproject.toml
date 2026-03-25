@@ -33,4 +33,4 @@ warn_unused_ignores = true
 ignore_missing_imports = true
 explicit_package_bases = true
 mypy_path = "."
-packages = ["dedup.engine", "dedup.orchestration", "dedup.infrastructure"]
+packages = ["dedup.application", "dedup.engine", "dedup.orchestration", "dedup.infrastructure"]
