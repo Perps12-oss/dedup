@@ -9,14 +9,16 @@ from __future__ import annotations
 
 from datetime import datetime
 from tkinter import messagebox
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Optional
 
 import customtkinter as ctk
 
 from ...infrastructure.diagnostics import get_diagnostics_recorder
+from ..state.selectors import scan_events_log, scan_session
 
 if TYPE_CHECKING:
     from ...orchestration.coordinator import ScanCoordinator
+    from ..state.store import UIStateStore
 
 
 class DiagnosticsPageCTK(ctk.CTkFrame):
@@ -29,6 +31,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
     ) -> None:
         super().__init__(parent, **kwargs)
         self._coordinator = coordinator
+        self._unsub_store: Optional[Callable[[], None]] = None
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(3, weight=1)
         self._build()
@@ -42,7 +45,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
         )
         ctk.CTkLabel(
             top,
-            text="CTK-lite panel: coordinator + recorder buffer. Use the classic UI for phase timelines and exports.",
+            text="Coordinator + recorder + live scan event log (ProjectionHub → store). Phase timelines / JSON export: classic shell.",
             text_color=("gray40", "gray70"),
             wraplength=720,
             justify="left",
@@ -103,6 +106,32 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
         self._log_box = ctk.CTkTextbox(log, wrap="word", font=ctk.CTkFont(size=12))
         self._log_box.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 16))
         self._log_box.configure(state="disabled")
+
+    def attach_store(self, store: "UIStateStore") -> None:
+        """Mirror engine event log lines from UIStateStore (hub-fed)."""
+        self.detach_store()
+
+        def on_state(state) -> None:
+            sess = scan_session(state)
+            if sess is not None and getattr(sess, "session_id", ""):
+                sid = str(sess.session_id)
+                self._active_id_var.set((sid[:16] + "…") if len(sid) > 16 else sid)
+            ev = scan_events_log(state)
+            if ev:
+                self._log_box.configure(state="normal")
+                self._log_box.delete("1.0", "end")
+                self._log_box.insert("1.0", "\n".join(ev[-200:]))
+                self._log_box.configure(state="disabled")
+
+        self._unsub_store = store.subscribe(on_state, fire_immediately=False)
+
+    def detach_store(self) -> None:
+        if self._unsub_store:
+            try:
+                self._unsub_store()
+            except Exception:
+                pass
+            self._unsub_store = None
 
     def _clear_recorder(self) -> None:
         if not messagebox.askyesno(

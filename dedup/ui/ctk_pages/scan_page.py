@@ -9,13 +9,17 @@ from __future__ import annotations
 
 from pathlib import Path
 from tkinter import filedialog
-from typing import Callable
+from typing import TYPE_CHECKING, Callable, Optional
 
 import customtkinter as ctk
 
 from ..ctk_action_contracts import KeepPolicy, PostScanRoute, ScanMode, ScanStartPayload
 from ..projections.phase_projection import PHASE_LABELS, canonical_phase
+from ..state.selectors import scan_metrics, scan_session
 from ..utils.formatting import fmt_duration, fmt_int
+
+if TYPE_CHECKING:
+    from ..state.store import UIStateStore
 
 # Pipeline stages (engine) vs session activity ("Running" in status) — keep phase column on pipeline only.
 _PHASE_EXACT_LABELS: dict[str, str] = {
@@ -60,6 +64,7 @@ class ScanPageCTK(ctk.CTkFrame):
         self._m_current_var = ctk.StringVar(value="—")
         self._pct_var = ctk.StringVar(value="0%")
         self._eta_var = ctk.StringVar(value="ETA: —")
+        self._unsub_store: Optional[Callable[[], None]] = None
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(7, weight=1)
         self._build()
@@ -137,7 +142,8 @@ class ScanPageCTK(ctk.CTkFrame):
         self._start_btn.pack(side="left", padx=(0, 8))
         self._resume_btn = ctk.CTkButton(row, text="Resume", width=150, command=self._on_resume)
         self._resume_btn.pack(side="left", padx=(0, 8))
-        ctk.CTkButton(row, text="Cancel", width=150, fg_color="gray35", command=self._on_cancel).pack(side="left")
+        self._cancel_btn = ctk.CTkButton(row, text="Back", width=150, fg_color="gray35", command=self._on_cancel)
+        self._cancel_btn.pack(side="left")
 
         # Completion summary to avoid forcing users into full Review immediately.
         self._ready = ctk.CTkFrame(self, corner_radius=12)
@@ -230,11 +236,71 @@ class ScanPageCTK(ctk.CTkFrame):
         st = "disabled" if busy else "normal"
         self._start_btn.configure(state=st)
         self._resume_btn.configure(state=st)
+        self._cancel_btn.configure(
+            text="Stop scan" if busy else "Back",
+            state="normal",
+        )
+
+    def set_target_path(self, path: str) -> None:
+        self._path_var.set(path.strip())
+
+    def apply_decision_defaults(self, keep_policy: KeepPolicy, post_scan_route: PostScanRoute) -> None:
+        kp = keep_policy if keep_policy in ("newest", "oldest", "largest", "smallest", "first") else "newest"
+        pr = post_scan_route if post_scan_route in ("review", "scan", "mission") else "review"
+        self._keep_policy.set(kp)
+        self._post_scan_route.set(pr)
 
     def set_mode(self, mode: str) -> None:
         """Update page from Welcome entry point."""
         self._mode = mode if mode in ("photos", "videos", "files") else "files"
         self._mode_label.configure(text=f"Preset: {self._mode.title()}")
+
+    def attach_store(self, store: "UIStateStore") -> None:
+        """Drive live metrics/session from UIStateStore (fed by ProjectionHub)."""
+        self.detach_store()
+
+        def on_state(state) -> None:
+            sess = scan_session(state)
+            met = scan_metrics(state)
+            if sess is not None and getattr(sess, "session_id", ""):
+                sid = str(sess.session_id)
+                short = (sid[:8] + "…") if len(sid) > 8 else sid
+                phase = getattr(sess, "current_phase", None) or ""
+                self.set_session(session_id=short, phase=phase or None)
+                st = getattr(sess, "status", "") or ""
+                if st == "running":
+                    self.set_status(f"Running ({short})")
+                elif st == "completed":
+                    self.set_status("Completed")
+                elif st in ("cancelled", "failed"):
+                    self.set_status(st.title())
+            if met is not None:
+                files_n = int(getattr(met, "files_discovered_total", 0) or 0)
+                groups_n = int(getattr(met, "duplicate_groups_live", 0) or 0)
+                elapsed = float(getattr(met, "elapsed_s", 0.0) or 0.0)
+                cur = str(getattr(met, "current_file", "") or "")
+                total_u = getattr(met, "current_phase_total_units", None)
+                total_files = int(total_u) if total_u is not None else None
+                self.set_metrics(
+                    files_scanned=files_n,
+                    groups_found=groups_n,
+                    elapsed_s=elapsed,
+                    current_file=cur,
+                    total_files=total_files,
+                )
+                eta_lbl = met.eta_label
+                if eta_lbl and eta_lbl != "—":
+                    self._eta_var.set(f"ETA: {eta_lbl}")
+
+        self._unsub_store = store.subscribe(on_state, fire_immediately=True)
+
+    def detach_store(self) -> None:
+        if self._unsub_store:
+            try:
+                self._unsub_store()
+            except Exception:
+                pass
+            self._unsub_store = None
 
     def _browse(self) -> None:
         path = filedialog.askdirectory(title="Select Folder to Scan")

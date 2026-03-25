@@ -1,5 +1,7 @@
 # CTK Migration Tracker
 
+**Strategic roadmap (v3.0 end state and phases):** `docs/CTK_V3_ROADMAP.md`
+
 Tracks feature movement during the CustomTkinter sweep so we do not duplicate
 controls across pages or accidentally re-introduce retired UX patterns.
 

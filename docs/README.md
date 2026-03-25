@@ -36,6 +36,10 @@ pip install -e ".[modern-ui]"
 
 # Run
 python -m dedup
+
+# Optional: experimental CustomTkinter shell (see requirements-ctk.txt)
+pip install -r requirements-ctk.txt
+python -m dedup --ui-backend ctk
 ```
 
 ## Usage
@@ -44,7 +48,7 @@ python -m dedup
 
 ```bash
 python -m dedup
-# Experimental CustomTkinter shell
+# Experimental CustomTkinter shell (install deps first: pip install -r requirements-ctk.txt)
 python -m dedup --ui-backend ctk
 ```
 
@@ -84,6 +88,7 @@ See `docs/CONTROLLER_CONTRACTS.md` and `docs/REPO_AUTHORITY.md` for single-autho
 
 | Doc | Role |
 |-----|------|
+| `docs/CTK_V3_ROADMAP.md` | **CTK → v3.0** — end goal, phases, parity checklist |
 | `docs/ENGINEERING_STATUS.md` | **Living status** — update as features/phases land |
 | `docs/PHASE_ROLLOUT.md` | Phase-by-phase history and what was skipped |
 | `docs/AUDIT_REPORT_PHASE1.md` | Phase 1 static audit completion |

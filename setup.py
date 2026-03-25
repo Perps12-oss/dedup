@@ -11,7 +11,7 @@ long_description = readme_path.read_text(encoding="utf-8") if readme_path.exists
 
 setup(
     name="dedup",
-    version="1.0.0",
+    version="3.0.0-beta.1",
     description="A minimal, high-performance duplicate file finder",
     long_description=long_description,
     long_description_content_type="text/markdown",

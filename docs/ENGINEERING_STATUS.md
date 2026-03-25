@@ -40,6 +40,20 @@
 
 ## Changelog (append newest first)
 
+### 2026-03-24 — P0 CTK backlog implemented
+
+- **History:** `load_scan` failure → `messagebox.showwarning` (`ctk_app._open_history_scan_in_review`).
+- **Cancel:** `ScanCoordinator.start_scan(..., on_cancel=…)` → worker `on_cancel`; CTK `set_scan_busy(False)` on main thread after cooperative cancel.
+- **Version:** `dedup.__version__` = `3.0.0-beta.1`; `main.py --version`, `CerebroApp` / `CerebroCTKApp` titles, `setup.py`; roadmap P0 backlog cleared.
+
+### 2026-03-24 — CTK P0 parity walk
+
+- **`docs/CTK_V3_ROADMAP.md`**: P0 items marked done vs open; ordered **P0 backlog** (#1 History load UX, #2 cancel UI sync, #3 version alignment); Phase A table status column.
+
+### 2026-03-24 — CTK v3 roadmap
+
+- **`docs/CTK_V3_ROADMAP.md`**: end goal (CTK as primary 3.0, classic legacy), phased steps (A–D), P0/P1/P2 parity checklist, principles (shared coordinator/core). Linked from `docs/README.md` and `CTK_MIGRATION_TRACKER.md`.
+
 ### 2026-03-21 — Review P1: rail DELETE, drawer dedupe, Compare copy, deletion toasts
 
 - **Nav rail:** under **Review**, prominent `DELETE` control (trash + danger border); `CerebroApp._review_delete_from_rail` → `ReviewController.handle_execute_deletion`.

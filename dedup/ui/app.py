@@ -22,6 +22,7 @@ try:
 except Exception:
     TkinterDnD = None
 
+from .. import __version__
 from ..engine.models import DeletionResult, ScanResult
 from ..infrastructure.config import load_config, save_config
 from ..orchestration.coordinator import ScanCoordinator
@@ -68,7 +69,7 @@ class CerebroApp:
     """
 
     APP_NAME = "CEREBRO"
-    APP_VERSION = "2.1.0"
+    APP_VERSION = __version__
 
     # Minimum window (56px nav + Review three-pane mins + page padding); users can resize down to here.
     MIN_WIDTH = 580

@@ -102,6 +102,7 @@ class ScanCoordinator:
         on_progress: Optional[Callable[[ScanProgress], None]] = None,
         on_complete: Optional[Callable[[ScanResult], None]] = None,
         on_error: Optional[Callable[[str], None]] = None,
+        on_cancel: Optional[Callable[[], None]] = None,
         resume_scan_id: Optional[str] = None,
         **scan_options,
     ) -> str:
@@ -113,6 +114,7 @@ class ScanCoordinator:
             on_progress: Progress callback
             on_complete: Completion callback
             on_error: Error callback
+            on_cancel: Optional callback when the worker stops after cooperative cancel
             resume_scan_id: If set, resume from checkpoint for this scan_id
             **scan_options: Additional ScanConfig options (ignored when resuming)
 
@@ -161,6 +163,7 @@ class ScanCoordinator:
         worker.callbacks.on_progress = on_progress
         worker.callbacks.on_complete = self._on_scan_complete_wrapper(on_complete)
         worker.callbacks.on_error = on_error
+        worker.callbacks.on_cancel = on_cancel
 
         self._active_worker = worker
         scan_id = worker.start()

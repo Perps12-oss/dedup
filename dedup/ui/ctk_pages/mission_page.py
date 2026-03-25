@@ -7,9 +7,22 @@ high-level intent of the ttk Mission page without full feature parity yet.
 
 from __future__ import annotations
 
-from typing import Callable
+from pathlib import Path
+from tkinter import filedialog, messagebox
+from typing import TYPE_CHECKING, Callable, Optional
 
 import customtkinter as ctk
+
+from ..ctk_action_contracts import ScanStartPayload
+from ..utils.formatting import fmt_bytes, fmt_int
+
+if TYPE_CHECKING:
+    from ..state.store import UIStateStore
+
+
+def _quick_scan_options() -> dict:
+    """Same defaults as Scan page for files / all-media preset."""
+    return {"media_category": "all", "scan_mode": "deep", "include_hidden": False, "scan_subfolders": True}
 
 
 class MissionPageCTK(ctk.CTkFrame):
@@ -22,17 +35,21 @@ class MissionPageCTK(ctk.CTkFrame):
         on_start_scan: Callable[[], None],
         on_resume_scan: Callable[[], None],
         on_open_last_review: Callable[[], None],
+        on_quick_scan: Callable[[ScanStartPayload], None],
         **kwargs,
     ) -> None:
         super().__init__(parent, **kwargs)
         self._on_start_scan = on_start_scan
         self._on_resume_scan = on_resume_scan
         self._on_open_last_review = on_open_last_review
+        self._on_quick_scan = on_quick_scan
+        self._quick_path_var = ctk.StringVar(value="")
         self._last_files_var = ctk.StringVar(value="—")
         self._last_groups_var = ctk.StringVar(value="—")
         self._last_reclaim_var = ctk.StringVar(value="—")
         self._resume_status_var = ctk.StringVar(value="—")
         self._recent_var = ctk.StringVar(value="No recent sessions yet.")
+        self._unsub_store: Optional[Callable[[], None]] = None
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(3, weight=1)
         self._build()
@@ -44,6 +61,54 @@ class MissionPageCTK(ctk.CTkFrame):
 
     def set_resume_hint(self, text: str) -> None:
         self._resume_status_var.set(text)
+
+    def attach_store(self, store: "UIStateStore") -> None:
+        """Sync Mission summary from coordinator-derived MissionState (same as classic shell)."""
+        if self._unsub_store:
+            try:
+                self._unsub_store()
+            except Exception:
+                pass
+            self._unsub_store = None
+
+        def on_state(state) -> None:
+            m = getattr(state, "mission", None)
+            if m is None:
+                return
+            ls = getattr(m, "last_scan", None)
+            if ls is not None:
+                self.set_last_scan_snapshot(
+                    files=fmt_int(getattr(ls, "files_scanned", 0) or 0),
+                    groups=fmt_int(getattr(ls, "duplicate_groups", 0) or 0),
+                    reclaim=fmt_bytes(getattr(ls, "reclaimable_bytes", 0) or 0),
+                )
+            else:
+                self.set_last_scan_snapshot(files="—", groups="—", reclaim="—")
+            res_ids = getattr(m, "resumable_scan_ids", ()) or ()
+            n_res = len(res_ids)
+            self.set_resume_hint("None" if n_res == 0 else f"{n_res} session(s)")
+            lines: list[str] = []
+            for d in getattr(m, "recent_sessions", ()) or ():
+                sid = str(d.get("scan_id", ""))
+                short = (sid[:10] + "…") if len(sid) > 10 else sid or "—"
+                lines.append(
+                    f"{short}  ·  {d.get('status', '—')}  ·  {fmt_int(d.get('files_scanned') or 0)} files"
+                )
+            self.set_recent_sessions_text(
+                "\n".join(lines)
+                if lines
+                else "No saved scans in history yet. Complete a scan to populate this list."
+            )
+
+        self._unsub_store = store.subscribe(on_state, fire_immediately=True)
+
+    def detach_store(self) -> None:
+        if self._unsub_store:
+            try:
+                self._unsub_store()
+            except Exception:
+                pass
+            self._unsub_store = None
 
     def _build(self) -> None:
         # Header + CTA row
@@ -114,11 +179,39 @@ class MissionPageCTK(ctk.CTkFrame):
         )
         ctk.CTkLabel(
             quick,
-            text="Use the Scan page for folder pick, defaults, and live metrics — this block is a visual placeholder.",
+            text="All-files preset · same defaults as Scan (keep policy / post-scan use the Scan page or last run).",
             text_color=("gray40", "gray70"),
             wraplength=640,
             justify="left",
-        ).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 16))
+        ).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 8))
+        ctk.CTkEntry(quick, textvariable=self._quick_path_var, placeholder_text="Folder to scan…").grid(
+            row=2, column=0, sticky="ew", padx=16, pady=(0, 8)
+        )
+        qb = ctk.CTkFrame(quick, fg_color="transparent")
+        qb.grid(row=3, column=0, sticky="w", padx=16, pady=(0, 16))
+        ctk.CTkButton(qb, text="Browse…", width=120, fg_color="gray35", command=self._quick_browse).pack(
+            side="left", padx=(0, 8)
+        )
+        ctk.CTkButton(qb, text="Start Quick Scan", width=160, command=self._quick_start).pack(side="left")
+
+    def _quick_browse(self) -> None:
+        path = filedialog.askdirectory(title="Select Folder for Quick Scan")
+        if path:
+            self._quick_path_var.set(str(Path(path).resolve()))
+
+    def _quick_start(self) -> None:
+        raw = self._quick_path_var.get().strip()
+        if not raw:
+            messagebox.showwarning("Quick Scan", "Choose a folder first.", parent=self.winfo_toplevel())
+            return
+        payload: ScanStartPayload = {
+            "mode": "files",
+            "path": raw,
+            "options": _quick_scan_options(),
+            "keep_policy": "newest",
+            "post_scan_route": "review",
+        }
+        self._on_quick_scan(payload)
 
     def set_recent_sessions_text(self, text: str) -> None:
         self._recent_var.set(text)

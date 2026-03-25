@@ -13,14 +13,20 @@ from __future__ import annotations
 import tkinter
 from pathlib import Path
 from tkinter import messagebox
-from typing import Callable
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 import customtkinter as ctk
 
 from ...engine.media_types import is_image_extension
 from ...engine.models import DeletionResult, ScanResult
 from ...engine.thumbnails import get_thumbnail_path
+from ..state.store import ReviewSelectionState
 from ..utils.formatting import fmt_bytes
+from ..utils.review_keep import coerce_keep_selections, default_keep_map_from_result
+
+if TYPE_CHECKING:
+    from ..controller.review_controller import ReviewController
+    from ..state.store import UIStateStore
 
 _COMPARE_EMPTY = "—"
 
@@ -35,11 +41,14 @@ class ReviewPageCTK(ctk.CTkFrame):
         self,
         parent,
         *,
-        on_execute: Callable[[dict[str, str]], DeletionResult | None],
+        on_execute: Optional[Callable[[dict[str, str]], DeletionResult | None]] = None,
+        store: Optional["UIStateStore"] = None,
         **kwargs,
     ) -> None:
         super().__init__(parent, **kwargs)
         self._on_execute = on_execute
+        self._store = store
+        self._review_controller: Optional["ReviewController"] = None
         self._result: ScanResult | None = None
         self._group_map: dict[str, object] = {}
         self._keep_map: dict[str, str] = {}
@@ -142,7 +151,8 @@ class ReviewPageCTK(ctk.CTkFrame):
 
         row = ctk.CTkFrame(right, fg_color="transparent")
         row.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 12))
-        ctk.CTkButton(row, text="Execute Deletion", command=self._execute).pack(side="left", padx=(0, 8))
+        self._execute_btn = ctk.CTkButton(row, text="Execute Deletion", command=self._execute)
+        self._execute_btn.pack(side="left", padx=(0, 8))
         ctk.CTkButton(row, text="Refresh Last Scan", fg_color="gray35", command=self._refresh_callback).pack(side="left")
 
         ctk.CTkFrame(right, fg_color="transparent").grid(row=5, column=0, sticky="nsew")
@@ -165,6 +175,61 @@ class ReviewPageCTK(ctk.CTkFrame):
 
     def set_refresh_callback(self, callback: Callable[[], ScanResult | None]) -> None:
         self._refresh_callback = lambda: self.load_result(callback())
+
+    def set_review_controller(self, ctrl: "ReviewController") -> None:
+        self._review_controller = ctrl
+
+    # --- IReviewCallbacks (ReviewController) ---
+    def get_current_result(self) -> Any:
+        return self._result
+
+    def set_preview_result(self, msg: str) -> None:
+        self._result_var.set(msg)
+
+    def refresh_review_ui(self) -> None:
+        if not self._store or not self._result:
+            return
+        from ..state.selectors import review_selection
+
+        sel = review_selection(self._store.state)
+        if not sel:
+            return
+        raw = dict(getattr(sel, "keep_selections", None) or {})
+        if raw:
+            self._keep_map.update(coerce_keep_selections(self._result, raw))
+        cur = self._group_var.get()
+        if cur and cur in self._group_map:
+            self._rebuild_keep_menu(cur)
+            self._sync_compare_default(cur)
+            self._rebuild_compare_menu(cur)
+            self._render_group_details(cur)
+            self._refresh_heroes()
+
+    def confirm_deletion(self, plan: Any, prev: dict) -> str:
+        n = prev.get("total_files", "?")
+        sz = prev.get("human_readable_size", "?")
+        if not messagebox.askyesno(
+            "Confirm Deletion",
+            f"Delete {n} file(s) (~{sz})?\nFiles are moved to Trash per your deletion policy.",
+            parent=self.winfo_toplevel(),
+        ):
+            return "cancel"
+        return "proceed"
+
+    def on_execute_start(self) -> None:
+        self._execute_btn.configure(state="disabled", text="Executing…")
+        self.update_idletasks()
+
+    def on_execute_done(self, result: DeletionResult) -> None:
+        self._execute_btn.configure(state="normal", text="Execute Deletion")
+        self._result_var.set(
+            f"Deleted {len(result.deleted_files)} · Failed {len(result.failed_files)} · Reclaimed {fmt_bytes(result.bytes_reclaimed)}"
+        )
+        self._set_details(
+            f"Deleted: {len(result.deleted_files)} files\n"
+            f"Failed: {len(result.failed_files)} files\n"
+            f"Reclaimed: {fmt_bytes(result.bytes_reclaimed)}"
+        )
 
     def get_loaded_result(self) -> ScanResult | None:
         """Result currently shown in Review (e.g. opened from History), not only coordinator memory."""
@@ -251,6 +316,13 @@ class ReviewPageCTK(ctk.CTkFrame):
             return
         self._group_map = {str(g.group_id): g for g in result.duplicate_groups if len(getattr(g, "files", []) or []) >= 2}
         self._keep_map = {gid: self._default_keep_for_group(self._group_map[gid]) for gid in self._group_map}
+        if self._store:
+            km = default_keep_map_from_result(result)
+            km = coerce_keep_selections(result, km)
+            gids = list(self._group_map.keys())
+            self._store.set_review_selection(
+                ReviewSelectionState(keep_selections=km, selected_group_id=gids[0] if gids else None)
+            )
         total_groups = len(self._group_map)
         self._summary_var.set(
             f"{total_groups:,} groups · {fmt_bytes(getattr(result, 'total_reclaimable_bytes', 0) or 0)} reclaimable"
@@ -394,6 +466,8 @@ class ReviewPageCTK(ctk.CTkFrame):
             return
         path = self._resolve_keep_path(choice)
         self._keep_map[gid] = path
+        if self._review_controller:
+            self._review_controller.handle_set_keep(gid, path)
         if self._compare_path == path:
             self._sync_compare_default(gid)
         self._rebuild_compare_menu(gid)
@@ -485,6 +559,12 @@ class ReviewPageCTK(ctk.CTkFrame):
         self._set_details("\n".join(lines))
 
     def _execute(self) -> None:
+        if self._review_controller:
+            self._review_controller.handle_execute_deletion()
+            return
+        if not self._on_execute:
+            self._result_var.set("Review controller not wired.")
+            return
         if not self._keep_map:
             self._result_var.set("Nothing to execute.")
             self._set_details("Nothing to execute.")

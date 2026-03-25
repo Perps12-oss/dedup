@@ -8,7 +8,7 @@ Controller updates store.set_intent_lifecycle and delegates to coordinator.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional
 
 from ...orchestration.coordinator import ScanCoordinator
 from ..state.store import IntentLifecycle, UIStateStore
@@ -35,7 +35,8 @@ class ScanController:
         on_progress: Callable[[Any], None],
         on_complete: Callable[[Any], None],
         on_error: Callable[[str], None],
-    ) -> None:
+        on_cancel: Optional[Callable[[], None]] = None,
+    ) -> str:
         """Start a new scan; set intent accepted then delegate to coordinator; on complete/error set lifecycle."""
         self._post_to_ui(lambda: self._store.set_intent_lifecycle(IntentLifecycle(status="accepted", intent_type="scan")))
 
@@ -53,11 +54,12 @@ class ScanController:
             )
             self._post_to_ui(lambda: on_error(err))
 
-        self._coordinator.start_scan(
+        return self._coordinator.start_scan(
             roots=[path],
             on_progress=on_progress,
             on_complete=_on_complete,
             on_error=_on_error,
+            on_cancel=on_cancel,
             **options,
         )
 
@@ -67,7 +69,8 @@ class ScanController:
         on_progress: Callable[[Any], None],
         on_complete: Callable[[Any], None],
         on_error: Callable[[str], None],
-    ) -> None:
+        on_cancel: Optional[Callable[[], None]] = None,
+    ) -> str:
         """Resume a scan; set intent accepted then delegate to coordinator."""
         self._post_to_ui(lambda: self._store.set_intent_lifecycle(IntentLifecycle(status="accepted", intent_type="resume")))
 
@@ -85,12 +88,13 @@ class ScanController:
             )
             self._post_to_ui(lambda: on_error(err))
 
-        self._coordinator.start_scan(
+        return self._coordinator.start_scan(
             roots=[],
             resume_scan_id=scan_id,
             on_progress=on_progress,
             on_complete=_on_complete,
             on_error=_on_error,
+            on_cancel=on_cancel,
         )
 
     def handle_cancel(self) -> None:

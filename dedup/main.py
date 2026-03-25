@@ -18,6 +18,8 @@ import sys
 import traceback
 from pathlib import Path
 
+from dedup import __version__
+
 
 def run_gui(ui_backend: str = "ttk"):
     """Run the graphical interface."""
@@ -101,7 +103,7 @@ Examples:
 
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
 
-    parser.add_argument("--version", action="version", version="%(prog)s 1.0.0")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument(
         "--ui-backend",
         choices=["ttk", "ctk"],
