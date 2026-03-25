@@ -339,6 +339,51 @@ class ThemeManager:
         root.option_add("*Canvas*Background", panel)
         root.option_add("*Canvas*HighlightBackground", panel)
 
+    def set_appearance_mode(self, mode: str) -> None:
+        """Set the appearance mode (light/dark)."""
+        self._sun_valley_dark = mode.lower() != "light"
+
+    def get_custom_gradient_stops(self) -> Optional[List[Tuple[float, str]]]:
+        """Get custom gradient stops if set."""
+        multi = self._tokens.get("_multi_gradient_stops")
+        if isinstance(multi, list) and len(multi) >= 2:
+            return [(float(p), str(c)) for p, c in multi]
+        return None
+
+    def set_custom_gradient_stops(self, stops: List[Tuple[float, str]]) -> None:
+        """Set custom gradient stops and update tokens."""
+        if len(stops) < 2:
+            return
+        srt = sorted(stops, key=lambda x: x[0])
+        self._tokens = merge_gradient_into_tokens(self._tokens, srt)
+        # Notify observers
+        for cb in self._observers:
+            try:
+                cb(self._tokens)
+            except Exception:
+                pass
+
+    def clear_custom_gradient_stops(self) -> None:
+        """Clear custom gradient stops and revert to preset defaults."""
+        base = get_theme(self._current_key)
+        self._tokens = dict(base)
+        for cb in self._observers:
+            try:
+                cb(self._tokens)
+            except Exception:
+                pass
+
+    def apply_theme(self, theme_key: str) -> None:
+        """Apply a theme by key (without tk root for CTK usage)."""
+        self._current_key = theme_key
+        base = get_theme(theme_key)
+        self._tokens = dict(base)
+        for cb in self._observers:
+            try:
+                cb(self._tokens)
+            except Exception:
+                pass
+
     def t(self, key: str) -> str:
         """Shorthand token lookup."""
         return self._tokens.get(key, self._tokens.get("danger", "#ff00ff"))

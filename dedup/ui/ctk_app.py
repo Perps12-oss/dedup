@@ -58,6 +58,10 @@ class CerebroCTKApp:
         self._hub_store_adapter.start()
         self.store.set_ui_mode("advanced" if self.state.settings.advanced_mode else "simple")
 
+        # Theme manager for CTK themes
+        from .theme.theme_manager import get_theme_manager
+        self._tm = get_theme_manager()
+
         self._toast = ToastManager(self.root)
         self._last_scan_toast_id: str | None = None
         self._scan_controller = ScanController(self.coordinator, self.store)
@@ -228,12 +232,20 @@ class CerebroCTKApp:
             on_load_scan=self._open_history_scan_in_review,
         )
         self._pages["Diagnostics"] = DiagnosticsPageCTK(self._content_host, coordinator=self._coordinator)
-        self._pages["Themes"] = ThemesPageCTK(self._content_host)
+        self._pages["Themes"] = ThemesPageCTK(
+            self._content_host,
+            on_theme_change=self._on_theme_change,
+            on_preference_changed=self._on_theme_preference_changed,
+            on_toast=self._toast_notify,
+        )
         self._pages["Settings"] = SettingsPageCTK(
             self._content_host,
+            state=self.state,
             database_path=str(self._coordinator.persistence.db_path),
             on_open_themes=lambda: self._show_page("Themes"),
             on_open_diagnostics=lambda: self._show_page("Diagnostics"),
+            on_settings_changed=self._on_settings_changed,
+            on_toast=self._toast_notify,
         )
 
     def _show_page(self, title: str) -> None:
@@ -259,6 +271,11 @@ class CerebroCTKApp:
             st = self._pages.get("Settings")
             if isinstance(st, SettingsPageCTK):
                 st.set_database_path(str(self._coordinator.persistence.db_path))
+                st.on_show()
+        elif title == "Themes":
+            th = self._pages.get("Themes")
+            if isinstance(th, ThemesPageCTK):
+                th.on_show()
         elif title == "Diagnostics":
             diag = self._pages.get("Diagnostics")
             if isinstance(diag, DiagnosticsPageCTK):
@@ -449,6 +466,27 @@ class CerebroCTKApp:
             review.load_result(self._coordinator.get_last_result())
             review.apply_default_policy(self._default_keep_policy)
         self._show_page("Review")
+
+    def _on_theme_change(self, key: str) -> None:
+        """Handle theme selection change - persist theme_key to settings."""
+        self.state.settings.theme_key = key
+        self.state.save()
+        self._toast_notify(f"Theme: {key}")
+
+    def _on_theme_preference_changed(self) -> None:
+        """Handle theme preference changes from Themes page - persist custom gradients."""
+        # Save custom gradient stops to settings if they exist
+        custom_stops = self._tm.get_custom_gradient_stops()
+        if custom_stops:
+            self.state.settings.custom_gradient_stops = [[float(pos), str(col)] for pos, col in custom_stops]
+        else:
+            self.state.settings.custom_gradient_stops = None
+        self.state.save()
+
+    def _on_settings_changed(self) -> None:
+        """Handle settings changes from Settings page."""
+        # Settings are already saved; refresh any UI that depends on them
+        self.store.set_ui_mode("advanced" if self.state.settings.advanced_mode else "simple")
 
     def _on_close(self) -> None:
         if self._coordinator.is_scanning:
