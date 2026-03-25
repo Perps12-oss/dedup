@@ -33,7 +33,7 @@ from .ctk_pages.welcome_page import WelcomePageCTK
 from .projections.history_projection import build_history_from_coordinator
 from .projections.hub import ProjectionHub
 from .state.hub_adapter import ProjectionHubStoreAdapter
-from .state.store import LastScanSummaryState, MissionState, UIStateStore
+from .state.store import LastScanSummaryState, MissionState, UiDegradedFlags, UIStateStore
 from .utils.formatting import fmt_bytes
 from .utils.ui_state import UIState
 from .ctk_shortcuts import CTKShortcutRegistry
@@ -119,8 +119,10 @@ class CerebroCTKApp:
         try:
             # This applies tk defaults via option_add (Canvas/Listbox/etc) which CTk relies on internally.
             self._tm.apply(key, self.root, gradient_stops=stops, sun_valley=False)
+            self.store.clear_theme_degraded()
         except Exception as e:
             _log.warning("Theme apply failed (degraded styling): %s", e)
+            self.store.set_ui_degraded(UiDegradedFlags(theme_apply_failed=True, theme_last_error=str(e)[:400]))
 
     def _main_chrome_color(self, tokens: dict) -> str:
         """Solid fill for the main column (must match gradient tokens — CTk cannot show Canvas through)."""

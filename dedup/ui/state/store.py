@@ -120,6 +120,14 @@ class LastScanSummaryState:
 
 
 @dataclass(frozen=True)
+class UiDegradedFlags:
+    """Published when theme or other shell paths fail — surfaces degraded mode in UI."""
+
+    theme_apply_failed: bool = False
+    theme_last_error: str = ""
+
+
+@dataclass(frozen=True)
 class MissionState:
     """Mission page slice: coordinator-sourced summary data."""
 
@@ -139,6 +147,7 @@ class UIAppState:
     history: HistoryProjection = field(default_factory=lambda: EMPTY_HISTORY)
     # Mirrors AppSettings.advanced_mode: "simple" = reduced chrome, "advanced" = full controls.
     ui_mode: str = "simple"
+    ui_degraded: UiDegradedFlags = field(default_factory=UiDegradedFlags)
 
 
 class UIStateStore:
@@ -211,6 +220,20 @@ class UIStateStore:
         """Publish simple vs advanced UI mode for store subscribers (see docs/MODE_TOGGLE.md)."""
         m = mode if mode in ("simple", "advanced") else "simple"
         self._set_state(replace(self._state, ui_mode=m))
+
+    def set_ui_degraded(self, flags: UiDegradedFlags) -> None:
+        """Replace degraded-mode flags (theme failures, subscriber errors, etc.)."""
+        self._set_state(replace(self._state, ui_degraded=flags))
+
+    def clear_theme_degraded(self) -> None:
+        """Clear theme-related degraded flags after a successful apply."""
+        d = self._state.ui_degraded
+        self._set_state(
+            replace(
+                self._state,
+                ui_degraded=replace(d, theme_apply_failed=False, theme_last_error=""),
+            )
+        )
 
     def _set_state(self, new_state: UIAppState) -> None:
         if not self._is_main_thread():

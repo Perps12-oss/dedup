@@ -61,3 +61,12 @@ The shell keeps `coordinator` only where required for **ProjectionHub** (`event_
 
 - `docs/UI_PARITY_MATRIX.md` — feature parity between primary and legacy shells.
 - `dedup/ui/legacy/README.md` — legacy UI status.
+- `docs/PHASES_1_3_CHECKLIST.md` — what landed for Phases 1–3.
+- `docs/TODO_POST_PHASE3.md` — **next sprint** items (action immediately after Phase 3).
+
+## Phase 1–3 snapshot (2026-03)
+
+- **Application services** + **`ApplicationRuntime`** are the UI boundary to orchestration.
+- **Store** exposes **`UiDegradedFlags`** (theme failures); **hub adapter** coalesces **metrics** before `set_metrics`.
+- **Selectors** expose **`scan_metrics_session_totals`**, **`scan_metrics_phase_local`**, **`scan_metrics_result_assembly`** for truthful UI reads.
+- **Path policy** **`canonical_scan_root`** is used when starting scans from **`ScanController`**.

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from ...application.services import ScanApplicationService
+from ...infrastructure.path_policy import canonical_scan_root
 from ..state.store import IntentLifecycle, UIStateStore
 
 
@@ -54,8 +55,9 @@ class ScanController:
             )
             self._post_to_ui(lambda: on_error(err))
 
+        root = canonical_scan_root(path)
         return self._scan.start_scan(
-            [path],
+            [root],
             on_progress=on_progress,
             on_complete=_on_complete,
             on_error=_on_error,

@@ -34,12 +34,11 @@ pip install -e ".[recommended]"
 pip install -e ".[modern-ui]"
 # or: pip install xxhash send2trash tkinterdnd2 Pillow
 
-# Run
+# Run (default: CustomTkinter — pip install -r requirements-ctk.txt)
 python -m dedup
 
-# Optional: experimental CustomTkinter shell (see requirements-ctk.txt)
-pip install -r requirements-ctk.txt
-python -m dedup --ui-backend ctk
+# Legacy ttkbootstrap shell
+python -m dedup --ui-backend ttk
 ```
 
 ## Usage
@@ -48,8 +47,8 @@ python -m dedup --ui-backend ctk
 
 ```bash
 python -m dedup
-# Experimental CustomTkinter shell (install deps first: pip install -r requirements-ctk.txt)
-python -m dedup --ui-backend ctk
+# Legacy ttkbootstrap shell
+python -m dedup --ui-backend ttk
 ```
 
 ### CLI
@@ -78,11 +77,12 @@ plan = pipeline.create_deletion_plan(result)
 - **dedup/engine/** — Core duplicate detection (no UI deps).
 - **dedup/orchestration/** — Scan lifecycle, coordinator, worker.
 - **dedup/infrastructure/** — Config, persistence, trash, logging.
-- **dedup/ui/** — CEREBRO shell: app, store, controllers, pages, components, viewmodels, projections, theme.
-  - **Authority**: When store is attached, ScanPage reads from store only (hub feeds store). Review reads via selectors; commands go through ReviewController/ScanController.
+- **dedup/application/** — Application facades (`ApplicationRuntime`, scan/review/history services) — UI uses these via controllers.
+- **dedup/ui/** — CEREBRO shell: CTK primary (`ctk_app`), legacy ttk (`app`), store, controllers, pages, projections, theme.
+  - **Authority**: `docs/UI_AUTHORITY.md`. Hub → store → selectors; commands via ScanController/ReviewController + application services.
   - **Pages**: Mission, Scan, Review, History, Diagnostics, Themes, Settings (NavRail).
 
-See `docs/CONTROLLER_CONTRACTS.md` and `docs/REPO_AUTHORITY.md` for single-authority and command-path details.
+See `docs/CONTROLLER_CONTRACTS.md`, `docs/REPO_AUTHORITY.md`, and **`docs/TODO_POST_PHASE3.md`** (next sprint after Phase 3).
 
 ## Project docs index
 
@@ -90,6 +90,9 @@ See `docs/CONTROLLER_CONTRACTS.md` and `docs/REPO_AUTHORITY.md` for single-autho
 |-----|------|
 | `docs/CTK_V3_ROADMAP.md` | **CTK → v3.0** — end goal, phases, parity checklist |
 | `docs/ENGINEERING_STATUS.md` | **Living status** — update as features/phases land |
+| `docs/UI_AUTHORITY.md` | Primary shell, boundaries, migration snapshot |
+| `docs/TODO_POST_PHASE3.md` | **Queued work** after Phase 3 (Review decoupling, banners, tests) |
+| `docs/PHASES_1_3_CHECKLIST.md` | Phase 1–3 completion checklist |
 | `docs/PHASE_ROLLOUT.md` | Phase-by-phase history and what was skipped |
 | `docs/AUDIT_REPORT_PHASE1.md` | Phase 1 static audit completion |
 | `CONTRIBUTING.md` | Dev setup, Ruff, pre-commit, tests |

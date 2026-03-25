@@ -40,6 +40,14 @@
 
 ## Changelog (append newest first)
 
+### 2026-03-25 — UI migration Phases 1–3 (checklist + post-Phase 3 TODO)
+
+- **Authority:** CTK default shell; `docs/UI_AUTHORITY.md`, `PHASES_1_3_CHECKLIST.md`, `TODO_POST_PHASE3.md`.
+- **Store:** `UiDegradedFlags`; theme apply failure → store; **ProjectionHubStoreAdapter** coalesces metrics (~100ms) before `set_metrics`.
+- **Selectors:** session / phase-local / result-assembly metric scopes (`selectors.py`).
+- **Path:** `dedup/infrastructure/path_policy.canonical_scan_root` from `ScanController`.
+- **Follow-up:** all remaining items queued in **`docs/TODO_POST_PHASE3.md`**.
+
 ### 2026-03-24 — P0 CTK backlog implemented
 
 - **History:** `load_scan` failure → `messagebox.showwarning` (`ctk_app._open_history_scan_in_review`).

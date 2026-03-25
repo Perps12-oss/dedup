@@ -17,6 +17,7 @@ from .store import (
     ReviewSelectionState,
     ReviewState,
     UIAppState,
+    UiDegradedFlags,
     UIStateStore,
 )
 
@@ -31,5 +32,6 @@ __all__ = [
     "ReviewSelectionState",
     "ReviewState",
     "UIAppState",
+    "UiDegradedFlags",
     "UIStateStore",
 ]
