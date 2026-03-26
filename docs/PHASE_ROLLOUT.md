@@ -10,11 +10,11 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 
 ### Done (completion pass)
 
-- **Ruff:** `ruff check dedup` clean; `ruff format` applied; `docs/ruff_issues.txt` refreshed.
+- **Ruff:** `ruff check dedup` clean; `ruff format` applied.
 - **Pre-commit:** `.pre-commit-config.yaml`; `pre-commit` in `requirements-dev.txt`.
-- **pip-audit / outdated:** `docs/pip_audit_report.json`, `docs/pip_outdated.txt` refreshed.
-- **Vulture:** clean (`docs/vulture_report.txt`); unused-arg fixes in `review_workspace` / `status_strip`.
-- **Mypy snapshot:** `docs/mypy_issues.txt` refreshed (typing backlog remains).
+- **pip-audit / outdated:** `docs/pip_audit_report.json` refreshed.
+- **Vulture:** clean; unused-arg fixes in `review_workspace` / `status_strip`.
+- **Mypy snapshot:** run recorded (typing backlog remains).
 - **Buttons / runtime:** `button_functionality_audit.md` expanded; `runtime_warnings.md` has pytest + thread-note.
 - **AUDIT_REPORT_PHASE1.md** marked complete.
 
@@ -117,7 +117,7 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 ### Done
 
 - Documented stub buttons and deferral in `button_functionality_audit.md` + this file.
-- **Triage pass:** `docs/UI_CONSISTENCY_AUDIT.md` — Phase 6 table (Simple vs Advanced scope, deferred typography/decision-state/empty-state work). `BACKLOG.md` items are closed or tracked in-repo.
+- **Triage pass:** Phase 6 table (Simple vs Advanced scope, deferred typography/decision-state/empty-state work) captured in rollout notes below. `BACKLOG.md` items are closed or tracked in-repo.
 
 ### Skipped / why
 
@@ -125,7 +125,7 @@ This document tracks what was implemented vs deferred across the seven-phase spe
 
 ### Sub-phase
 
-- ~~Review `UI_CONSISTENCY_AUDIT.md` + `BACKLOG.md`~~ **Done** (2026-03); remaining rows are explicit **deferred** backlog, not scheduled.
+- ~~Review consistency triage + `BACKLOG.md`~~ **Done** (2026-03); remaining rows are explicit **deferred** backlog, not scheduled.
 
 ---
 

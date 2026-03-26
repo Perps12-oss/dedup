@@ -28,7 +28,7 @@ Strategic direction: **CTK is the only desktop shell** on the shared orchestrato
 ## Guiding principles (hold these while executing)
 
 1. **Shared brain, two faces** — New scan/delete/history behavior belongs in engine or orchestration, not duplicated in `ctk_pages/`.
-2. **One owner per feature** — Secondary entry points (Welcome, Mission, Scan) call the same shell handler; keep `docs/CTK_MIGRATION_TRACKER.md` accurate.
+2. **One owner per feature** — Secondary entry points (Welcome, Mission, Scan) call the same shell handler; note ownership changes in `docs/ENGINEERING_STATUS.md` when behavior splits.
 3. **Main thread owns Tk** — Worker callbacks marshal to the UI thread (same rule as classic).
 4. **Parity is scoped** — v3 GA means **agreed P0/P1 parity**, not necessarily pixel-perfect clone of every classic-only bell.
 
@@ -40,7 +40,7 @@ Strategic direction: **CTK is the only desktop shell** on the shared orchestrato
 
 | Step | Outcome | Status |
 |------|---------|--------|
-| A.1 | This roadmap linked from `docs/README.md` and `CTK_MIGRATION_TRACKER.md` | Done |
+| A.1 | This roadmap linked from `docs/README.md` | Done |
 | A.2 | **Version story:** single package version (`dedup.__version__`), CLI `--version`, shell window titles, `setup.py` | Done (`3.0.0-beta.1`) |
 | A.3 | **Parity checklist** appended below (or in tracker): P0 / P1 / P2 with checkboxes | Done |
 | A.4 | Install path stable: `pip install -r requirements-ctk.txt` + `python -m dedup` (see `docs/README.md`) | Done |
@@ -66,19 +66,18 @@ Strategic direction: **CTK is the only desktop shell** on the shared orchestrato
 |------|---------|
 | C.1 | Default launch is CTK only (`python -m dedup`) |
 | C.2 | Short **manual QA matrix** (Windows first; spot-check macOS/Linux if supported) |
-| C.3 | Tag **3.0.0-rc** → **3.0.0** when P0+P1 bar is met; README positions classic as legacy |
+| C.3 | Tag **3.0.0-rc** → **3.0.0** when P0+P1 bar is met |
 
-### Phase D — Classic demotion (after 3.0)
+### Phase D — Post-3.0 consolidation
 
-- Default `python -m dedup` may flip to **ctk** when you are ready (breaking change — call out in changelog).
-- Classic: bugfixes and security only; no parallel feature races unless unavoidable.
-- Optional refactor: drive CTK actions through `ScanController` / store where it **removes** duplicate logic (do when cost/benefit is clear).
+- Optional refactor: drive UI actions through `ScanController` / `ReviewController` / application services where it **removes** duplicate logic in `ctk_pages/` (do when cost/benefit is clear).
+- MVVM direction: `dedup/core/`, `dedup/models/`, `dedup/services/`, `dedup/ui/viewmodels/` — evolve without forking orchestration or engine behavior.
 
 ---
 
 ## Parity checklist (edit as you learn)
 
-Use this as the contract between “nice visuals” and “shippable v3.” Check items when CTK matches classic **behavior** for that capability.
+Use this as the contract between “nice visuals” and “shippable v3.” Check items when CTK behavior matches the agreed product bar for that capability.
 
 ### P0
 
@@ -114,9 +113,8 @@ Walked against `dedup/ui/ctk_app.py` + `ctk_pages/` (2026-03-24). Code reference
 
 ## Success metrics (lightweight)
 
-- A new user can **scan → review → act** entirely in CTK without switching backend.
+- A new user can **scan → review → act** entirely in CTK.
 - You are willing to **screenshot** CTK as the product homepage.
-- Classic remains available without blocking v3 narrative.
 
 ---
 
@@ -124,6 +122,5 @@ Walked against `dedup/ui/ctk_app.py` + `ctk_pages/` (2026-03-24). Code reference
 
 | Doc | Role |
 |-----|------|
-| `docs/CTK_MIGRATION_TRACKER.md` | Per-feature ownership and migration status |
-| `docs/ENGINEERING_STATUS.md` | Classic shell detailed implementation status |
+| `docs/ENGINEERING_STATUS.md` | What is implemented now; changelog when phases land |
 | `docs/README.md` | Install, architecture overview |

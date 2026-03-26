@@ -168,7 +168,7 @@ Use this table to tick items as you implement. IDs are stable for commits/docs.
 **Steps**
 
 1. For new layout work, prefer **`grid`** inside `SectionCard` bodies and page `content` frames; keep `pack` only for trivial stacks.
-2. Document in `docs/UI_CONSISTENCY_AUDIT.md` or a short **`docs/LAYOUT_CONVENTIONS.md`** (new file allowed if team wants single source of truth).
+2. Document in `docs/ENGINEERING_STATUS.md` or a short **`docs/LAYOUT_CONVENTIONS.md`** (new file allowed if team wants single source of truth).
 
 **Tests:** No separate test; lint + manual.
 

@@ -1,10 +1,10 @@
 # Button & interactive audit
 
-**Last updated:** Phase 1 completion pass (static review + `app.py` / page grep).  
+**Last updated:** Phase 1 completion pass (static review + shell / page grep).  
 **Living project status:** `docs/ENGINEERING_STATUS.md` — update both when button behaviour changes.  
 **Convention:** `docs/BUTTON_HIERARCHY.md`.
 
-## Shell — `TopBar` contextual actions (`app.py` → `set_page_actions`)
+## Shell — `TopBar` contextual actions (`ctk_app` → `set_page_actions`)
 
 | Page | Label | Style | Callback | Status |
 |------|-------|-------|----------|--------|

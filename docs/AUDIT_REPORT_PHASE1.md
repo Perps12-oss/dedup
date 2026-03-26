@@ -6,12 +6,12 @@
 
 | Area | Tool / method | Result | Severity |
 |------|----------------|--------|----------|
-| Style / imports | Ruff `check` + `format` on `dedup/` | **Clean** — `docs/ruff_issues.txt` records “No violations” | — |
+| Style / imports | Ruff `check` + `format` on `dedup/` | **Clean** | — |
 | Pre-commit | `.pre-commit-config.yaml` | Ruff fix + ruff-format hooks added | — |
-| Types | Mypy (`engine`, `orchestration`, `infrastructure`) | See `docs/mypy_issues.txt` (errors remain; backlog) | Medium |
-| Dead code | Vulture `--min-confidence 80` | **Clean** — `docs/vulture_report.txt` | — |
+| Types | Mypy (`engine`, `orchestration`, `infrastructure`) | Errors remain; backlog triaged in follow-up work | Medium |
+| Dead code | Vulture `--min-confidence 80` | **Clean** at time of pass | — |
 | CVE | `pip-audit -r docs/requirements.txt -f json` | **No known vulns** on scanned optional deps → `docs/pip_audit_report.json` | OK |
-| Outdated | `pip list --outdated` | `docs/pip_outdated.txt` (machine snapshot) | Info |
+| Outdated | `pip list --outdated` | Snapshot taken at audit time (not committed) | Info |
 | Buttons | Static audit | `docs/button_functionality_audit.md` (per-page + Export stubs) | Low |
 | Runtime | Pytest + notes | `docs/runtime_warnings.md` | Info |
 | Import cycles | Grep | No `dedup.ui` under `engine` / `orchestration` | OK |
@@ -23,7 +23,7 @@
 | Pylint | Overlaps Ruff; noisy on Tk | Optional `pylint dedup/engine --errors-only` |
 | pydeps SVG | Needs Graphviz | `pydeps dedup -o docs/deps.svg` when installed |
 | Full GUI soak | Manual | Fill `runtime_warnings.md` log on release candidate |
-| Mypy green | Large backlog | Triage `mypy_issues.txt` by module |
+| Mypy green | Large backlog | Triage by module in follow-up PRs |
 
 ## Code fixes shipped in this pass
 
@@ -35,6 +35,6 @@
 
 ## Artifacts
 
-- `docs/ruff_issues.txt`, `docs/mypy_issues.txt`, `docs/vulture_report.txt`, `docs/pip_outdated.txt`, `docs/pip_audit_report.json`
+- `docs/pip_audit_report.json` (structured pip-audit for optional runtime deps)
 - `pyproject.toml`, `requirements-dev.txt`, `.pre-commit-config.yaml`
 - `docs/button_functionality_audit.md`, `docs/runtime_warnings.md`, `docs/ARCHITECTURE_REVIEW.md`, …

@@ -14,9 +14,9 @@
 | **Ruff** | Clean | `python -m ruff check dedup`; `ruff format` applied repo-wide |
 | **Pre-commit** | Config present | `.pre-commit-config.yaml` → ruff + ruff-format; run `pre-commit install` |
 | **Tests** | Passing | `python -m pytest dedup/tests/` |
-| **Vulture** (≥80%) | Clean | `docs/vulture_report.txt` |
+| **Vulture** (≥80%) | Run locally | `python -m vulture dedup --exclude=__pycache__,tests --min-confidence=70` |
 | **pip-audit** (optional deps) | No CVEs in last scan | `docs/pip_audit_report.json` |
-| **Mypy** | Not clean | `docs/mypy_issues.txt` — backlog |
+| **Mypy** | Not clean | Run per `CONTRIBUTING.md`; backlog tracked in issues / PRs |
 | **UI shell** | 7 nav destinations | Mission, Scan, Review, History, Diagnostics, **Themes**, Settings |
 | **Store `ui_mode`** | Wired | `simple` / `advanced` synced with `AppSettings.advanced_mode` |
 | **Shortcuts** | Registry | `dedup/ui/ctk_shortcuts.py` (CTK shell); Ctrl+1–7 nav; Ctrl+, Settings; `?` help |
@@ -34,11 +34,16 @@
 | **Bottom status strip (ttk era)** | Removed | Was `dedup/ui/shell/status_strip.py` (legacy shell). **CTK** uses hub → store + page-level surfaces. |
 | **Review UX** | CTK + controllers | `ReviewController` + `ToastManager`; `ctk_pages/review_page.py` — parity with old ttk Review Studio is still evolving. |
 | **Root README** | Present | `README.md` → `docs/README.md` + contributing + engineering status |
-| **Phase 6 triage** | Documented | `UI_CONSISTENCY_AUDIT.md` Phase 6 table; rollout Phase 6 sub-phase closed |
+| **Phase 6 triage** | Closed | Simple vs Advanced scope and deferrals recorded in `PHASE_ROLLOUT.md` Phase 6 |
 
 ---
 
 ## Changelog (append newest first)
+
+### 2026-03-28 — Docs prune (stale audits + generated snapshots)
+
+- **Removed:** superseded trackers/audits (migration tracker, Phase 2 status, transitional seam/path docs, duplicate summaries, UI consistency mega-audit) and committed tool snapshots (ruff/mypy/vulture/pip-outdated/pylint lists, dead-code inventory).
+- **Updated:** `CTK_V3_ROADMAP.md`, `PHASE_ROLLOUT.md`, `AUDIT_REPORT_PHASE1.md`, `DEPENDENCY_AUDIT.md`, `BUTTON_HIERARCHY.md` (CTK-oriented), cross-references in `README.md` and blueprints.
 
 ### 2026-03-27 — Legacy ttk / ttkbootstrap shell removed
 
@@ -66,7 +71,7 @@
 
 ### 2026-03-24 — CTK v3 roadmap
 
-- **`docs/CTK_V3_ROADMAP.md`**: end goal (CTK as primary 3.0, classic legacy), phased steps (A–D), P0/P1/P2 parity checklist, principles (shared coordinator/core). Linked from `docs/README.md` and `CTK_MIGRATION_TRACKER.md`.
+- **`docs/CTK_V3_ROADMAP.md`**: end goal (CTK-only shell), phased steps (A–D), P0/P1/P2 parity checklist, principles (shared coordinator/core). Linked from `docs/README.md`.
 
 ### 2026-03-21 — Review P1: rail DELETE, drawer dedupe, Compare copy, deletion toasts
 
@@ -106,7 +111,7 @@
 
 ### 2026-03-21 — Phase 6–7 docs: consistency triage + root README
 
-- `README.md` at repo root; `UI_CONSISTENCY_AUDIT.md` status banner + Phase 6 triage + corrected page header table; `PHASE_ROLLOUT.md` Phase 6/7 updates.
+- `README.md` at repo root; `PHASE_ROLLOUT.md` Phase 6/7 updates.
 
 ### 2026-03-21 — Phase 5: Mission & Scan `ui_mode` + settings-driven panels
 
@@ -142,8 +147,8 @@
 - Pre-commit + `pre-commit` dev dependency; CONTRIBUTING updated.
 - Duplicate test removed in `test_review_page.py`; diagnostics one-line `if`s split; unused `PHASE_ALIASES` export removed.
 - Dead-code cleanup: `review_workspace` preview helper arity; `status_strip._item` signature.
-- Refreshed: `ruff_issues.txt`, `mypy_issues.txt`, `vulture_report.txt`, `pip_outdated.txt`, `pip_audit_report.json`.
-- Docs: `AUDIT_REPORT_PHASE1.md` marked complete; `button_functionality_audit.md`, `runtime_warnings.md`, `dead_code_inventory.md`, `PHASE_ROLLOUT.md` updated.
+- Refreshed tooling snapshots; `pip_audit_report.json` updated where applicable.
+- Docs: `AUDIT_REPORT_PHASE1.md` marked complete; `button_functionality_audit.md`, `runtime_warnings.md`, `PHASE_ROLLOUT.md` updated.
 
 ### 2026-03-21 — Multi-phase rollout baseline
 

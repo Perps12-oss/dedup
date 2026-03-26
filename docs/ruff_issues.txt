@@ -1,1 +1,0 @@
-No Ruff violations: `python -m ruff check dedup` (clean as of Phase 1 completion pass).

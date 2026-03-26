@@ -6,7 +6,7 @@
 |---------|------|--------|
 | xxhash | Faster hashing | CPython-only marker in requirements |
 | send2trash | Recycle bin / trash | Recommended |
-| tkinterdnd2 | Drag-and-drop | Optional; `app.py` falls back if missing |
+| tkinterdnd2 | Drag-and-drop | Optional; shell falls back if missing |
 | Pillow | Thumbnails | Optional; graceful degradation |
 
 Core app runs on **stdlib + Tkinter** only.
@@ -28,7 +28,8 @@ python -m pip list --outdated
 **Checked in artifacts (refresh before releases):**
 
 - `docs/pip_audit_report.json` — last structured pip-audit for optional runtime deps
-- `docs/pip_outdated.txt` — machine snapshot; regenerate with `pip list --outdated`
+
+Regenerate an outdated snapshot locally with `pip list --outdated` when needed (not committed).
 
 ## Pruning opportunities
 
