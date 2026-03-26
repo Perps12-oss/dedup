@@ -30,6 +30,7 @@ import ttkbootstrap as tb
 from ..utils.ui_state import UIState
 
 if TYPE_CHECKING:
+    from ...application.runtime import ApplicationRuntime
     from ..state.store import UIStateStore
 
 from ..components import MetricCard, SectionCard
@@ -80,7 +81,7 @@ class MissionPage(ttk.Frame):
         parent,
         on_start_scan: Callable[[Path, dict], None],
         on_resume_scan: Callable[[str], None],
-        coordinator,
+        runtime: "ApplicationRuntime",
         on_request_refresh: Optional[Callable[[], None]] = None,
         on_open_last_review: Optional[Callable[[], None]] = None,
         ui_state: Optional[UIState] = None,
@@ -89,7 +90,7 @@ class MissionPage(ttk.Frame):
         super().__init__(parent, **kwargs)
         self.on_start_scan = on_start_scan
         self.on_resume_scan = on_resume_scan
-        self.coordinator = coordinator
+        self._runtime = runtime
         self._on_request_refresh = on_request_refresh
         self._on_open_last_review = on_open_last_review or (lambda: None)
         self._ui_state = ui_state
@@ -541,7 +542,7 @@ class MissionPage(ttk.Frame):
         self._sync_mission_layout()
 
     def _refresh(self):
-        self.vm.refresh_from_coordinator(self.coordinator)
+        self.vm.refresh_from_runtime(self._runtime)
         self._update_engine_card()
         self._update_last_scan()
         self._update_capabilities()
@@ -550,7 +551,7 @@ class MissionPage(ttk.Frame):
         has_resumable = bool(
             self.vm.recent_sessions
             and any(
-                s.get("scan_id") in set(self.coordinator.get_resumable_scan_ids() or [])
+                s.get("scan_id") in set(self._runtime.scan.get_resumable_scan_ids() or [])
                 for s in self.vm.recent_sessions
             )
         )
@@ -599,7 +600,7 @@ class MissionPage(ttk.Frame):
             w.destroy()
         resumable = set(
             getattr(self.vm, "resumable_scan_ids", None)
-            or self.coordinator.get_resumable_scan_ids()
+            or self._runtime.scan.get_resumable_scan_ids()
             or []
         )
         if not self.vm.recent_sessions:
@@ -767,14 +768,14 @@ class MissionPage(ttk.Frame):
             "media_category":  media_key,
         }
         try:
-            self.coordinator.add_recent_folder(path)
+            self._runtime.history.add_recent_folder(path)
         except Exception as e:
             _log.warning("Failed to add recent folder '%s': %s", path, e)
         self.on_start_scan(path, options)
 
     def _on_resume(self):
         try:
-            resumable = self.coordinator.get_resumable_scan_ids() or []
+            resumable = self._runtime.scan.get_resumable_scan_ids() or []
         except Exception:
             resumable = []
         if not resumable:

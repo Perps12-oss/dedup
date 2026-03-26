@@ -56,7 +56,7 @@ class AppShell(ttk.Frame):
         self._build()
 
     def _build(self):
-        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
         # ---- Top bar ----
@@ -80,9 +80,21 @@ class AppShell(ttk.Frame):
         )
         self._grad_bar.grid(row=0, column=0, sticky="sew")
 
+        # ---- Degraded UI banner (theme / shell failures) — hidden until set_degraded_banner ----
+        self._degraded_banner = ttk.Frame(self)
+        self._degraded_label = ttk.Label(
+            self._degraded_banner,
+            text="",
+            wraplength=920,
+            justify="left",
+        )
+        self._degraded_label.pack(fill="x", padx=12, pady=6)
+        self._degraded_banner.grid(row=1, column=0, sticky="ew")
+        self._degraded_banner.grid_remove()
+
         # ---- Middle: nav + content + drawer ----
         middle = ttk.Frame(self)
-        middle.grid(row=1, column=0, sticky="nsew")
+        middle.grid(row=2, column=0, sticky="nsew")
         middle.grid_rowconfigure(0, weight=1)
         middle.grid_columnconfigure(1, minsize=1)  # 1px separator only
         middle.grid_columnconfigure(2, weight=1)
@@ -117,7 +129,7 @@ class AppShell(ttk.Frame):
 
         # ---- Status strip ----
         self.status_strip = StatusStrip(self)
-        self.status_strip.grid(row=2, column=0, sticky="ew")
+        self.status_strip.grid(row=3, column=0, sticky="ew")
 
         # Subscribe to theme changes for the gradient bar
         self._tm.subscribe(self._on_theme_applied)
@@ -220,6 +232,14 @@ class AppShell(ttk.Frame):
         target = min(avail, self.MAX_CONTENT_WIDTH)
         x = max((avail - target) // 2, 0)
         self._content_host.place_configure(x=x, width=target, relheight=1)
+
+    def set_degraded_banner(self, message: Optional[str]) -> None:
+        """Show or hide the banner below the top bar when shell/theme is in degraded mode."""
+        if message:
+            self._degraded_label.configure(text=message)
+            self._degraded_banner.grid(row=1, column=0, sticky="ew")
+        else:
+            self._degraded_banner.grid_remove()
 
     def apply_preferences(self) -> None:
         """Apply persisted UI preferences to shell widgets (density, drawer, advanced)."""

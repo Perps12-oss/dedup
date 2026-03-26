@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Callable, Dict, List, Optional
 import ttkbootstrap as tb
 
 from ...engine.models import ScanProgress, ScanResult
-from ...orchestration.coordinator import ScanCoordinator
+from ...application.services import ScanApplicationService
 from ..components import (
     DegradedBanner,
     ErrorPanel,
@@ -89,13 +89,13 @@ class ScanPage(ttk.Frame):
         on_cancel: Callable[[], None],
         on_go_to_review: Optional[Callable[[], None]] = None,
         scan_controller=None,
-        coordinator: Optional[ScanCoordinator] = None,
+        scan_service: Optional[ScanApplicationService] = None,
         hub=None,
         ui_state: Optional[UIState] = None,
         **kwargs,
     ):
         super().__init__(parent, **kwargs)
-        self.coordinator        = coordinator
+        self._scan_service      = scan_service
         self._ui_state          = ui_state
         self.on_complete        = on_complete
         self.on_cancel          = on_cancel
@@ -1093,8 +1093,8 @@ class ScanPage(ttk.Frame):
                 on_complete=self._on_complete_fallback,
                 on_error=self._on_error_fallback,
             )
-        elif self.coordinator:
-            self.coordinator.start_scan(
+        elif self._scan_service:
+            self._scan_service.start_scan(
                 roots=[path],
                 on_progress=self._on_progress_fallback,
                 on_complete=self._on_complete_fallback,
@@ -1117,8 +1117,8 @@ class ScanPage(ttk.Frame):
                 on_complete=self._on_complete_fallback,
                 on_error=self._on_error_fallback,
             )
-        elif self.coordinator:
-            self.coordinator.start_scan(
+        elif self._scan_service:
+            self._scan_service.start_scan(
                 roots=[],
                 resume_scan_id=scan_id,
                 on_progress=self._on_progress_fallback,
@@ -1204,8 +1204,8 @@ class ScanPage(ttk.Frame):
         if messagebox.askyesno("Cancel Scan", "Cancel the current scan?"):
             if self._scan_controller:
                 self._scan_controller.handle_cancel()
-            elif self.coordinator:
-                self.coordinator.cancel_scan()
+            elif self._scan_service:
+                self._scan_service.cancel_scan()
             self.vm.is_scanning = False
             self._sync_phase_busy_bar(False)
             self._cancel_elapsed()

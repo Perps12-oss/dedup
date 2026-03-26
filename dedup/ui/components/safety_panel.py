@@ -204,6 +204,13 @@ class SafetyPanel(ttk.Frame):
     def set_dry_run_result(self, text: str):
         self._dryrun_result.set(text)
 
+    def set_execute_busy(self, busy: bool) -> None:
+        """Disable rail DELETE button during execution; restore label when idle (plan may refresh after)."""
+        if busy:
+            self._delete_btn.configure(state="disabled", text="Executing…")
+        else:
+            self._delete_btn.configure(state="disabled", text=SAFETY_RAIL["execute_deletion"])
+
     def _do_dry_run(self):
         if self._on_dry_run:
             self._on_dry_run()

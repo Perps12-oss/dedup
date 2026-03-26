@@ -12,6 +12,7 @@ Modern-classic operations shell with:
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from tkinter import messagebox
 
@@ -42,12 +43,14 @@ from .projections.hub import ProjectionHub
 from .shell.app_shell import AppShell
 from .shell.shortcut_registry import ShortcutRegistry
 from .state.hub_adapter import ProjectionHubStoreAdapter
-from .state.store import LastScanSummaryState, MissionState, UIStateStore
+from .state.store import LastScanSummaryState, MissionState, UiDegradedFlags, UIStateStore
 from .theme import design_system
 from .theme.theme_manager import get_theme_manager, parse_gradient_stops_from_raw
 from .theme.theme_registry import get_theme
 from .utils.backdrop import try_apply_mica
 from .utils.ui_state import UIState
+
+_log = logging.getLogger(__name__)
 
 
 class CerebroApp:
@@ -199,6 +202,7 @@ class CerebroApp:
 
         # ── Create store first so ReviewController and store-fed pages can use it ───
         self.store = UIStateStore(tk_root=self.root)
+        self._degraded_unsub = None
 
         # ── Create ProjectionHub (after root exists) ──────────────────────────────
         self.hub = ProjectionHub(
@@ -212,6 +216,7 @@ class CerebroApp:
         # ── Build pages (store is available for Mission, History, Review) ────────
         self._build_pages()
         self._wire_hub()
+        self._degraded_unsub = self.store.subscribe(self._sync_degraded_banner, fire_immediately=True)
 
         # ── Register app-level state listeners ───────────────────────
         self.state.on("advanced_mode_changed", self._on_advanced_mode)
@@ -264,7 +269,7 @@ class CerebroApp:
         def _on_terminal(proj) -> None:
             if proj.status == "completed":
                 # Retrieve result and navigate to review
-                result = self.coordinator.get_last_result()
+                result = self._runtime.scan.get_last_result()
                 if result:
                     self._review.load_result(result)
                     self._navigate("review")
@@ -282,7 +287,7 @@ class CerebroApp:
             content,
             on_start_scan=self._on_start_scan,
             on_resume_scan=self._on_resume_scan,
-            coordinator=self.coordinator,
+            runtime=self._runtime,
             on_request_refresh=self._refresh_mission_state,
             on_open_last_review=lambda: self._navigate("review"),
             ui_state=self.state,
@@ -297,6 +302,7 @@ class CerebroApp:
             on_cancel=self._on_scan_cancel,
             on_go_to_review=self._go_to_review_after_scan,
             scan_controller=self._scan_controller,
+            scan_service=self._runtime.scan,
             ui_state=self.state,
         )
         self.shell.register_page("scan", self._scan)
@@ -319,7 +325,7 @@ class CerebroApp:
 
         self._history = HistoryPage(
             content,
-            coordinator=self.coordinator,
+            history=self._runtime.history,
             on_load_scan=self._on_load_history_scan,
             on_resume_scan=self._on_resume_scan,
             on_request_refresh=self._refresh_history_state,
@@ -329,7 +335,7 @@ class CerebroApp:
 
         self._diagnostics = DiagnosticsPage(
             content,
-            coordinator=self.coordinator,
+            runtime=self._runtime,
         )
         self.shell.register_page("diagnostics", self._diagnostics)
 
@@ -513,7 +519,7 @@ class CerebroApp:
 
     def _on_resume_latest(self):
         try:
-            ids = self.coordinator.get_resumable_scan_ids() or []
+            ids = self._runtime.scan.get_resumable_scan_ids() or []
         except Exception:
             ids = []
         if ids:
@@ -542,21 +548,21 @@ class CerebroApp:
 
     def _go_to_review_after_scan(self):
         """Go to Review with last scan result (e.g. when user clicks 'Go to Review' on Scan page)."""
-        result = self.coordinator.get_last_result()
+        result = self._runtime.scan.get_last_result()
         if result:
             self._review.load_result(result)
             self._navigate("review")
 
     def _on_scan_pause(self):
         """Stop the scan and return to mission so the user can resume later."""
-        if self.coordinator.is_scanning:
-            self.coordinator.cancel_scan()
+        if self._runtime.scan.is_scanning:
+            self._runtime.scan.cancel_scan()
         self.state.scan_status = "Paused"
         self._navigate("mission")
 
     def _on_scan_cancel(self):
-        if self.coordinator.is_scanning:
-            self.coordinator.cancel_scan()
+        if self._runtime.scan.is_scanning:
+            self._runtime.scan.cancel_scan()
         self.state.scan_status = "Cancelled"
         self._navigate("mission")
 
@@ -566,7 +572,7 @@ class CerebroApp:
         self.state.emit("delete_complete", {"deleted": deleted, "failed": failed})
 
     def _on_load_history_scan(self, scan_id: str):
-        result = self.coordinator.load_scan(scan_id)
+        result = self._runtime.history.load_scan(scan_id)
         if result:
             self._review.load_result(result)
             self._navigate("review")
@@ -574,15 +580,15 @@ class CerebroApp:
     def _refresh_mission_state(self) -> None:
         """Build mission slice from coordinator and push to store (Mission page subscribes)."""
         try:
-            raw = self.coordinator.get_history(limit=8) or []
+            raw = self._runtime.history.get_history(limit=8) or []
         except Exception:
             raw = []
         try:
-            resumable_ids = tuple(self.coordinator.get_resumable_scan_ids() or [])
+            resumable_ids = tuple(self._runtime.scan.get_resumable_scan_ids() or [])
         except Exception:
             resumable_ids = ()
         try:
-            recent_folders = tuple(self.coordinator.get_recent_folders() or [])[:10]
+            recent_folders = tuple(self._runtime.history.get_recent_folders() or [])[:10]
         except Exception:
             recent_folders = ()
         last_scan = None
@@ -620,7 +626,7 @@ class CerebroApp:
     def _refresh_history_state(self) -> None:
         """Build history slice from coordinator and push to store (History page subscribes)."""
         try:
-            proj = build_history_from_coordinator(self.coordinator)
+            proj = build_history_from_coordinator(self._runtime.history)
             self.store.set_history(proj)
         except Exception:
             pass
@@ -630,12 +636,29 @@ class CerebroApp:
     # ------------------------------------------------------------------
 
     def _apply_scene_theme(self) -> None:
-        get_theme_manager().apply(
-            self.state.settings.theme_key,
-            self.root,
-            gradient_stops=parse_gradient_stops_from_raw(self.state.settings.custom_gradient_stops),
-            sun_valley=self.state.settings.sun_valley_shell,
-        )
+        try:
+            get_theme_manager().apply(
+                self.state.settings.theme_key,
+                self.root,
+                gradient_stops=parse_gradient_stops_from_raw(self.state.settings.custom_gradient_stops),
+                sun_valley=self.state.settings.sun_valley_shell,
+            )
+            self.store.clear_theme_degraded()
+        except Exception as e:
+            _log.warning("Theme apply failed (degraded styling): %s", e)
+            self.store.set_ui_degraded(
+                UiDegradedFlags(theme_apply_failed=True, theme_last_error=str(e)[:400])
+            )
+
+    def _sync_degraded_banner(self, st) -> None:
+        d = st.ui_degraded
+        if d.theme_apply_failed:
+            msg = "Theme styling is degraded — some colors may not match the selected theme."
+            if d.theme_last_error:
+                msg = f"{msg}\n{d.theme_last_error}"
+            self.shell.set_degraded_banner(msg)
+        else:
+            self.shell.set_degraded_banner(None)
 
     def _toast_notify(self, msg: str, ms: int = 3200) -> None:
         self._toast.show(msg, ms=ms, reduced_motion=bool(self.state.settings.reduced_motion))
@@ -693,11 +716,17 @@ class CerebroApp:
 
     # ------------------------------------------------------------------
     def _on_close(self):
-        if self.coordinator.is_scanning:
+        if self._runtime.scan.is_scanning:
             if not messagebox.askyesno("Scan in progress", "A scan is active. Cancel and exit?"):
                 return
-            self.coordinator.cancel_scan()
+            self._runtime.scan.cancel_scan()
         # Shut down hub to stop its poll loop
+        if self._degraded_unsub:
+            try:
+                self._degraded_unsub()
+            except Exception:
+                pass
+            self._degraded_unsub = None
         try:
             self.hub.shutdown()
         except Exception:

@@ -30,10 +30,10 @@ from typing import TYPE_CHECKING, Callable, Optional
 import ttkbootstrap as tb
 
 if TYPE_CHECKING:
+    from ...application.services import HistoryApplicationService
     from ..state.store import UIStateStore
 
 from ...infrastructure.trash import empty_dedup_trash, list_dedup_trash
-from ...orchestration.coordinator import ScanCoordinator
 from ..components import DataTable, InlineNotice, MetricCard, SectionCard
 from ..theme.design_system import font_tuple
 from ..utils.formatting import fmt_bytes, fmt_duration, fmt_int
@@ -61,14 +61,14 @@ class HistoryPage(ttk.Frame):
     def __init__(
         self,
         parent,
-        coordinator: ScanCoordinator,
+        history: "HistoryApplicationService",
         on_load_scan: Callable[[str], None],
         on_resume_scan: Callable[[str], None],
         on_request_refresh: Optional[Callable[[], None]] = None,
         **kwargs,
     ):
         super().__init__(parent, **kwargs)
-        self.coordinator = coordinator
+        self._history = history
         self.on_load_scan = on_load_scan
         self.on_resume_scan = on_resume_scan
         self._on_request_refresh = on_request_refresh
@@ -339,7 +339,7 @@ class HistoryPage(ttk.Frame):
             messagebox.showerror("Export failed", str(ex))
 
     def _refresh(self):
-        self.vm.refresh(self.coordinator)
+        self.vm.refresh(self._history)
         self._update_summary()
         self._populate_table()
 
@@ -439,7 +439,7 @@ class HistoryPage(ttk.Frame):
         if not self.vm.selected_id:
             return
         self._load_notice.hide()
-        result = self.coordinator.load_scan(self.vm.selected_id)
+        result = self._history.load_scan(self.vm.selected_id)
         if result:
             self.on_load_scan(self.vm.selected_id)
         else:
@@ -459,7 +459,7 @@ class HistoryPage(ttk.Frame):
         if not self.vm.selected_id:
             return
         if messagebox.askyesno("Delete Entry", "Remove this scan from history?\nThis does not delete any files."):
-            if self.coordinator.delete_scan(self.vm.selected_id):
+            if self._history.delete_scan(self.vm.selected_id):
                 self._refresh()
             else:
                 messagebox.showerror("Error", "Failed to delete scan entry.")

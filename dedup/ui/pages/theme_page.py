@@ -1,16 +1,21 @@
 """
 Themes page — presets, live preview swatches, WCAG contrast summary,
 accent-bar multi-stop gradient editor, JSON import/export.
+
+This module provides a complete theme management UI for the Cerebro shell,
+including preset selection, interactive gradient editing, and import/export
+of theme bundles. It is designed to be robust, accessible, and future-proof.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import tkinter as tk
 from datetime import datetime, timezone
 from pathlib import Path
 from tkinter import colorchooser, filedialog, messagebox, ttk
-from typing import Callable, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import ttkbootstrap as tb
 
@@ -25,77 +30,124 @@ from ..theme.theme_preview import ThemeSwatchGrid
 from ..theme.theme_registry import THEMES, get_theme
 from ..utils.ui_state import UIState
 
+# ------------------------------------------------------------------------------
+# Constants
+# ------------------------------------------------------------------------------
+
+THEME_EXPORT_FORMAT = "cerebro_theme_config_v1"
+_MAX_STOPS = 8
+_MIN_STOPS = 2
+
+# Use a module-level logger
+_logger = logging.getLogger(__name__)
+
 
 def _S(n: int) -> int:
+    """Convert 1‑unit spacing to 4px multiples."""
     return n * 4
 
 
-THEME_EXPORT_FORMAT = "cerebro_theme_config_v1"
-
-_MAX_STOPS = 8
-
+# ------------------------------------------------------------------------------
+# Main Page Class
+# ------------------------------------------------------------------------------
 
 class ThemePage(ttk.Frame):
-    """Dedicated surface for theme exploration (beyond TopBar combo)."""
+    """
+    Dedicated surface for theme exploration (beyond TopBar combo).
+
+    Provides preset selection, interactive gradient editing, contrast analysis,
+    and import/export of complete theme bundles.
+    """
 
     def __init__(
         self,
-        parent,
+        parent: tk.Widget,
         *,
         state: UIState,
         on_theme_change: Callable[[str], None],
         on_preference_changed: Optional[Callable[[], None]] = None,
         on_toast: Optional[Callable[[str], None]] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
+        """
+        Initialize the theme page.
+
+        Args:
+            parent: Parent widget.
+            state: Application UI state (settings).
+            on_theme_change: Callback when theme key changes.
+            on_preference_changed: Callback when any preference is updated.
+            on_toast: Callback to show a temporary notification.
+            **kwargs: Additional frame arguments.
+        """
         super().__init__(parent, **kwargs)
         self._state = state
         self._on_theme_change = on_theme_change
         self._on_preference_changed = on_preference_changed
         self._on_toast = on_toast
         self._tm = get_theme_manager()
+
+        # Working copy of gradient stops (position, color)
+        self._working_stops: List[Tuple[float, str]] = []
+
+        # Build UI
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
-        self._working_stops: List[Tuple[float, str]] = []
         self._build()
+
+        # Subscribe to theme manager updates (token changes)
         self._tm.subscribe(self._on_tokens_update)
+
+        # Initialise UI with current theme
         self._on_tokens_update(self._tm.tokens)
 
+    # --------------------------------------------------------------------------
+    # UI Construction
+    # --------------------------------------------------------------------------
+
     def _build(self) -> None:
+        """Construct the complete UI layout."""
         pad = _S(6)
         outer = ttk.Frame(self, padding=(pad, pad, pad, pad))
         outer.grid(row=0, column=0, sticky="nsew")
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(0, weight=1)
 
-        hp = ttk.Panedwindow(outer, orient=tk.HORIZONTAL)
+        hp = ttk.PanedWindow(outer, orient=tk.HORIZONTAL)
         hp.grid(row=0, column=0, sticky="nsew")
 
+        # Left panel: ThemeLab (color palette editor)
         self._lab = ThemeLabPanel(hp)
         hp.add(self._lab, weight=5)
 
+        # Right panel: controls and previews
         right = ttk.Frame(hp)
         hp.add(right, weight=6)
         right.columnconfigure(0, weight=1)
 
-        # Assemble the right control rail as explicit sections.
         self._build_theme_header(right)
         self._build_theme_presets(right)
         self._build_gradient_editor(right)
         self._build_theme_import_export(right)
         self._build_theme_note(right)
+
+        # Set minimum width for left panel (optional, ignore errors)
         try:
             hp.paneconfig(self._lab, minsize=260)
         except Exception:
-            pass
+            _logger.debug("Could not set pane minsize", exc_info=True)
 
     def _build_theme_header(self, right: ttk.Frame) -> None:
-        """Top heading and optional preview launcher."""
+        """Build the top header with title and optional preview button."""
         title = ttk.Label(right, text="Themes", font=font_tuple("page_title"))
         title.grid(row=0, column=0, sticky="w")
+
         sub = ttk.Label(
             right,
-            text="Choose a preset. Contrast checks use WCAG relative luminance (informative, not legal advice).",
+            text=(
+                "Choose a preset. Contrast checks use WCAG relative luminance "
+                "(informative, not legal advice)."
+            ),
             style="Muted.TLabel",
             font=font_tuple("page_subtitle"),
             wraplength=520,
@@ -103,6 +155,7 @@ class ThemePage(ttk.Frame):
         )
         sub.grid(row=1, column=0, sticky="w", pady=(_S(1), _S(4)))
 
+        # Optional CustomTkinter preview button
         ctk_row = ttk.Frame(right)
         ctk_row.grid(row=2, column=0, sticky="ew", pady=(0, _S(2)))
         tb.Button(
@@ -113,9 +166,10 @@ class ThemePage(ttk.Frame):
         ).pack(side="left")
 
     def _build_theme_presets(self, right: ttk.Frame) -> None:
-        """Preset swatches and contrast snapshot group."""
+        """Build the preset swatch grid and contrast summary."""
         sw_frame = ttk.LabelFrame(right, text="Presets (15 + CEREBRO Noir)", padding=_S(2))
         sw_frame.grid(row=3, column=0, sticky="ew", pady=(0, _S(4)))
+
         self._swatches = ThemeSwatchGrid(
             sw_frame,
             on_select=self._select_theme,
@@ -125,6 +179,7 @@ class ThemePage(ttk.Frame):
 
         cf = ttk.LabelFrame(right, text="Contrast snapshot (current theme)", padding=_S(2))
         cf.grid(row=4, column=0, sticky="ew")
+
         self._contrast_lbl = ttk.Label(
             cf,
             text="",
@@ -135,22 +190,41 @@ class ThemePage(ttk.Frame):
         self._contrast_lbl.pack(anchor="w")
 
     def _build_gradient_editor(self, right: ttk.Frame) -> None:
-        """Interactive gradient stop editor with numeric controls."""
-        gf = ttk.LabelFrame(right, text="Top accent bar gradient — drag handles", padding=_S(2))
+        """
+        Build the interactive gradient editor with draggable stops and numeric controls.
+        """
+        gf = ttk.LabelFrame(
+            right,
+            text="Top accent bar gradient — drag handles",
+            padding=_S(2),
+        )
         gf.grid(row=5, column=0, sticky="ew", pady=(_S(4), 0))
-        self._drag_grad = DraggableGradientEditor(gf, height=56, on_change=self._on_drag_gradient_stops)
+
+        self._drag_grad = DraggableGradientEditor(
+            gf,
+            height=56,
+            on_change=self._on_drag_gradient_stops,
+        )
         self._drag_grad.pack(fill="x", pady=(0, _S(2)))
+
         hint = ttk.Label(
             gf,
-            text="Drag circles to move stops. Numeric rows below for precision. Applies to the strip under the top bar.",
+            text=(
+                "Drag circles to move stops. Numeric rows below for precision. "
+                "Applies to the strip under the top bar."
+            ),
             style="Muted.TLabel",
             font=font_tuple("caption"),
             wraplength=520,
             justify="left",
         )
         hint.pack(anchor="w", pady=(0, _S(2)))
+
+        # Container for dynamic stop rows
         self._stops_inner = ttk.Frame(gf)
         self._stops_inner.pack(fill="x")
+
+        # Buttons row
         gbtns = ttk.Frame(gf)
         gbtns.pack(fill="x", pady=(_S(2), 0))
         tb.Button(gbtns, text="Add stop", bootstyle="secondary", command=self._add_gradient_stop).pack(
@@ -159,16 +233,20 @@ class ThemePage(ttk.Frame):
         tb.Button(gbtns, text="Apply", bootstyle="primary", command=self._apply_gradient).pack(
             side="left", padx=(0, _S(2))
         )
-        tb.Button(gbtns, text="Reset to preset", bootstyle="secondary", command=self._reset_gradient).pack(side="left")
+        tb.Button(gbtns, text="Reset to preset", bootstyle="secondary", command=self._reset_gradient).pack(
+            side="left"
+        )
 
+        # Load initial stops and populate UI
         self._working_stops = self._load_editor_stops()
         self._rebuild_stop_rows()
         self._drag_grad.set_stops(sorted(self._working_stops, key=lambda x: x[0]), silent=True)
 
     def _build_theme_import_export(self, right: ttk.Frame) -> None:
-        """File IO controls for theme bundle import/export."""
+        """Build the import/export file controls."""
         io = ttk.LabelFrame(right, text="Import / export", padding=_S(2))
         io.grid(row=6, column=0, sticky="ew", pady=(_S(4), 0))
+
         ior = ttk.Frame(io)
         ior.pack(fill="x")
         tb.Button(
@@ -185,11 +263,14 @@ class ThemePage(ttk.Frame):
         ).pack(side="left")
 
     def _build_theme_note(self, right: ttk.Frame) -> None:
-        """Bottom explanatory note for bundle contents."""
+        """Build the explanatory note at the bottom."""
         note = ttk.Label(
             right,
-            text="Export includes preset key, ThemeConfig (incl. custom gradient stops), and motion/contrast UI flags. "
-            "Import applies a known preset, optional gradient stops, and flags.",
+            text=(
+                "Export includes preset key, ThemeConfig (incl. custom gradient stops), "
+                "and motion/contrast UI flags. Import applies a known preset, optional "
+                "gradient stops, and flags."
+            ),
             style="Muted.TLabel",
             font=font_tuple("caption"),
             wraplength=520,
@@ -197,23 +278,226 @@ class ThemePage(ttk.Frame):
         )
         note.grid(row=7, column=0, sticky="w", pady=(_S(3), 0))
 
+    # --------------------------------------------------------------------------
+    # UI Callbacks
+    # --------------------------------------------------------------------------
+
     def _on_drag_gradient_stops(self, stops: List[Tuple[float, str]]) -> None:
+        """Handle drag updates from the gradient canvas."""
         self._working_stops = list(stops)
         self._rebuild_stop_rows()
 
     def _open_ctk_preview(self) -> None:
-        from ..theme.optional_ctk_preview import open_ctk_preview
+        """Open the optional CustomTkinter preview window."""
+        try:
+            from ..theme.optional_ctk_preview import open_ctk_preview
+            open_ctk_preview(self.winfo_toplevel())
+        except ImportError:
+            self._notify_toast("CustomTkinter preview not available")
+            _logger.warning("Optional CustomTkinter preview import failed")
+        except Exception as e:
+            self._notify_toast(f"Preview error: {e}")
+            _logger.error("Error in CustomTkinter preview", exc_info=True)
 
-        open_ctk_preview(self.winfo_toplevel())
+    def _select_theme(self, key: str) -> None:
+        """Handle theme preset selection."""
+        self._state.settings.theme_key = key
+        self._on_theme_change(key)
+        self._swatches.set_current(key)
 
-    def _notify_toast(self, msg: str) -> None:
-        if self._on_toast:
-            try:
-                self._on_toast(msg)
-            except Exception:
-                pass
+        # If no custom gradient stops exist, reset the editor to the new theme's defaults
+        if not self._state.settings.custom_gradient_stops:
+            self._working_stops = self._defaults_from_theme_key(key)
+            self._rebuild_stop_rows()
+            self._refresh_gradient_preview_canvas()
+
+    def _on_tokens_update(self, tokens: Dict[str, Any]) -> None:
+        """React to token updates from the theme manager."""
+        self._refresh_contrast(tokens)
+        if not self._state.settings.custom_gradient_stops:
+            self._working_stops = self._defaults_from_tokens(tokens)
+            self._rebuild_stop_rows()
+        self._refresh_gradient_preview_canvas()
+
+    # --------------------------------------------------------------------------
+    # Gradient Stop Helpers
+    # --------------------------------------------------------------------------
+
+    def _defaults_from_theme_key(self, key: str) -> List[Tuple[float, str]]:
+        """Return default stops for a given theme key."""
+        theme_dict = get_theme(key)
+        return self._defaults_from_tokens(theme_dict)
+
+    def _defaults_from_tokens(self, tokens: Dict[str, Any]) -> List[Tuple[float, str]]:
+        """
+        Derive default gradient stops from token dictionary.
+        Falls back to a smooth transition between gradient_start and gradient_end.
+        """
+        gs = str(tokens.get("gradient_start", "#1f6feb"))
+        ge = str(tokens.get("gradient_end", "#58a6ff"))
+        # Compute mid color if not explicitly given
+        gm = str(tokens.get("gradient_mid", color_at_gradient_position([(0.0, gs), (1.0, ge)], 0.5)))
+        return [(0.0, gs), (0.5, gm), (1.0, ge)]
+
+    def _load_editor_stops(self) -> List[Tuple[float, str]]:
+        """Load current stops from settings or theme defaults."""
+        parsed = parse_gradient_stops_from_raw(self._state.settings.custom_gradient_stops)
+        if parsed:
+            return list(parsed)
+        return self._defaults_from_tokens(self._tm.tokens)
+
+    def _rebuild_stop_rows(self) -> None:
+        """Rebuild the numeric control rows for each gradient stop."""
+        # Clear existing rows
+        for w in self._stops_inner.winfo_children():
+            w.destroy()
+
+        # Ensure working_stops is sorted
+        self._working_stops.sort(key=lambda x: x[0])
+
+        for i, (pos, col) in enumerate(self._working_stops):
+            row = ttk.Frame(self._stops_inner)
+            row.pack(fill="x", pady=1)
+
+            # Position label
+            ttk.Label(row, text="pos", width=4).pack(side="left")
+
+            # Spinbox for position
+            var = tk.StringVar(value=f"{pos:.4f}")
+            sp = tk.Spinbox(
+                row,
+                from_=0.0,
+                to=1.0,
+                increment=0.01,
+                textvariable=var,
+                width=8,
+                command=lambda idx=i, v=var: self._spin_pos_commit(idx, v),
+            )
+            sp.pack(side="left", padx=(0, _S(2)))
+            sp.bind("<FocusOut>", lambda e, idx=i, v=var: self._spin_pos_commit(idx, v))
+            sp.bind("<Return>", lambda e, idx=i, v=var: self._spin_pos_commit(idx, v))
+
+            # Color chip
+            chip = tk.Label(row, text="   ", width=4, background=col, relief="solid", borderwidth=1)
+            chip.pack(side="left", padx=(0, _S(2)))
+
+            # Color picker button
+            tb.Button(
+                row,
+                text="Color…",
+                bootstyle="secondary",
+                command=lambda idx=i: self._pick_stop_color(idx),
+            ).pack(side="left", padx=(0, _S(2)))
+
+            # Remove button (disabled if only MIN_STOPS left)
+            remove_state = "disabled" if len(self._working_stops) <= _MIN_STOPS else "normal"
+            tb.Button(
+                row,
+                text="Remove",
+                bootstyle="secondary",
+                command=lambda idx=i: self._remove_stop(idx),
+                state=remove_state,
+            ).pack(side="left")
+
+    def _spin_pos_commit(self, index: int, var: tk.StringVar) -> None:
+        """Commit a position change from a spinbox."""
+        if index >= len(self._working_stops):
+            return
+        try:
+            v = float(var.get())
+            v = max(0.0, min(1.0, v))
+        except (TypeError, ValueError):
+            v = self._working_stops[index][0]
+            var.set(f"{v:.4f}")
+            return
+
+        _, c = self._working_stops[index]
+        self._working_stops[index] = (v, c)
+        var.set(f"{v:.4f}")
+        self._refresh_gradient_preview_canvas()
+
+    def _pick_stop_color(self, index: int) -> None:
+        """Open color chooser for a stop."""
+        if index >= len(self._working_stops):
+            return
+        pos, col = self._working_stops[index]
+        rgb, hx = colorchooser.askcolor(color=col, parent=self.winfo_toplevel(), title="Stop color")
+        if hx:
+            self._working_stops[index] = (pos, hx)
+            self._rebuild_stop_rows()
+            self._refresh_gradient_preview_canvas()
+
+    def _remove_stop(self, index: int) -> None:
+        """Remove a gradient stop (if at least MIN_STOPS remain)."""
+        if len(self._working_stops) <= _MIN_STOPS or index < 0 or index >= len(self._working_stops):
+            return
+        del self._working_stops[index]
+        self._rebuild_stop_rows()
+        self._refresh_gradient_preview_canvas()
+
+    def _add_gradient_stop(self) -> None:
+        """Add a new gradient stop at the midpoint."""
+        if len(self._working_stops) >= _MAX_STOPS:
+            self._notify_toast(f"Maximum stops reached ({_MAX_STOPS})")
+            return
+
+        sorted_stops = sorted(self._working_stops, key=lambda x: x[0])
+        # Pick a color at the midpoint (or between existing stops)
+        new_pos = 0.5
+        new_color = color_at_gradient_position(sorted_stops, new_pos)
+        self._working_stops.append((new_pos, new_color))
+        self._rebuild_stop_rows()
+        self._refresh_gradient_preview_canvas()
+
+    def _apply_gradient(self) -> None:
+        """Apply the current working gradient stops to the theme settings."""
+        sorted_stops = sorted(self._working_stops, key=lambda x: x[0])
+        if len(sorted_stops) < _MIN_STOPS:
+            messagebox.showwarning(
+                "Gradient",
+                f"At least {_MIN_STOPS} color stops are required.",
+            )
+            return
+
+        # Validate each stop's position and color
+        for pos, color in sorted_stops:
+            if not (0.0 <= pos <= 1.0):
+                messagebox.showerror("Invalid Stop", f"Stop position {pos} is out of range (0‑1).")
+                return
+            # Basic hex color validation (could be more thorough)
+            if not color.startswith("#") or len(color) not in (4, 7, 9):
+                messagebox.showerror("Invalid Color", f"Color '{color}' is not a valid hex code.")
+                return
+
+        self._state.settings.custom_gradient_stops = [[float(p), str(c)] for p, c in sorted_stops]
+        self._save_state_safely()
+        self._on_theme_change(self._state.settings.theme_key)
+        self._notify_toast("Accent gradient applied")
+
+    def _reset_gradient(self) -> None:
+        """Reset gradient to the current theme's defaults."""
+        self._state.settings.custom_gradient_stops = None
+        self._save_state_safely()
+        self._on_theme_change(self._state.settings.theme_key)
+        self._working_stops = self._load_editor_stops()
+        self._rebuild_stop_rows()
+        self._refresh_gradient_preview_canvas()
+        self._notify_toast("Using preset gradient")
+
+    def _refresh_gradient_preview_canvas(self) -> None:
+        """Update the draggable gradient canvas with current stops."""
+        if not hasattr(self, "_drag_grad"):
+            return
+        sorted_stops = sorted(self._working_stops, key=lambda x: x[0])
+        if len(sorted_stops) >= _MIN_STOPS:
+            self._drag_grad.set_stops(sorted_stops, silent=True)
+
+    # --------------------------------------------------------------------------
+    # Import / Export
+    # --------------------------------------------------------------------------
 
     def _export_theme_json(self) -> None:
+        """Export the current theme settings as a JSON bundle."""
         path = filedialog.asksaveasfilename(
             parent=self.winfo_toplevel(),
             title="Export theme",
@@ -222,6 +506,7 @@ class ThemePage(ttk.Frame):
         )
         if not path:
             return
+
         s = self._state.settings
         tc = ThemeConfig(
             theme_key=s.theme_key,
@@ -239,6 +524,7 @@ class ThemePage(ttk.Frame):
                 "high_contrast": s.high_contrast,
             },
         }
+
         try:
             Path(path).write_text(
                 json.dumps(payload, indent=2, default=lambda o: list(o) if isinstance(o, tuple) else o),
@@ -246,10 +532,12 @@ class ThemePage(ttk.Frame):
             )
             messagebox.showinfo("Export", f"Theme bundle saved to:\n{path}")
             self._notify_toast("Theme bundle exported")
-        except OSError as ex:
-            messagebox.showerror("Export failed", str(ex))
+        except (OSError, IOError) as ex:
+            messagebox.showerror("Export failed", f"Could not write file: {ex}")
+            _logger.error("Export failed", exc_info=True)
 
     def _import_theme_json(self) -> None:
+        """Import a theme bundle from a JSON file and apply it."""
         path = filedialog.askopenfilename(
             parent=self.winfo_toplevel(),
             title="Import theme",
@@ -257,205 +545,98 @@ class ThemePage(ttk.Frame):
         )
         if not path:
             return
+
         try:
             raw = Path(path).read_text(encoding="utf-8")
             data = json.loads(raw)
-        except (OSError, json.JSONDecodeError) as ex:
+        except (OSError, IOError, json.JSONDecodeError) as ex:
             messagebox.showerror("Import failed", str(ex))
+            _logger.error("Import failed", exc_info=True)
             return
+
+        # Validate format
         if data.get("export_format") != THEME_EXPORT_FORMAT:
             messagebox.showerror(
                 "Import failed",
                 f"Expected export_format {THEME_EXPORT_FORMAT!r}.",
             )
             return
+
         key = str(data.get("theme_key") or "").strip()
         if not key or key not in THEMES:
             messagebox.showerror("Import failed", f"Unknown or missing theme_key: {key!r}")
             return
-        tc = ThemeConfig.from_dict(dict(data.get("theme_config") or {}))
-        ui = dict(data.get("ui") or {})
+
+        # Load ThemeConfig and UI flags
+        tc = ThemeConfig.from_dict(data.get("theme_config") or {})
+        ui = data.get("ui") or {}
         s = self._state.settings
+
         s.theme_key = key
         s.reduced_motion = bool(ui.get("reduced_motion", tc.reduced_motion))
         s.reduced_gradients = bool(ui.get("reduced_gradients", s.reduced_gradients))
         s.high_contrast = bool(ui.get("high_contrast", s.high_contrast))
+
         if tc.custom_gradient_stops:
             s.custom_gradient_stops = [[float(p), str(c)] for p, c in tc.custom_gradient_stops]
         else:
             s.custom_gradient_stops = None
-        try:
-            self._state.save()
-        except Exception:
-            pass
+
+        self._save_state_safely()
+
+        # Apply changes
         self._on_theme_change(key)
         self._swatches.set_current(key)
         self._working_stops = self._load_editor_stops()
         self._rebuild_stop_rows()
         self._refresh_gradient_preview_canvas()
+
         if self._on_preference_changed:
             try:
                 self._on_preference_changed()
-            except Exception:
-                pass
+            except Exception as e:
+                _logger.error("Error in on_preference_changed callback", exc_info=True)
+
         messagebox.showinfo("Import", f"Applied theme preset: {THEMES[key].get('name', key)}")
 
-    def _select_theme(self, key: str) -> None:
-        self._state.settings.theme_key = key
-        self._on_theme_change(key)
-        self._swatches.set_current(key)
-        if not self._state.settings.custom_gradient_stops:
-            self._working_stops = self._defaults_from_theme_key(key)
-            self._rebuild_stop_rows()
-            self._refresh_gradient_preview_canvas()
+    # --------------------------------------------------------------------------
+    # Contrast & Utilities
+    # --------------------------------------------------------------------------
 
-    def _on_tokens_update(self, tokens: dict) -> None:
-        self._refresh_contrast(tokens)
-        if not self._state.settings.custom_gradient_stops:
-            self._working_stops = self._defaults_from_tokens(tokens)
-            self._rebuild_stop_rows()
-        self._refresh_gradient_preview_canvas()
-
-    def _defaults_from_theme_key(self, key: str) -> List[Tuple[float, str]]:
-        t = get_theme(key)
-        return self._defaults_from_tokens(t)
-
-    def _defaults_from_tokens(self, t: dict) -> List[Tuple[float, str]]:
-        gs = str(t.get("gradient_start", "#1f6feb"))
-        ge = str(t.get("gradient_end", "#58a6ff"))
-        gm = str(t.get("gradient_mid", color_at_gradient_position([(0.0, gs), (1.0, ge)], 0.5)))
-        return [(0.0, gs), (0.5, gm), (1.0, ge)]
-
-    def _load_editor_stops(self) -> List[Tuple[float, str]]:
-        parsed = parse_gradient_stops_from_raw(self._state.settings.custom_gradient_stops)
-        if parsed:
-            return list(parsed)
-        return self._defaults_from_tokens(self._tm.tokens)
-
-    def _rebuild_stop_rows(self) -> None:
-        for w in self._stops_inner.winfo_children():
-            w.destroy()
-        for i in range(len(self._working_stops)):
-            pos, col = self._working_stops[i]
-            row = ttk.Frame(self._stops_inner)
-            row.pack(fill="x", pady=1)
-            ttk.Label(row, text="pos", width=4).pack(side="left")
-            var = tk.StringVar(value=f"{pos:.4f}")
-            sp = tk.Spinbox(
-                row,
-                from_=0.0,
-                to=1.0,
-                increment=0.01,
-                textvariable=var,
-                width=8,
-                command=lambda idx=i, v=var: self._spin_pos_commit(idx, v),
-            )
-            sp.pack(side="left", padx=(0, _S(2)))
-            sp.bind("<FocusOut>", lambda e, idx=i, v=var: self._spin_pos_commit(idx, v))
-            sp.bind("<Return>", lambda e, idx=i, v=var: self._spin_pos_commit(idx, v))
-            chip = tk.Label(row, text="   ", width=4, background=col, relief="solid", borderwidth=1)
-            chip.pack(side="left", padx=(0, _S(2)))
-            tb.Button(
-                row, text="Color…", bootstyle="secondary", command=lambda idx=i: self._pick_stop_color(idx)
-            ).pack(side="left", padx=(0, _S(2)))
-            rm_state = "disabled" if len(self._working_stops) <= 2 else "normal"
-            tb.Button(
-                row,
-                text="Remove",
-                bootstyle="secondary",
-                command=lambda idx=i: self._remove_stop(idx),
-                state=rm_state,
-            ).pack(side="left")
-
-    def _spin_pos_commit(self, index: int, var: tk.StringVar) -> None:
-        if index >= len(self._working_stops):
-            return
-        try:
-            v = float(var.get())
-            v = max(0.0, min(1.0, v))
-        except (TypeError, ValueError):
-            v = self._working_stops[index][0]
-            var.set(f"{v:.4f}")
-            return
-        _, c = self._working_stops[index]
-        self._working_stops[index] = (v, c)
-        var.set(f"{v:.4f}")
-        self._refresh_gradient_preview_canvas()
-
-    def _pick_stop_color(self, index: int) -> None:
-        if index >= len(self._working_stops):
-            return
-        pos, col = self._working_stops[index]
-        rgb, hx = colorchooser.askcolor(color=col, parent=self.winfo_toplevel(), title="Stop color")
-        if hx:
-            self._working_stops[index] = (pos, hx)
-            self._rebuild_stop_rows()
-            self._refresh_gradient_preview_canvas()
-
-    def _remove_stop(self, index: int) -> None:
-        if len(self._working_stops) <= 2 or index < 0 or index >= len(self._working_stops):
-            return
-        del self._working_stops[index]
-        self._rebuild_stop_rows()
-        self._refresh_gradient_preview_canvas()
-
-    def _add_gradient_stop(self) -> None:
-        if len(self._working_stops) >= _MAX_STOPS:
-            self._notify_toast("Maximum stops reached")
-            return
-        srt = sorted(self._working_stops, key=lambda x: x[0])
-        mid_c = color_at_gradient_position(srt, 0.5)
-        self._working_stops.append((0.5, mid_c))
-        self._rebuild_stop_rows()
-        self._refresh_gradient_preview_canvas()
-
-    def _apply_gradient(self) -> None:
-        srt = sorted(self._working_stops, key=lambda x: x[0])
-        if len(srt) < 2:
-            messagebox.showwarning("Gradient", "Add at least two color stops.")
-            return
-        self._state.settings.custom_gradient_stops = [[float(p), str(c)] for p, c in srt]
-        try:
-            self._state.save()
-        except Exception:
-            pass
-        self._on_theme_change(self._state.settings.theme_key)
-        self._notify_toast("Accent gradient applied")
-
-    def _reset_gradient(self) -> None:
-        self._state.settings.custom_gradient_stops = None
-        try:
-            self._state.save()
-        except Exception:
-            pass
-        self._on_theme_change(self._state.settings.theme_key)
-        self._working_stops = self._load_editor_stops()
-        self._rebuild_stop_rows()
-        self._refresh_gradient_preview_canvas()
-        self._notify_toast("Using preset gradient")
-
-    def _refresh_gradient_preview_canvas(self) -> None:
-        if not hasattr(self, "_drag_grad"):
-            return
-        srt = sorted(self._working_stops, key=lambda x: x[0])
-        if len(srt) >= 2:
-            self._drag_grad.set_stops(srt, silent=True)
-
-    def _refresh_contrast(self, tokens: dict) -> None:
+    def _refresh_contrast(self, tokens: Dict[str, Any]) -> None:
+        """Update the contrast summary label."""
         bg = tokens.get("bg_base", "#000000")
         fg = tokens.get("text_primary", "#ffffff")
         acc = tokens.get("accent_primary", "#888888")
+
         r1 = contrast_ratio(fg, bg)
         r2 = contrast_ratio(acc, bg)
         ok1 = "AA text" if passes_aa_normal(r1) else "below AA normal"
         ok2 = "AA text" if passes_aa_normal(r2) else "below AA normal"
+
         lines = (
             f"text_primary / bg_base   {format_ratio(r1)}  ({ok1})",
             f"accent_primary / bg_base {format_ratio(r2)}  ({ok2})",
         )
         self._contrast_lbl.configure(text="\n".join(lines))
 
+    def _save_state_safely(self) -> None:
+        """Save UI state, logging any errors without crashing."""
+        try:
+            self._state.save()
+        except Exception as e:
+            _logger.error("Failed to save UI state", exc_info=True)
+
+    def _notify_toast(self, msg: str) -> None:
+        """Send a toast notification if a callback is registered."""
+        if self._on_toast:
+            try:
+                self._on_toast(msg)
+            except Exception as e:
+                _logger.error("Toast callback failed", exc_info=True)
+
     def on_show(self) -> None:
+        """Called when the page becomes visible. Refresh all UI elements."""
         self._swatches.set_current(self._state.settings.theme_key)
         self._working_stops = self._load_editor_stops()
         self._rebuild_stop_rows()

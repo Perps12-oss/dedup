@@ -111,13 +111,22 @@ class ReviewPage(ttk.Frame):
         return self._show_delete_confirmation(plan, prev)
 
     def on_execute_start(self) -> None:
-        self._safety_panel._delete_btn.configure(state="disabled", text="Executing…")
-        if hasattr(self, "_workspace_delete_btn"):
-            self._workspace_delete_btn.configure(state="disabled", text="Executing…")
-        self.update()
+        self._set_execute_rail_busy(True)
 
     def on_execute_done(self, result) -> None:
+        self._set_execute_rail_busy(False)
         self._on_execute_done(result)
+
+    def _set_execute_rail_busy(self, busy: bool) -> None:
+        """Centralized execute-in-progress UI — avoids scattering _delete_btn / workspace references."""
+        if busy:
+            self._safety_panel.set_execute_busy(True)
+            if hasattr(self, "_workspace_delete_btn"):
+                self._workspace_delete_btn.configure(state="disabled", text="Executing…")
+            self.update()
+        else:
+            self._push_deletion_plan_ui()
+            self._sync_workspace_delete_btn()
 
     # ----------------------------------------------------------------
     # Build
@@ -983,22 +992,24 @@ class ReviewPage(ttk.Frame):
             from ...engine.deletion import preview_deletion
 
             prev = preview_deletion(plan)
-        except Exception:
-            prev = {"total_files": "?", "human_readable_size": "?"}
+        except Exception as e:
+            self._safety_panel.set_dry_run_result(f"Preview failed: {e}")
+            messagebox.showwarning(
+                "Preview unavailable",
+                f"Cannot run preview for this plan, so deletion was not started.\n\n{e}",
+            )
+            return
         choice = self._show_delete_confirmation(plan, prev)
         if choice == "cancel":
             return
         if choice == "preview":
             self._on_dry_run()
             return
-        self._safety_panel._delete_btn.configure(state="disabled", text="Executing…")
-        if hasattr(self, "_workspace_delete_btn"):
-            self._workspace_delete_btn.configure(state="disabled", text="Executing…")
-        self.update()
-        result = self.coordinator.execute_deletion(plan)
-        self._safety_panel._delete_btn.configure(state="normal", text="DELETE")
-        if hasattr(self, "_workspace_delete_btn"):
-            self._sync_workspace_delete_btn()
+        self._set_execute_rail_busy(True)
+        try:
+            result = self.coordinator.execute_deletion(plan)
+        finally:
+            self._set_execute_rail_busy(False)
         self._on_execute_done(result)
         if result.failed_files:
             messagebox.showwarning(

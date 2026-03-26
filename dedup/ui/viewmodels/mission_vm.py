@@ -102,6 +102,10 @@ class MissionVM:
             schema_version=schema,
         )
 
+    def refresh_from_runtime(self, runtime) -> None:
+        """Pull fresh data via ApplicationRuntime (delegates to coordinator for history projection)."""
+        self.refresh_from_coordinator(runtime.coordinator)
+
     def refresh_from_coordinator(self, coordinator) -> None:
         """Pull fresh data from the coordinator. Safe to call on UI thread."""
         # Recent folders

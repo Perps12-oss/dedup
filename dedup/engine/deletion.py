@@ -506,8 +506,8 @@ class DeletionEngine:
                         if not should_continue:
                             result.completed_at = datetime.now()
                             return result
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        _log.warning("Deletion progress callback raised; continuing: %s", exc)
 
                 # Safety check: never delete the keep file
                 if Path(file_path).resolve() == Path(keep_path).resolve():

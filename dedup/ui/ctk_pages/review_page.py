@@ -20,7 +20,7 @@ import customtkinter as ctk
 from ...engine.media_types import is_image_extension
 from ...engine.models import DeletionResult, ScanResult
 from ...engine.thumbnails import get_thumbnail_path
-from ..state.store import ReviewSelectionState
+from ..state.store import ReviewIndexState, ReviewPlanState, ReviewPreviewState, ReviewSelectionState
 from ..utils.formatting import fmt_bytes
 from ..utils.review_keep import coerce_keep_selections, default_keep_map_from_result
 
@@ -351,6 +351,7 @@ class ReviewPageCTK(ctk.CTkFrame):
         self._select_group(gids[0])
         self.after_idle(self._apply_hero_resize)
         self._bind_review_shortcuts()
+        self._push_review_slices_to_store()
 
     def apply_default_policy(self, policy: str) -> None:
         if not self._group_map:
@@ -413,6 +414,42 @@ class ReviewPageCTK(ctk.CTkFrame):
         self._rebuild_compare_menu(gid)
         self._render_group_details(gid)
         self._refresh_heroes()
+        self._push_review_slices_to_store()
+
+    def _push_review_slices_to_store(self) -> None:
+        """Publish review index / preview / plan slices for subscribers (store-first contract)."""
+        if not self._store:
+            return
+        gids = list(self._group_map.keys())
+        cur = self._group_var.get() if gids else ""
+        try:
+            ix = gids.index(cur) if cur in gids else 0
+        except ValueError:
+            ix = 0
+        keep_p = self._keep_map.get(cur, "") if cur else ""
+        self._store.set_review_index(
+            ReviewIndexState(
+                current_group_index=ix,
+                groups_total=len(gids),
+                current_group_id=cur or None,
+                filter_text="",
+            )
+        )
+        self._store.set_review_preview(
+            ReviewPreviewState(
+                preview_target_path=keep_p or None,
+                compare_target_path=self._compare_path,
+                view_mode="compare",
+                preview_metadata={"hero_px": self._hero_pixel_size},
+            )
+        )
+        reclaim = int(getattr(self._result, "total_reclaimable_bytes", 0) or 0) if self._result else 0
+        self._store.set_review_plan(
+            ReviewPlanState(
+                reclaimable_bytes=reclaim,
+                plan_summary=self._summary_var.get() if hasattr(self, "_summary_var") else "",
+            )
+        )
 
     def _image_paths_in_group(self, group) -> list[str]:
         out: list[str] = []
@@ -472,12 +509,14 @@ class ReviewPageCTK(ctk.CTkFrame):
         if path is None:
             self._compare_path = None
             self._refresh_heroes()
+            self._push_review_slices_to_store()
             return
         self._compare_path = path
         gid = self._group_var.get()
         if gid:
             self._render_group_details(gid)
         self._refresh_heroes()
+        self._push_review_slices_to_store()
 
     def _on_keep_change(self, choice: str) -> None:
         gid = self._group_var.get()
@@ -492,6 +531,7 @@ class ReviewPageCTK(ctk.CTkFrame):
         self._rebuild_compare_menu(gid)
         self._render_group_details(gid)
         self._refresh_heroes()
+        self._push_review_slices_to_store()
 
     def _rebuild_keep_menu(self, gid: str) -> None:
         group = self._group_map.get(gid)

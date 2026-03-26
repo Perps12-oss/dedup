@@ -21,12 +21,14 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 import ttkbootstrap as tb
 
 from ...infrastructure.diagnostics import get_diagnostics_recorder
-from ...orchestration.coordinator import ScanCoordinator
+
+if TYPE_CHECKING:
+    from ...application.runtime import ApplicationRuntime
 from ..components import DataTable, SectionCard
 from ..theme.design_system import font_tuple
 from ..utils.formatting import fmt_duration, fmt_int
@@ -53,9 +55,10 @@ _GAP_LG = _S(6)  # 24px
 class DiagnosticsPage(ttk.Frame):
     """Engine diagnostics page. Renders from UIStateStore (projected scan state)."""
 
-    def __init__(self, parent, coordinator: ScanCoordinator, **kwargs):
+    def __init__(self, parent, runtime: "ApplicationRuntime", **kwargs):
         super().__init__(parent, **kwargs)
-        self.coordinator = coordinator
+        self._rt = runtime
+        self.coordinator = runtime.coordinator
         self.vm = DiagnosticsVM()
         self._store = None
         self._unsub_store: Optional[Callable[[], None]] = None

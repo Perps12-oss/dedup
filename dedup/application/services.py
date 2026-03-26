@@ -106,6 +106,11 @@ class HistoryApplicationService:
     def __init__(self, coordinator: ScanCoordinator) -> None:
         self._c = coordinator
 
+    @property
+    def coordinator(self) -> ScanCoordinator:
+        """For history projection builders that still expect a coordinator (transitional)."""
+        return self._c
+
     def get_history(self, limit: int = 50) -> List[Dict[str, Any]]:
         return self._c.get_history(limit=limit)
 
