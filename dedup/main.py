@@ -6,7 +6,8 @@ Desktop GUI uses CustomTkinter (`CerebroCTKApp`). The engine supports large scan
 the UI uses ProjectionHub, UIStateStore, and application services.
 
 Usage:
-    python -m dedup                    # Launch GUI (CTK)
+    python -m dedup                    # Launch GUI (CustomTkinter)
+    python -m dedup --ui-backend ctk   # Same (optional; backward compatible)
     python -m dedup /path/to/scan      # Quick CLI scan
 """
 
@@ -84,6 +85,7 @@ def main():
         epilog="""
 Examples:
   %(prog)s                    Launch GUI
+  %(prog)s --ui-backend ctk   Same (optional)
   %(prog)s /data              Quick scan of /data
   %(prog)s /data --min-size 1M  Skip files smaller than 1MB
   %(prog)s /data -v           Verbose scan output
@@ -92,6 +94,14 @@ Examples:
 
     parser.add_argument("path", nargs="?", type=Path, help="Path to scan (if not provided, launches GUI)")
 
+    parser.add_argument(
+        "--ui-backend",
+        choices=("ctk", "ttk"),
+        default=None,
+        metavar="BACKEND",
+        help="GUI backend when launching the desktop shell. Only 'ctk' is supported; 'ttk' was removed.",
+    )
+
     parser.add_argument("--min-size", type=str, default="1", help="Minimum file size to consider (e.g., 1K, 1M, 1G)")
 
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
@@ -99,6 +109,14 @@ Examples:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     args = parser.parse_args()
+
+    if args.ui_backend == "ttk":
+        print(
+            "Error: --ui-backend ttk is no longer supported; the legacy ttk shell was removed.\n"
+            "Use: python -m dedup   (CustomTkinter is the only desktop UI.)",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
     # Parse min size
     min_size = 1
@@ -117,7 +135,7 @@ Examples:
             print(f"Error: Invalid size format: {args.min_size}")
             sys.exit(1)
 
-    # Run appropriate mode
+    # Run appropriate mode (--ui-backend only applies to GUI launch)
     if args.path:
         run_cli_scan(args.path, min_size, args.verbose)
     else:
