@@ -1,36 +1,23 @@
 """
-CEREBRO Dedup Engine — Modern-classic operations UI.
+CEREBRO Dedup Engine — desktop UI (CustomTkinter).
 
-Shell: fixed nav rail, top command bar, status strip, insight drawer.
-Pages: Mission, Scan, Review, History, Diagnostics, Settings.
-Themes: 15 multigradient themes via semantic token system.
+The ttk / ttkbootstrap shell has been removed; use `CerebroCTKApp` from `dedup.ui.ctk_app`
+or run `python -m dedup`.
 """
 
-"""
-IMPORTANT:
-This package is imported by both the classic ttk backend and the CustomTkinter (CTK) backend.
-The classic backend imports ttkbootstrap, which can monkey-patch tkinter widgets globally.
+from __future__ import annotations
 
-To prevent those side effects from impacting the CTK backend, keep this module import-light
-and avoid importing the classic app at module import time.
-"""
-
-__all__ = ["CerebroApp", "DedupApp", "main"]
+__all__ = ["CerebroCTKApp", "main"]
 
 
-def CerebroApp(*args, **kwargs):  # type: ignore[misc]
-    from .app import CerebroApp as _CerebroApp
+def CerebroCTKApp(*args, **kwargs):  # type: ignore[misc]
+    from .ctk_app import CerebroCTKApp as _CerebroCTKApp
 
-    return _CerebroApp(*args, **kwargs)
-
-
-def DedupApp(*args, **kwargs):  # type: ignore[misc]
-    from .app import DedupApp as _DedupApp
-
-    return _DedupApp(*args, **kwargs)
+    return _CerebroCTKApp(*args, **kwargs)
 
 
 def main(*args, **kwargs):  # type: ignore[misc]
-    from .app import main as _main
+    """Delegate to package CLI (`dedup.main.main`)."""
+    import dedup.main as _m
 
-    return _main(*args, **kwargs)
+    return _m.main(*args, **kwargs)

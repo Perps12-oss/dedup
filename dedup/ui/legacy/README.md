@@ -1,7 +1,7 @@
-# Legacy ttk / ttkbootstrap UI
+# Legacy ttk / ttkbootstrap UI (removed)
 
-The **ttkbootstrap**-based application (`DedupApp`, `dedup/ui/app.py`) is the **legacy** desktop shell.
+The former **ttkbootstrap** shell (`dedup/ui/app.py`, `dedup/ui/shell/`, `dedup/ui/pages/`) has been **removed**.
 
-- **Not** the default launcher; use `--ui-backend ttk` or `DEDUP_UI_BACKEND=ttk` when you need it.
-- New product work should target the **CTK** shell unless fixing a regression that only affects legacy.
-- Shared orchestration, `ProjectionHub`, `UIStateStore`, and **application services** (`dedup.application`) are the same for both shells.
+The only desktop entry point is **CustomTkinter**: `python -m dedup` → `dedup.ui.ctk_app.CerebroCTKApp`.
+
+Shared layers (**`ProjectionHub`**, **`UIStateStore`**, **`dedup.application` services**, controllers) remain in use by the CTK shell.

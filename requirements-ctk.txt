@@ -1,3 +1,3 @@
-# Optional: experimental CustomTkinter UI (--ui-backend ctk)
+# Desktop UI (CustomTkinter) — required for `python -m dedup`
 # Install: pip install -r requirements-ctk.txt
 customtkinter>=5.2.0

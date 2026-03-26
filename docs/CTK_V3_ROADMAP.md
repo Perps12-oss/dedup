@@ -1,27 +1,27 @@
 # CEREBRO v3.0 — CTK roadmap
 
-Strategic direction: **keep the path you are on** (CTK as a dedicated shell on the shared orchestrator) while making the **end state explicit** and measurable. This doc is the north star; update it when phases complete or priorities shift.
+Strategic direction: **CTK is the only desktop shell** on the shared orchestrator. This doc is the north star; update it when phases complete or priorities shift.
 
 ---
 
 ## End goal (definition of done for v3.0)
 
-1. **CTK is the primary CEREBRO experience** — New users and default documentation assume the CustomTkinter shell. Versioning and messaging say **3.0** (product), not “experimental sidebar.”
-2. **Classic ttk shell is legacy, not dead** — Remains available as `--ui-backend ttk` for a defined period: **maintenance** (fixes, regressions), not new product features unless critical.
+1. **CTK is the CEREBRO experience** — `python -m dedup` → `CerebroCTKApp`. Docs and packaging assume CustomTkinter (`setup.py` `install_requires`).
+2. **~~Classic ttk shell~~** — **Removed** from the repository (no `--ui-backend ttk`).
 3. **One shared core** — Engine (`dedup/engine/`), orchestration (`ScanCoordinator`, worker), persistence, and CLI scan path stay **single implementations**. v3 does **not** fork scan or delete logic inside the UI.
-4. **Safety and clarity match the classic bar** — Any flow that moves bytes or deletes files (review, plan, execute, confirmations) is as trustworthy on CTK as on classic, with clear copy and no cross-thread UI bugs.
+4. **Safety and clarity** — Review/plan/execute flows use the same controllers and services as before; polish and parity are **CTK-only** going forward.
 
 ---
 
 ## Where we are today
 
-| Layer | CTK (`--ui-backend ctk`) | Classic (default `ttk`) |
-|--------|---------------------------|-------------------------|
-| **Chrome** | CustomTkinter, `dedup/ui/ctk_app.py` + `ctk_pages/` | `DedupApp`, ttk + theme system, NavRail, status strip |
-| **Orchestration** | **`ScanCoordinator` directly** (thin shell) | **`ScanCoordinator` + `ScanController` + `UIStateStore`** |
-| **Visual polish** | Strong direction (you like the new visuals); pages still maturing | Years of density, shortcuts, theme tooling, Simple/Advanced gates |
+| Layer | CTK (only shell) |
+|--------|-------------------|
+| **Chrome** | CustomTkinter — `dedup/ui/ctk_app.py` + `ctk_pages/` |
+| **Orchestration** | `ScanCoordinator` + `ScanController` / `ReviewController` + `UIStateStore` + `ProjectionHub` |
+| **Visual polish** | CTK pages; Simple/Advanced `ui_mode` via store + settings |
 
-**Implication:** You are **not** building a second backend. You are **finishing a second front-end** on the same coordinator. Optional later step: fold CTK into `ScanController` contracts where duplication becomes painful — **not required** to ship v3 if coordinator usage stays disciplined.
+**Implication:** Finish **one** front-end on the shared coordinator; optional refactors to reduce duplication inside `ctk_pages/` as needed.
 
 ---
 
@@ -43,7 +43,7 @@ Strategic direction: **keep the path you are on** (CTK as a dedicated shell on t
 | A.1 | This roadmap linked from `docs/README.md` and `CTK_MIGRATION_TRACKER.md` | Done |
 | A.2 | **Version story:** single package version (`dedup.__version__`), CLI `--version`, shell window titles, `setup.py` | Done (`3.0.0-beta.1`) |
 | A.3 | **Parity checklist** appended below (or in tracker): P0 / P1 / P2 with checkboxes | Done |
-| A.4 | Install path stable: `requirements-ctk.txt` + `python -m dedup --ui-backend ctk` (see `docs/README.md`) | Done |
+| A.4 | Install path stable: `pip install -r requirements-ctk.txt` + `python -m dedup` (see `docs/README.md`) | Done |
 
 ### Phase B — Parity pass (CTK catches classic on essentials)
 
@@ -64,7 +64,7 @@ Strategic direction: **keep the path you are on** (CTK as a dedicated shell on t
 
 | Step | Outcome |
 |------|---------|
-| C.1 | Recommended launch command or env documented for **CTK-first** trials (e.g. `DEDUP_UI_BACKEND=ctk`) |
+| C.1 | Default launch is CTK only (`python -m dedup`) |
 | C.2 | Short **manual QA matrix** (Windows first; spot-check macOS/Linux if supported) |
 | C.3 | Tag **3.0.0-rc** → **3.0.0** when P0+P1 bar is met; README positions classic as legacy |
 
@@ -95,7 +95,7 @@ Walked against `dedup/ui/ctk_app.py` + `ctk_pages/` (2026-03-24). Code reference
 
 1. ~~**History → Review failed load**~~ — `messagebox.showwarning` when `load_scan` returns `None`.
 2. ~~**Cancel → UI sync**~~ — `ScanCoordinator.start_scan(..., on_cancel=…)` wires worker `on_cancel`; CTK marshals `_apply_scan_cancelled_ui` → `set_scan_busy(False)`.
-3. ~~**Version alignment**~~ — `dedup.__version__` = `3.0.0-beta.1`; `main.py --version`, `CerebroCTKApp` / `CerebroApp` titles, `setup.py`.
+3. ~~**Version alignment**~~ — `dedup.__version__` = `3.0.0-beta.1`; `main.py --version`, `CerebroCTKApp` title, `setup.py`.
 
 *Next: run P0 smoke (scan, cancel, history bad row, `--version`) and sign off for GA when ready.*
 
@@ -126,4 +126,4 @@ Walked against `dedup/ui/ctk_app.py` + `ctk_pages/` (2026-03-24). Code reference
 |-----|------|
 | `docs/CTK_MIGRATION_TRACKER.md` | Per-feature ownership and migration status |
 | `docs/ENGINEERING_STATUS.md` | Classic shell detailed implementation status |
-| `docs/README.md` | Install, `--ui-backend`, architecture overview |
+| `docs/README.md` | Install, architecture overview |

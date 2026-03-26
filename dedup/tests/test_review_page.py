@@ -98,10 +98,8 @@ def tk_root():
     """Tk root for widget tests. Skips if Tk unavailable (e.g. headless CI)."""
     import tkinter as tk
 
-    import ttkbootstrap as tb
-
     try:
-        root = tb.Window(themename="darkly")
+        root = tk.Tk()
     except (tk.TclError, OSError, Exception) as e:
         pytest.skip(f"Tk unavailable: {e}")
     root.withdraw()
@@ -264,123 +262,6 @@ def test_safety_panel_update_plan_enable_delete_when_positive(tk_root):
     panel = SafetyPanel(tk_root)
     panel.update_plan(del_count=5, keep_count=2, reclaim_bytes=1024)
     assert "normal" in str(panel._delete_btn.cget("state")).lower()
-
-
-# ---------------------------------------------------------------------------
-# Confirmation dialog intent
-# ---------------------------------------------------------------------------
-
-
-def test_on_execute_cancel_returns_without_executing(tk_root):
-    """When confirmation returns 'cancel', no deletion is performed."""
-    from unittest.mock import MagicMock, patch
-
-    from dedup.engine.models import DeletionPlan
-    from dedup.ui.pages.review_page import ReviewPage
-
-    grp = dict(keep=["/a/file.jpg"], delete=["/b/file.jpg"])
-    plan = DeletionPlan(scan_id="t", groups=[grp])
-    coordinator = MagicMock()
-    coordinator.create_deletion_plan.return_value = plan
-
-    page = ReviewPage(tk_root, coordinator=coordinator, on_delete_complete=lambda _: None)
-    page._current_result = MagicMock()
-    page._current_result.duplicate_groups = []
-    page.vm.groups = [MagicMock()]
-    page.vm.groups[0].group_id = "g1"
-    page.vm.groups[0].file_count = 2
-    page.vm.keep_selections = {"g1": "/a/file.jpg"}
-
-    with patch.object(page, "_show_delete_confirmation") as mock_conf:
-        mock_conf.return_value = "cancel"
-        page._on_execute()
-
-    coordinator.execute_deletion.assert_not_called()
-
-
-def test_on_execute_preview_calls_dry_run_not_execute(tk_root):
-    """When confirmation returns 'preview', dry run runs, execute does not."""
-    from unittest.mock import MagicMock, patch
-
-    from dedup.ui.pages.review_page import ReviewPage
-
-    coordinator = MagicMock()
-    page = ReviewPage(tk_root, coordinator=coordinator, on_delete_complete=lambda _: None)
-    page._current_result = MagicMock()
-    page._current_result.duplicate_groups = [MagicMock()]
-    page.vm.groups = [MagicMock()]
-    page.vm.groups[0].group_id = "g1"
-    page.vm.groups[0].file_count = 2
-    page.vm.keep_selections = {"g1": "/a/file.jpg"}
-    grp = dict(keep=["/a/file.jpg"], delete=["/b/file.jpg"])
-    coordinator.create_deletion_plan.return_value = MagicMock()
-    coordinator.create_deletion_plan.return_value.groups = [grp]
-
-    dry_run_called = []
-
-    def track_dry_run():
-        dry_run_called.append(1)
-
-    page._on_dry_run = track_dry_run
-
-    with patch.object(page, "_show_delete_confirmation") as mock_conf:
-        mock_conf.return_value = "preview"
-        page._on_execute()
-
-    assert len(dry_run_called) == 1
-    coordinator.execute_deletion.assert_not_called()
-
-
-def test_on_execute_delete_calls_executor(tk_root):
-    """When confirmation returns 'delete', execute_deletion is called."""
-    from unittest.mock import MagicMock, patch
-
-    from dedup.engine.models import DeletionPlan, DeletionPolicy, DeletionResult
-    from dedup.ui.pages.review_page import ReviewPage
-    from dedup.ui.projections.review_projection import ReviewGroupProjection
-
-    grp = dict(keep=["/a/file.jpg"], delete=["/b/file.jpg"])
-    plan = DeletionPlan(scan_id="t", groups=[grp])
-    coordinator = MagicMock()
-    coordinator.create_deletion_plan.return_value = plan
-    coordinator.execute_deletion.return_value = DeletionResult(
-        scan_id="t",
-        policy=DeletionPolicy.TRASH,
-        deleted_files=["/b/file.jpg"],
-        failed_files=[],
-    )
-
-    page = ReviewPage(tk_root, coordinator=coordinator, on_delete_complete=lambda _: None)
-    page._current_result = MagicMock()
-    page._current_result.duplicate_groups = []
-    page.vm.groups = [
-        ReviewGroupProjection(
-            group_id="g1",
-            group_size=1024,
-            file_count=2,
-            verification_level="full_hash",
-            confidence_label="Exact",
-            reclaimable_bytes=512,
-            review_status="unreviewed",
-            risk_flags=(),
-            keeper_candidate="/a/file.jpg",
-            thumbnail_capable=True,
-            metadata_summary="2 × 1.0 KB",
-            primary_filename="file.jpg",
-        )
-    ]
-    page.vm.keep_selections = {"g1": "/a/file.jpg"}
-
-    with (
-        patch.object(page, "_show_delete_confirmation") as mock_conf,
-        patch("dedup.ui.pages.review_page.messagebox.showinfo"),
-        patch("dedup.ui.pages.review_page.messagebox.showwarning"),
-    ):
-        mock_conf.return_value = "delete"
-        page._on_execute()
-
-    coordinator.execute_deletion.assert_called_once()
-    assert coordinator.execute_deletion.call_args[0][0] == plan
 
 
 # ---------------------------------------------------------------------------

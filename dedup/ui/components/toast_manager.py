@@ -1,7 +1,7 @@
 """
 Toast notifications — short-lived, non-modal messages in the bottom-right of the window.
 
-Attach once to the root window (e.g. ``CerebroApp`` uses ``ToastManager(self.root)``).
+Attach once to the root window (e.g. ``CerebroCTKApp`` uses ``ToastManager(self.root)``).
 
 Usage::
 

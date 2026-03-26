@@ -4,7 +4,7 @@ SessionProjection — canonical session snapshot consumed by all pages.
 This is the single source of truth for session lifecycle state.
 Every page that shows session identity, health, or resumability reads from here.
 
-Consumers: TopBar, StatusStrip, MissionPage, HistoryPage, DiagnosticsPage.
+Consumers: store-fed pages (e.g. CTK Mission / Scan / History / Diagnostics) and any widget bound to ``UIStateStore.scan.session``.
 """
 
 from __future__ import annotations

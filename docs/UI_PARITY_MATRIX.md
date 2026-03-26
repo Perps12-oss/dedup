@@ -1,13 +1,15 @@
-# UI parity matrix (primary CTK vs legacy ttk)
+# UI coverage matrix (CustomTkinter shell)
 
-| Area | Primary (CTK) | Legacy (ttk) | Notes |
-|------|---------------|--------------|--------|
-| Default entry | `python -m dedup` | `python -m dedup --ui-backend ttk` | Env: `DEDUP_UI_BACKEND` |
-| Scan / resume / cancel | Yes | Yes | Shared `ScanController` + `ScanApplicationService` |
-| Review / keep / delete | Yes | Yes | Shared `ReviewController` + `ReviewApplicationService` |
-| History | Yes | Yes | |
-| Diagnostics | Yes | Yes | |
-| Themes / settings | Yes | Yes | |
-| Hub → store pipeline | Yes | Yes | Same `ProjectionHub` + `UIStateStore` |
+The **ttk / ttkbootstrap** shell has been **removed**. This matrix tracks the **CTK** shell only.
 
-Updates to this matrix should accompany any intentional divergence between shells.
+| Area | CTK (`python -m dedup`) | Notes |
+|------|-------------------------|--------|
+| Entry | `CerebroCTKApp` | `dedup/ui/ctk_app.py` |
+| Scan / resume / cancel | Yes | `ScanController` + `ScanApplicationService` |
+| Review / keep / delete | Yes | `ReviewController` + `ReviewApplicationService`; `ctk_pages/review_page.py` |
+| History | Yes | `ctk_pages/history_page.py` |
+| Diagnostics | Yes | `ctk_pages/diagnostics_page.py` |
+| Themes / settings | Yes | `ctk_pages/themes_page.py`, `settings_page.py` |
+| Hub → store pipeline | Yes | `ProjectionHub` + `ProjectionHubStoreAdapter` + `UIStateStore` |
+
+Update this table when adding or changing CTK surfaces.

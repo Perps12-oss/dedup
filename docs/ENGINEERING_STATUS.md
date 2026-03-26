@@ -19,7 +19,7 @@
 | **Mypy** | Not clean | `docs/mypy_issues.txt` — backlog |
 | **UI shell** | 7 nav destinations | Mission, Scan, Review, History, Diagnostics, **Themes**, Settings |
 | **Store `ui_mode`** | Wired | `simple` / `advanced` synced with `AppSettings.advanced_mode` |
-| **Shortcuts** | Registry | `dedup/ui/shell/shortcut_registry.py`; Ctrl+1–3 nav; Ctrl+4 History; Ctrl+5 Diagnostics; Ctrl+7 Themes; Ctrl+, Settings; Ctrl+\\ Insights drawer; `?` help |
+| **Shortcuts** | Registry | `dedup/ui/ctk_shortcuts.py` (CTK shell); Ctrl+1–7 nav; Ctrl+, Settings; `?` help |
 | **Button audit** | Living | `docs/button_functionality_audit.md` |
 | **History / Diagnostics Export** | Implemented | Top bar **Export** → JSON save-as (`export_sessions_json`, `export_report_json`) |
 | **Theme JSON + toasts** | Implemented | Themes page `cerebro_theme_config_v1` import/export (incl. `custom_gradient_stops`); `ToastManager` for scan complete, theme change, export |
@@ -31,14 +31,20 @@
 | **Simple `ui_mode` gates** | Wired | Export / Copy Diag hidden; Diagnostics Phases-only + drawer; Review Compare hidden + shortcuts gated |
 | **Mission / Scan simple layout** | Wired | Simple: last-scan–only Mission, Scan left column only; Advanced honors `mission_show_*` / `scan_show_*` + Settings checkboxes |
 | **Mission Simple density (Sprint 1 / P0)** | Implemented | Tighter page padding + section gaps in Simple; `rowconfigure(2)` weight only when Recent Sessions row is visible (avoids blank mid-page band) — see `docs/UI_DENSITY_MISSION_SCAN_REVIEW_BLUEPRINT.md` |
-| **Status strip (Sprint 2 / P0-S1)** | Implemented | Group separators; phase uses `text_primary`; engine/warnings keep semantic colors on theme change; Simple hides storage + intent; session hover tooltip; Advanced click → Diagnostics — `dedup/ui/shell/status_strip.py` |
-| **Review UX (P1)** | Implemented | DELETE moved to **nav rail** (prominent danger strip under Review); top bar keeps Preview Effects only; Insights **drawer** toggle hidden on Review + empty drawer sections (stats on-page); Compare/table copy clarified; deletion path uses **toasts** (before/after summary) via `ReviewController` + `ToastManager` |
+| **Bottom status strip (ttk era)** | Removed | Was `dedup/ui/shell/status_strip.py` (legacy shell). **CTK** uses hub → store + page-level surfaces. |
+| **Review UX** | CTK + controllers | `ReviewController` + `ToastManager`; `ctk_pages/review_page.py` — parity with old ttk Review Studio is still evolving. |
 | **Root README** | Present | `README.md` → `docs/README.md` + contributing + engineering status |
 | **Phase 6 triage** | Documented | `UI_CONSISTENCY_AUDIT.md` Phase 6 table; rollout Phase 6 sub-phase closed |
 
 ---
 
 ## Changelog (append newest first)
+
+### 2026-03-27 — Legacy ttk / ttkbootstrap shell removed
+
+- **Entry:** `python -m dedup` only — `dedup.ui.ctk_app.CerebroCTKApp`. Removed `dedup/ui/app.py`, `dedup/ui/shell/`, legacy `dedup/ui/pages/`.
+- **Packaging:** `setup.py` `install_requires` is **`customtkinter>=5.2.0`** (dropped **`ttkbootstrap`**).
+- **Components:** ttk widgets under `dedup/ui/components/` kept for tests + `ReviewVM`; see `dedup/ui/components/README.md`.
 
 ### 2026-03-25 — UI migration Phases 1–3 (checklist + post-Phase 3 TODO)
 

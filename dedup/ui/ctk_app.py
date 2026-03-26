@@ -1,5 +1,5 @@
 """
-CustomTkinter application shell — same orchestration contracts as CerebroApp (ttk).
+CustomTkinter application shell — sole desktop UI; shares orchestration with engine via hub, store, and services.
 
 ProjectionHub → UIStateStore, ScanController, ReviewController, and ToastManager are shared
 with the classic UI; only widgets differ.
@@ -39,6 +39,8 @@ from .utils.ui_state import UIState
 from .ctk_shortcuts import CTKShortcutRegistry
 from .theme.theme_manager import parse_gradient_stops_from_raw
 from .theme.gradients import GradientBar, cinematic_chrome_color, paint_cinematic_backdrop
+
+_log = logging.getLogger(__name__)
 
 
 class CerebroCTKApp:
@@ -370,10 +372,11 @@ class CerebroCTKApp:
         self._content_host.grid_columnconfigure(0, weight=1)
         self._content_host.grid_rowconfigure(0, weight=1)
 
+        # GradientBar subclasses tk.Canvas; Canvas.tkraise() is for item tags, not widget stacking.
         try:
-            self._top_gradient.tkraise()
-        except Exception as e:
-            _log.debug("Top gradient tkraise: %s", e)
+            tk.Misc.tkraise(self._top_gradient)
+        except (tk.TclError, RuntimeError) as e:
+            _log.debug("Top gradient z-order: %s", e)
 
         # Page roots: transparent → inherit main column chrome (see cinematic_chrome_color).
         _tp = {"fg_color": "transparent"}

@@ -7,33 +7,26 @@
 
 ## User actions
 
-- **Top bar:** “Advanced” label toggles mode and persists settings (`AppShell._do_advanced_toggle`).
-- **Settings page:** Advanced checkbox updates the same field via preferences callback.
+- **CTK Themes / Settings:** Advanced and related toggles update the same persisted fields and trigger store refresh via `CerebroCTKApp._on_settings_changed` / theme callbacks.
+- **Simple vs Advanced** gates **export**, **diagnostics depth**, **Review compare**, etc., according to `store.state.ui_mode` (see `ctk_app._show_page` and individual `ctk_pages/*`).
 
 ## App wiring
 
-- On startup, after `ProjectionHubStoreAdapter.start()`, `CerebroApp` calls `store.set_ui_mode(...)` from `advanced_mode` (before diagnostics attaches to the store).
-- **Top bar Advanced** and **Settings → Advanced** both end up in `_apply_preferences()`, which: `shell.apply_preferences()`, `store.set_ui_mode(...)`, `ReviewPage.set_ui_mode(...)`, and refreshes top-bar page actions + insight drawer for the active page.
+- On startup, `CerebroCTKApp` sets `store.set_ui_mode(...)` from `advanced_mode` after the hub store adapter starts.
+- Preference changes re-apply theme tokens and `store.set_ui_mode`.
 
 ## What changes visually in Simple mode
 
-- **Top bar (contextual):** no **Export** on History / Diagnostics; no **Copy Diag** on Scan.
-- **Insight drawer:** on Diagnostics, **Compat** section hidden (Live Phase only).
-- **Diagnostics page:** notebook shows **Phases** only; Artifacts, Compatibility, Events, Integrity tabs hidden (`apply_ui_mode` via store subscription).
-- **Review page:** **Compare** view radiobutton hidden; if the user was in Compare, mode falls back to Table; compare shortcuts (`C`, `[` / `]`, `X`) no-op.
+- **Export** actions hidden on History / Diagnostics where gated.
+- **Diagnostics** shows fewer tabs / detail in simple mode (see `DiagnosticsPageCTK` + store subscription).
+- **Review:** compare-only affordances may be hidden (see `ReviewPageCTK` + `ui_mode`).
 
 ## Advanced mode
 
-- Full tabs, Export / Copy Diag actions, Compare UI, and drawer Compat block.
+- Full controls, exports, and diagnostics surfaces as implemented per page.
 
 ## Mission & Scan layout
 
-- **Simple `ui_mode`:** Mission shows **Last Scan** only (full-width), hides **Engine** / **Trash Protection** cards, **Recent Sessions**, and **Watch Tour**. Scan hides the right column (**Live Metrics**, **Health & Compatibility**, **Activity Feed**) — target + timeline + phase detail only.
-- **Advanced `ui_mode`:** Uses `AppSettings` flags (Settings → Behavior):
-  - `mission_show_capabilities` — Engine card
-  - `mission_show_warnings` — Trash Protection card
-  - `scan_show_phase_metrics` — Live Metrics
-  - `scan_show_saved_work` — Health & Compatibility
-  - `scan_show_events` — Activity Feed (unchanged; default off)
+- **CTK** `MissionPageCTK` / `ScanPageCTK` read **`AppSettings`** flags and **`store`** (mission slice, scan projections) to show or hide dashboard cards and scan side panels — see `sync_chrome` / `attach_store` patterns on each page.
 
-`CerebroApp._apply_preferences()` calls `MissionPage.sync_chrome()` and `ScanPage.sync_chrome()` so toggles apply without restart.
+Historical note: **ttk** `AppShell` / `MissionPage` / `ScanPage` described older layout rules; those modules are **removed**.

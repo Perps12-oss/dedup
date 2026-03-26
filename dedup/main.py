@@ -2,18 +2,17 @@
 """
 CEREBRO Dedup - Duplicate file finder and operations shell.
 
-Production-grade engine and seven-destination UI (Mission, Scan, Review, History, Diagnostics, Themes, Settings).
-Capable of handling 1,000,000+ files with store- and controller-driven architecture.
+Desktop GUI uses CustomTkinter (`CerebroCTKApp`). The engine supports large scans;
+the UI uses ProjectionHub, UIStateStore, and application services.
 
 Usage:
-    python -m dedup                    # Launch GUI
+    python -m dedup                    # Launch GUI (CTK)
     python -m dedup /path/to/scan      # Quick CLI scan
 """
 
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import traceback
 from pathlib import Path
@@ -21,30 +20,22 @@ from pathlib import Path
 from dedup import __version__
 
 
-def run_gui(ui_backend: str = "ctk"):
-    """Run the graphical interface (default: CustomTkinter primary shell)."""
-    if ui_backend == "ctk":
-        try:
-            from dedup.ui.ctk_app import CerebroCTKApp
-        except ImportError:
-            print("Error: CustomTkinter backend requested but dependency is missing.")
-            print("Install with: pip install customtkinter")
-            sys.exit(1)
-        try:
-            app = CerebroCTKApp()
-            app.run()
-        except Exception as ex:
-            print("CTK backend failed during startup/runtime.")
-            print(f"{type(ex).__name__}: {ex}")
-            print(traceback.format_exc())
-            raise
-        return
-
-    # Legacy ttkbootstrap shell (non-default).
-    from dedup.ui.app import DedupApp
-
-    app = DedupApp()
-    app.run()
+def run_gui() -> None:
+    """Run the CustomTkinter shell (sole desktop UI)."""
+    try:
+        from dedup.ui.ctk_app import CerebroCTKApp
+    except ImportError:
+        print("Error: CustomTkinter is required for the desktop UI.")
+        print("Install with: pip install customtkinter")
+        sys.exit(1)
+    try:
+        app = CerebroCTKApp()
+        app.run()
+    except Exception as ex:
+        print("GUI failed during startup/runtime.")
+        print(f"{type(ex).__name__}: {ex}")
+        print(traceback.format_exc())
+        raise
 
 
 def run_cli_scan(path: Path, min_size: int = 1, verbose: bool = False):
@@ -106,12 +97,6 @@ Examples:
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
 
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    parser.add_argument(
-        "--ui-backend",
-        choices=["ttk", "ctk"],
-        default=os.environ.get("DEDUP_UI_BACKEND", "ctk"),
-        help="GUI backend: ctk (primary) or ttk (legacy ttkbootstrap shell)",
-    )
 
     args = parser.parse_args()
 
@@ -136,7 +121,7 @@ Examples:
     if args.path:
         run_cli_scan(args.path, min_size, args.verbose)
     else:
-        run_gui(ui_backend=args.ui_backend)
+        run_gui()
 
 
 if __name__ == "__main__":

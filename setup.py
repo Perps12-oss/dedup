@@ -27,7 +27,7 @@ setup(
         ],
     },
     install_requires=[
-        "ttkbootstrap",
+        "customtkinter>=5.2.0",
     ],
     extras_require={
         "recommended": [
@@ -39,7 +39,6 @@ setup(
         "modern-ui": [
             "sv-ttk>=2.6.0",
             "pywinstyles>=1.9.0",
-            "customtkinter>=5.2.0",
         ],
         "dev": [
             "pytest>=7.0.0",

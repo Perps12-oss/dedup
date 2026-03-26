@@ -2,9 +2,9 @@
 
 Duplicate-aware scanning and the **CEREBRO** desktop shell (Mission, Scan, Review, History, Diagnostics, Themes, Settings).
 
-**Primary UI:** CustomTkinter (`python -m dedup` by default). Install CTK extras: `pip install -r requirements-ctk.txt`.
+**Desktop UI:** CustomTkinter only (`python -m dedup`). Install: `pip install -r requirements-ctk.txt`.
 
-**Legacy UI:** ttk / `ttkbootstrap` shell — `python -m dedup --ui-backend ttk` or `DEDUP_UI_BACKEND=ttk`. See [dedup/ui/legacy/README.md](dedup/ui/legacy/README.md).
+The former ttk / ttkbootstrap shell has been **removed** from the tree.
 
 **UI architecture:** [docs/UI_AUTHORITY.md](docs/UI_AUTHORITY.md)
 

@@ -2,8 +2,8 @@
 
 ## Authoritative shell
 
-- **Primary (long-term):** CustomTkinter shell — `python -m dedup` with default backend **`ctk`** (see `dedup/main.py`).
-- **Legacy:** ttk / ttkbootstrap shell (`DedupApp` in `dedup/ui/app.py`) remains for compatibility and parity testing; it is **not** the default entry path.
+- **Only desktop shell:** CustomTkinter — `python -m dedup` → `dedup.ui.ctk_app.CerebroCTKApp` (`dedup/main.py`).
+- The former **ttk / ttkbootstrap** application (`dedup/ui/app.py`, `dedup/ui/shell/`, legacy `pages/`) has been **removed** from the tree.
 
 ## Mandatory boundaries
 
@@ -59,8 +59,8 @@ The shell keeps `coordinator` only where required for **ProjectionHub** (`event_
 
 ## Related docs
 
-- `docs/UI_PARITY_MATRIX.md` — feature parity between primary and legacy shells.
-- `dedup/ui/legacy/README.md` — legacy UI status.
+- `docs/UI_PARITY_MATRIX.md` — CTK feature coverage (historical “legacy column” retired).
+- `dedup/ui/legacy/README.md` — note on removal.
 - `docs/PHASES_1_3_CHECKLIST.md` — what landed for Phases 1–3.
 - `docs/TODO_POST_PHASE3.md` — **next sprint** items (action immediately after Phase 3).
 

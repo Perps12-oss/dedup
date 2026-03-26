@@ -7,7 +7,7 @@ Treat this as the next sprint queue; link PRs to items here.
 
 ## P0 — Review / controller boundaries
 
-- [ ] Remove **ReviewController** dependency on **page-private** widgets (`_workspace`, `_safety_panel`, `_workspace_delete_btn`) in legacy `ReviewPage`; drive review chrome only via **store slices** + **IReviewCallbacks** (or a narrow `ReviewViewPort` protocol with no widget types).
+- [ ] Remove **ReviewController** dependency on **page-private** widgets (`_workspace`, `_safety_panel`, …) where still referenced; drive review chrome only via **store slices** + **IReviewCallbacks** (or a narrow `ReviewViewPort` protocol with no widget types). *(Legacy ttk `ReviewPage` removed; verify against `ReviewPageCTK` + controller.)*
 - [ ] Migrate **CTK Review** to populate **review.index / review.plan / review.preview** store slices from projections or controller (not only `review.selection`).
 - [ ] Ensure **execute deletion** never uses silent `preview_deletion` fallback without user-visible notice (toast or inline error).
 
@@ -20,7 +20,7 @@ Treat this as the next sprint queue; link PRs to items here.
 ## P1 — UI degraded mode visibility
 
 - [ ] Surface **`UiDegradedFlags`** in primary shell (banner or status line when `theme_apply_failed`).
-- [ ] Wire **legacy `CerebroApp`** theme failures to same `UiDegradedFlags` path as CTK.
+- [x] **`UiDegradedFlags`** — CTK path; legacy ttk shell removed (no `CerebroApp`).
 
 ## P1 — Performance / virtualization
 
