@@ -214,7 +214,15 @@ class ReviewController:
             import logging
 
             logging.getLogger(__name__).warning("preview_deletion (execute path) failed: %s", e)
-            prev = {"total_files": "?", "human_readable_size": "?"}
+            msg = (
+                "Preview could not run, so deletion was not started. "
+                f"Fix the issue or use Preview Effects from the bar, then try again.\n\n{e}"
+            )
+            self._cb.set_preview_result(f"Preview failed: {e}")
+            if self._toast_notify:
+                self._toast_notify("Preview unavailable — deletion cancelled.", 6500)
+            messagebox.showwarning("Preview unavailable", msg)
+            return
         if self._toast_notify:
             self._toast_notify(
                 "Next: confirm in the dialog — files go to Trash per your safety settings.",

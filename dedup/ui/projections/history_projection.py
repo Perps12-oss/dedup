@@ -94,7 +94,8 @@ def build_history_from_coordinator(
     limit: int = 200,
 ) -> HistoryProjection:
     """
-    Query the coordinator and build a HistoryProjection.
+    Query history from the coordinator (or any object with ``get_history`` /
+    ``get_resumable_scan_ids``, e.g. ``HistoryApplicationService``) and build a HistoryProjection.
     Designed to be called from the UI thread on demand (not in the hot path).
     """
     try:

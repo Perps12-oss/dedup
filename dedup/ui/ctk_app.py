@@ -1,14 +1,14 @@
 """
 CustomTkinter application shell — sole desktop UI; shares orchestration with engine via hub, store, and services.
 
-ProjectionHub → UIStateStore, ScanController, ReviewController, and ToastManager are shared
-with the classic UI; only widgets differ.
+ProjectionHub → UIStateStore, ScanController, ReviewController, and ToastManager.
 """
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Callable
 import tkinter as tk
 from tkinter import messagebox
 
@@ -33,7 +33,7 @@ from .ctk_pages.welcome_page import WelcomePageCTK
 from .projections.history_projection import build_history_from_coordinator
 from .projections.hub import ProjectionHub
 from .state.hub_adapter import ProjectionHubStoreAdapter
-from .state.store import LastScanSummaryState, MissionState, UiDegradedFlags, UIStateStore
+from .state.store import LastScanSummaryState, MissionState, UIAppState, UiDegradedFlags, UIStateStore
 from .utils.formatting import fmt_bytes
 from .utils.ui_state import UIState
 from .ctk_shortcuts import CTKShortcutRegistry
@@ -44,7 +44,7 @@ _log = logging.getLogger(__name__)
 
 
 class CerebroCTKApp:
-    """CustomTkinter shell with the same hub/store/controller stack as the classic UI."""
+    """CustomTkinter shell — hub, store, and controllers."""
 
     APP_NAME = "CEREBRO"
     APP_VERSION = __version__
@@ -96,6 +96,7 @@ class CerebroCTKApp:
         self._last_scan_mode: ScanMode = "files"
         self._active_scan_id: str = ""
         self._review_controller: ReviewController | None = None
+        self._degraded_unsub: Callable[[], None] | None = None
 
         # Apply persisted theme early so CTk's internal Tk widgets (Canvas in scrollables)
         # inherit correct defaults and don't "flash white" on repaint.
@@ -278,10 +279,24 @@ class CerebroCTKApp:
 
     def _push_history_store(self) -> None:
         try:
-            proj = build_history_from_coordinator(self._coordinator)
+            proj = build_history_from_coordinator(self._runtime.history)
             self.store.set_history(proj)
         except Exception as e:
             _log.warning("History projection push failed: %s", e)
+
+    def _sync_degraded_banner(self, st: UIAppState) -> None:
+        """Show a visible banner when UiDegradedFlags indicate shell/theme degradation."""
+        d = st.ui_degraded
+        if d.theme_apply_failed:
+            msg = (
+                "Theme styling is degraded — some gradients or colors may not match the selected theme."
+            )
+            if d.theme_last_error:
+                msg = f"{msg}\n{d.theme_last_error}"
+            self._degraded_label.configure(text=msg)
+            self._degraded_banner.grid(row=3, column=0, padx=24, pady=(0, 12), sticky="ew")
+        else:
+            self._degraded_banner.grid_forget()
 
     def _build_nav(self) -> None:
         # Give nav a real background so child widgets never "flash" white.
@@ -366,6 +381,18 @@ class CerebroCTKApp:
             justify="left",
             text_color=("gray35", "gray65"),
         ).grid(row=2, column=0, padx=24, pady=(0, 16), sticky="w")
+
+        self._degraded_banner = ctk.CTkFrame(content, fg_color=("#5c2b29", "#3d1f1e"), corner_radius=4)
+        self._degraded_label = ctk.CTkLabel(
+            self._degraded_banner,
+            text="",
+            justify="left",
+            anchor="w",
+            wraplength=880,
+            font=ctk.CTkFont(size=12),
+        )
+        self._degraded_label.pack(padx=16, pady=8, fill="x")
+        self._degraded_unsub = self.store.subscribe(self._sync_degraded_banner, fire_immediately=True)
 
         self._content_host = ctk.CTkFrame(content, fg_color="transparent")
         self._content_host.grid(row=4, column=0, padx=0, pady=(0, 0), sticky="nsew")
@@ -692,6 +719,12 @@ class CerebroCTKApp:
             self._hub_store_adapter.stop()
         except Exception as e:
             _log.warning("Hub store adapter stop failed: %s", e)
+        if self._degraded_unsub:
+            try:
+                self._degraded_unsub()
+            except Exception as e:
+                _log.debug("Degraded banner unsubscribe: %s", e)
+            self._degraded_unsub = None
         try:
             st = str(self.root.state() or "")
             if st.lower() == "zoomed":

@@ -216,6 +216,18 @@ class UIStateStore:
         """Update review selection slice (keep_selections, selected_group_id). Used by ReviewController."""
         self._set_state(replace(self._state, review=replace(self._state.review, selection=selection)))
 
+    def set_review_index(self, index: ReviewIndexState) -> None:
+        """Review navigator: group index, totals, current group id."""
+        self._set_state(replace(self._state, review=replace(self._state.review, index=index)))
+
+    def set_review_plan(self, plan: ReviewPlanState) -> None:
+        """Deletion readiness / plan summary slice."""
+        self._set_state(replace(self._state, review=replace(self._state.review, plan=plan)))
+
+    def set_review_preview(self, preview: ReviewPreviewState) -> None:
+        """Compare / hero preview targets."""
+        self._set_state(replace(self._state, review=replace(self._state.review, preview=preview)))
+
     def set_ui_mode(self, mode: str) -> None:
         """Publish simple vs advanced UI mode for store subscribers (see docs/MODE_TOGGLE.md)."""
         m = mode if mode in ("simple", "advanced") else "simple"

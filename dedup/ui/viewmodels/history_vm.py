@@ -35,9 +35,10 @@ class HistoryVM:
     show_resumable_only: bool = False
     show_failed_only: bool = False
 
-    def refresh(self, coordinator) -> None:
-        """Pull fresh data. Safe to call on UI thread (no async work)."""
-        self.history = build_history_from_coordinator(coordinator)
+    def refresh(self, source) -> None:
+        """Pull fresh data. Pass ScanCoordinator or HistoryApplicationService (uses .coordinator)."""
+        c = getattr(source, "coordinator", source)
+        self.history = build_history_from_coordinator(c)
 
     def refresh_from_history(self, history: HistoryProjection) -> None:
         """Update from store history slice (when page is fed from store)."""

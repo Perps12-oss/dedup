@@ -2,20 +2,21 @@
 
 Audit of page/widget coupling to VM, coordinator, and UI internals. Classifications: **allowed** (intended contract), **transitional** (migrate in boundary hardening), **legacy** (remove when replaced).
 
+**Last updated:** 2025-03 — reflects `ApplicationRuntime` services, `ScanApplicationService` on legacy ScanPage fallbacks, hub→store adapter, and degraded UI banners.
+
 ---
 
 ## 1. ScanPage
 
 | Coupling | Type | Location | Notes |
 |----------|------|----------|--------|
-| `self.coordinator` | **Transitional** | __init__, start_scan, start_resume, cancel_scan | Should become ScanController + intents; page emits only. |
-| `attach_hub(hub)` | **Transitional** | app._wire_hub → ScanPage.attach_hub | Hub pushes to VM; target: store subscription, VM fed from store or hub→store only. |
-| `self.vm.apply_session_projection` / `apply_phase_projection` / etc. | **Transitional** | _on_session, _on_phases, _on_metrics, _on_compat, _on_events_log, _on_terminal | VM is direct sink of hub; target: page reads from store via selectors, hub→store adapter owns updates. |
-| `self.vm.is_scanning`, `self.vm._start_wall` | **Transitional** | _render_*, start_scan, cancel_scan | UI state in VM; could move to store or stay local until ScanController drives lifecycle. |
-| `self.vm.session`, `self.vm.phases`, `self.vm.phase_metrics`, etc. | **Transitional** | _render_* throughout | Page reads VM for display; target: selectors(store). |
-| `coordinator.start_scan`, `coordinator.cancel_scan` | **Transitional** | start_scan, start_resume, _on_cancel | Target: page emits intent → ScanController calls coordinator. |
+| `scan_service` (`ScanApplicationService`) | **Allowed** | __init__ | Fallback start/cancel when controller path is not used; no direct `ScanCoordinator` field. |
+| `scan_controller` | **Allowed** | primary start/resume | `ScanController` owns coordinator calls for normal operation. |
+| `attach_hub(hub)` / `attach_store(store)` | **Transitional** | app._wire_hub | Hub can still feed VM; primary path is ProjectionHub → `ProjectionHubStoreAdapter` → store → `attach_store`. |
+| `self.vm.apply_*_projection` | **Transitional** | subscribers | VM is display sink; target: selectors(store) only. |
+| `self.vm` lifecycle / `is_scanning` | **Transitional** | _render_*, start_scan | Local VM state; align with store scan slice over time. |
 
-**Summary:** ScanPage is hub- and coordinator-coupled. No store subscription yet. Full intent/controller pattern not applied.
+**Summary:** ScanPage uses **ScanController + ScanApplicationService** (no raw coordinator on the page). Hub/VM coupling remains transitional until display reads go through selectors + store only.
 
 ---
 
@@ -38,13 +39,14 @@ Audit of page/widget coupling to VM, coordinator, and UI internals. Classificati
 
 | Coupling | Type | Location | Notes |
 |----------|------|----------|--------|
+| `runtime` (`ApplicationRuntime`) | **Allowed** | __init__ | Uses `runtime.scan` / `runtime.history` for actions (no `ScanCoordinator` import). |
 | `attach_store(store)` | **Allowed** | app._build_pages | Page subscribes to store; renders from state.mission. |
-| `on_request_refresh` → `_refresh_mission_state` | **Transitional** | on_show | App pushes mission slice from coordinator to store; acceptable for now. Document as transitional. |
-| `self.coordinator.get_resumable_scan_ids`, `add_recent_folder` | **Transitional** | _refresh (fallback), _update_recent_sessions, _on_folder_select, _on_resume | When store-driven, resumable_scan_ids come from state.mission; legacy path still uses coordinator. add_recent_folder is an action → could be intent. |
+| `on_request_refresh` → `_refresh_mission_state` | **Transitional** | on_show | App pushes mission slice via `HistoryApplicationService` + `ScanApplicationService` into `set_mission`. |
+| `add_recent_folder` | **Transitional** | folder pick | Action on runtime history service. |
 | `self.vm.refresh_from_mission_state(state)` | **Allowed** | attach_store subscriber | VM populated from store; OK. |
-| `self.vm.refresh_from_coordinator` | **Transitional** | _refresh (no-controller path) | Fallback when no store; keep until store is sole source. |
+| `self.vm.refresh_from_coordinator` | **Transitional** | _refresh fallback | Name legacy; implementation accepts coordinator or service duck-type. |
 
-**Summary:** Mission is store-fed when possible; coordinator used for refresh trigger and legacy path. Document as transitional.
+**Summary:** Mission receives **`ApplicationRuntime`**; refresh uses **application services**, not raw coordinator wiring from the shell.
 
 ---
 
@@ -52,13 +54,13 @@ Audit of page/widget coupling to VM, coordinator, and UI internals. Classificati
 
 | Coupling | Type | Location | Notes |
 |----------|------|----------|--------|
+| `history` (`HistoryApplicationService`) | **Allowed** | __init__ | Load/delete/resume use the service API. |
 | `attach_store(store)` | **Allowed** | app._build_pages | Page subscribes; renders from state.history. |
-| `on_request_refresh` → `_refresh_history_state` | **Transitional** | on_show | App builds HistoryProjection from coordinator and set_history; acceptable. |
-| `self.coordinator.load_scan`, `delete_scan` | **Transitional** | _on_load, _on_delete | Actions; could be intents (LoadScan, DeleteScan) handled by app or controller. |
-| `self.vm.refresh(self.coordinator)` | **Transitional** | _refresh (no store path) | Fallback. |
+| `on_request_refresh` → `_refresh_history_state` | **Transitional** | on_show | App builds `HistoryProjection` via `build_history_from_coordinator(history_service)` and `set_history`. |
+| `self.vm.refresh(source)` | **Transitional** | _refresh | Accepts coordinator or service (`getattr(..., "coordinator", source)`). Prefer service. |
 | `self.vm.refresh_from_history(history)` | **Allowed** | store subscriber | VM from store; OK. |
 
-**Summary:** History is store-fed on show; coordinator used for load/delete and refresh. Document as transitional.
+**Summary:** History is **service-backed** and store-fed on show; no direct coordinator field on the page.
 
 ---
 
@@ -66,12 +68,12 @@ Audit of page/widget coupling to VM, coordinator, and UI internals. Classificati
 
 | Coupling | Type | Location | Notes |
 |----------|------|----------|--------|
-| `attach_store(store)` | **Allowed** | app._wire_hub (actually app._build_pages / _wire_hub) | Renders from store (scan slice). |
-| `self.coordinator` | **Transitional** | get_history, load(session_id), persistence | Session list and detail load from coordinator; could be store slice or dedicated diagnostics refresh. |
+| `runtime` (`ApplicationRuntime`) | **Allowed** | __init__ | Exposes `runtime.coordinator` for persistence/history/detail until a diagnostics service exists. |
+| `attach_store(store)` | **Allowed** | app._wire_hub | Renders live scan slice from store. |
 | `self.vm.session/phases/compat/events_log` | **Allowed** | _on_state from store | VM updated from store; OK. |
-| `self.vm.load(self.coordinator, session_id)` | **Transitional** | _on_session_select, _on_session_double_click | Coordinator used for detail; could be store or intent. |
+| `self.vm.load(self.coordinator, session_id)` | **Transitional** | session detail | Uses coordinator from runtime; could become a dedicated read model. |
 
-**Summary:** Diagnostics reads scan from store; still uses coordinator for history/detail. Acceptable transitional.
+**Summary:** Diagnostics takes **`ApplicationRuntime`**; primary scan telemetry is **store-driven**; coordinator remains for session DB/detail **transitional** paths.
 
 ---
 
@@ -103,23 +105,31 @@ Audit of page/widget coupling to VM, coordinator, and UI internals. Classificati
 
 | Coupling | Type | Location | Notes |
 |----------|------|----------|--------|
-| `self.coordinator.get_last_result()`, `_review.load_result(result)` | **Transitional** | _on_terminal (hub subscriber) | Completion flow; could be store.terminal → app pushes result to review slice or triggers load_result via intent. |
-| `_refresh_mission_state`, `_refresh_history_state` | **Transitional** | Called on Mission/History on_show | App builds slice from coordinator and store.set_mission/set_history. Document as explicit transitional path. |
-| StatusStrip.subscribe_to_hub + subscribe_to_store | **Transitional** | _wire_hub | StatusStrip uses both; intent comes from store. Phase/session could come from store only once ScanPage is store-driven. |
+| `self.coordinator` | **Allowed** | hub `event_bus`, `ProjectionHub` | Single orchestration root; feature code should prefer `self._runtime.scan` / `history` / `review`. |
+| `self._runtime.scan.get_last_result()`, `_review.load_result` | **Transitional** | _on_terminal (hub subscriber) | Completion flow; could become review slice / intent only. |
+| `_refresh_mission_state`, `_refresh_history_state` | **Transitional** | Mission/History on_show | App builds slices via **application services** + `set_mission` / `set_history`. |
+| `UiDegradedFlags` + `AppShell.set_degraded_banner` | **Allowed** | theme apply failure | User-visible banner when theme apply fails; store is source of truth. |
+| StatusStrip.subscribe_to_hub + subscribe_to_store | **Transitional** | _wire_hub | StatusStrip uses both; could converge on store-only. |
 
 ---
 
 ## Allowed vs transitional vs legacy (summary)
 
-- **Allowed:** Store subscribe/attach_store; VM updated from store; intents emitted to controller; coordinator called only from app or controller; Settings UIState + callbacks.
-- **Transitional:** ScanPage hub + coordinator; ReviewController holding page ref and page.vm/_workspace/_safety_panel; Mission/History refresh-on-show building slice from coordinator; Diagnostics coordinator for history/detail; app terminal handler and refresh callbacks. Document and either accept temporarily or add "remove when …" note.
+- **Allowed:** Store subscribe/attach_store; VM updated from store; intents emitted to controller; coordinator owned at app for hub/event bus; application services for scan/history/review; Settings UIState + callbacks; degraded UI flags + banner.
+- **Transitional:** ScanPage hub + VM projections; ReviewController holding page ref and page.vm/_workspace/_safety_panel; Mission/History refresh-on-show (service-based); Diagnostics coordinator for session detail; app terminal handler.
 - **Legacy:** ReviewController’s use of page internals (_workspace, _safety_panel, vm) — to be removed in ReviewController cleanup.
 
 ---
 
 ## Next steps (boundary hardening)
 
-1. **Selectors:** Add `dedup/ui/state/selectors.py`; have at least one page (Scan or Review) read via selectors.
-2. **ReviewController cleanup:** Feed controller from store (review slices) + coordinator only; controller updates store; remove attach_page and page ref; ReviewPage subscribes to store and updates workspace/safety panel from state.
-3. **Scan command flow:** Introduce ScanController (or equivalent); ScanPage emits intents; scan intent lifecycle driven by controller; ScanPage eventually subscribes to store instead of hub for display.
-4. **Transitional paths:** This document serves as the explicit list; add one-line "remove when" notes in code where appropriate (e.g. "Transitional: remove when ScanController drives scan lifecycle").
+1. **Selectors:** Have Scan/Review read via `dedup/ui/state/selectors.py` everywhere (partially started).
+2. **ReviewController cleanup:** Feed controller from store (review slices) + coordinator only; remove page ref; ReviewPage reacts to store for workspace/safety panel.
+3. **Scan display path:** Drop redundant hub→VM path once ScanPage reads only from store projections.
+4. **Transitional paths:** Keep one-line "remove when" notes in code at seam points.
+
+---
+
+## 9. Reference diagram
+
+See [ARCHITECTURE_UI.md](ARCHITECTURE_UI.md) for a UI → services → orchestration → engine diagram (Mermaid).
