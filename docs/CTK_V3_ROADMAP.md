@@ -36,12 +36,12 @@ Strategic direction: **CTK is the only desktop shell** on the shared orchestrato
 
 ## Phases and concrete steps
 
-### Phase A — Baseline and demarcation *(in progress)*
+### Phase A — Baseline and demarcation *(done)*
 
 | Step | Outcome | Status |
 |------|---------|--------|
 | A.1 | This roadmap linked from `docs/README.md` | Done |
-| A.2 | **Version story:** single package version (`dedup.__version__`), CLI `--version`, shell window titles, `setup.py` | Done (`3.0.0-beta.1`) |
+| A.2 | **Version story:** single package version (`dedup.__version__`), CLI `--version`, shell window titles, `setup.py` | Done (`3.0.0`) |
 | A.3 | **Parity checklist** appended below (or in tracker): P0 / P1 / P2 with checkboxes | Done |
 | A.4 | Install path stable: `pip install -r requirements-ctk.txt` + `python -m dedup` (see `docs/README.md`) | Done |
 
@@ -58,15 +58,15 @@ Strategic direction: **CTK is the only desktop shell** on the shared orchestrato
 - **P2 — Delight**  
   Themes depth (accent, presets), keyboard shortcuts where CTK allows, Mission/Scan density polish to match the visual quality you already like.
 
-**Exit criteria for Phase B:** P0 complete and signed off; P1 items explicitly decided (done or deferred with reason).
+**Exit criteria for Phase B:** P0 complete and signed off; P1 items explicitly decided (done or deferred with reason). **Status: met for v3.0.0** (see parity checklist below).
 
 ### Phase C — Release candidate and launch
 
 | Step | Outcome |
 |------|---------|
 | C.1 | Default launch is CTK only (`python -m dedup`) |
-| C.2 | Short **manual QA matrix** (Windows first; spot-check macOS/Linux if supported) |
-| C.3 | Tag **3.0.0-rc** → **3.0.0** when P0+P1 bar is met |
+| C.2 | Short **manual QA matrix** — `docs/CTK_V3_MANUAL_QA.md` |
+| C.3 | Tag **`v3.0.0`** when P0+P1 bar is met and QA matrix is signed off |
 
 ### Phase D — Post-3.0 consolidation
 
@@ -90,24 +90,16 @@ Walked against `dedup/ui/ctk_app.py` + `ctk_pages/` (2026-03-24). Code reference
 - [x] **Review (history):** open saved scan from History — `messagebox.showwarning` when `load_scan` returns `None` (`_open_history_scan_in_review`).
 - [x] **Thread safety:** no direct Tk updates from worker callbacks for progress / complete / error — `root.after(0, …)` in `_on_scan_progress`, `_on_scan_complete`, `_on_scan_error`.
 
-### P0 backlog *(cleared 2026-03-24 — implementation landed)*
-
-1. ~~**History → Review failed load**~~ — `messagebox.showwarning` when `load_scan` returns `None`.
-2. ~~**Cancel → UI sync**~~ — `ScanCoordinator.start_scan(..., on_cancel=…)` wires worker `on_cancel`; CTK marshals `_apply_scan_cancelled_ui` → `set_scan_busy(False)`.
-3. ~~**Version alignment**~~ — `dedup.__version__` = `3.0.0-beta.1`; `main.py --version`, `CerebroCTKApp` title, `setup.py`.
-
-*Next: run P0 smoke (scan, cancel, history bad row, `--version`) and sign off for GA when ready.*
-
 ### P1
 
-- [ ] History: list, open in review, resumable clarity
-- [ ] Diagnostics: useful for support; export if required by your support story
-- [ ] Settings: DB path truth, links to Themes/Diagnostics, persisted where classic persists
+- [x] **History:** list, open in review, resumable clarity — filters, summary, detail **Resumable** field, export JSON, **delete** wired to `HistoryApplicationService.delete_scan`, up to 50 sessions.
+- [x] **Diagnostics:** useful for support — runtime + session tabs; **Phases** from `phase_checkpoints`; **Artifacts** from checkpoint dir; **Compatibility** from stored verification/benchmark JSON; export JSON; copy DB path / active scan id.
+- [x] **Settings:** DB path + **engine `config.json`** + **`ui_settings.json`** with **Copy**; links to Themes / Diagnostics; persistence via `SettingsApplicationService` + `UIState`.
 
 ### P2
 
-- [ ] Themes: appearance + accent at level you want for “3.0 brand”
-- [ ] Shortcuts / accessibility pass (what CTK can support)
+- [x] **Themes:** appearance + accent + gradient + contrast + import/export; subtitle documents Ctrl+7.
+- [x] **Shortcuts / accessibility:** global shortcuts in `ctk_app` (`CTKShortcutRegistry`); `?` help; F5 refresh — within what CTK/Tk allows on the desktop.
 
 ---
 
@@ -122,5 +114,6 @@ Walked against `dedup/ui/ctk_app.py` + `ctk_pages/` (2026-03-24). Code reference
 
 | Doc | Role |
 |-----|------|
+| `docs/CTK_V3_MANUAL_QA.md` | Manual QA matrix before tagging **v3.0.0** |
 | `docs/ENGINEERING_STATUS.md` | What is implemented now; changelog when phases land |
 | `docs/README.md` | Install, architecture overview |

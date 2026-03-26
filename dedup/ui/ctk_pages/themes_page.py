@@ -20,12 +20,11 @@ from typing import Callable, List, Optional, Tuple
 
 import customtkinter as ctk
 
+from ..theme.contrast import contrast_ratio, format_ratio, passes_aa_normal
 from ..theme.gradients import color_at_gradient_position, draw_horizontal_multi_stop
 from ..theme.theme_config import ThemeConfig
-from ..theme.theme_manager import get_theme_manager, parse_gradient_stops_from_raw
+from ..theme.theme_manager import get_theme_manager
 from ..theme.theme_registry import DEFAULT_THEME, THEMES, get_theme, get_theme_names
-from ..theme.contrast import contrast_ratio, format_ratio, passes_aa_normal
-
 
 _MAX_STOPS = 8
 _THEME_EXPORT_FORMAT = "cerebro_theme_config_v1"
@@ -108,9 +107,14 @@ class ThemesPageCTK(ctk.CTkFrame):
 
         ctk.CTkLabel(
             header,
-            text="Choose a preset or customize your accent gradient. Changes apply immediately.",
+            text=(
+                "Presets, accent, top-bar gradient, and contrast tools — saved with your UI preferences. "
+                "Global shortcut: Ctrl+7."
+            ),
             font=ctk.CTkFont(size=12),
             text_color=("gray40", "gray70"),
+            wraplength=720,
+            justify="left",
         ).grid(row=1, column=0, sticky="w", pady=(4, 0))
 
     def _build_presets_section(self, parent: ctk.CTkFrame) -> None:

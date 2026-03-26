@@ -16,10 +16,11 @@ from __future__ import annotations
 
 import json
 import logging
+import tkinter as tk
 from datetime import datetime, timezone
 from pathlib import Path
 from tkinter import filedialog, messagebox
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import customtkinter as ctk
 
@@ -27,7 +28,6 @@ from ...infrastructure.diagnostics import get_diagnostics_recorder
 
 if TYPE_CHECKING:
     from ...application.runtime import ApplicationRuntime
-from ..utils.formatting import fmt_duration, fmt_int
 
 _log = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
         self._selected_session_id: Optional[str] = None
         self._history_cache: list[dict[str, Any]] = []  # Cache for performance
         self._history_lookup: dict[str, dict[str, Any]] = {}  # Fast lookup by scan_id
-        
+
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(3, weight=1)
         self._build()
@@ -65,16 +65,16 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
     def _build(self) -> None:
         # Header
         self._build_header()
-        
+
         # Runtime status section
         self._build_runtime_status()
-        
+
         # Session selector and overview
         self._build_session_overview()
-        
+
         # Tabbed content area
         self._build_tabbed_content()
-        
+
         # Load initial data
         self.reload()
 
@@ -95,24 +95,24 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 12))
         header.grid_columnconfigure(0, weight=1)
-        
+
         ctk.CTkLabel(
             header,
             text="Diagnostics",
             font=ctk.CTkFont(size=28, weight="bold"),
         ).grid(row=0, column=0, sticky="w")
-        
+
         ctk.CTkLabel(
             header,
             text="Engine runtime state, scan sessions, and diagnostic events.",
             font=ctk.CTkFont(size=12),
             text_color=("gray40", "gray70"),
         ).grid(row=1, column=0, sticky="w", pady=(4, 0))
-        
+
         # Action buttons
         actions = ctk.CTkFrame(header, fg_color="transparent")
         actions.grid(row=0, column=1, sticky="e", padx=(0, 20))
-        
+
         self._refresh_diag_btn = ctk.CTkButton(
             actions,
             text="Refresh",
@@ -135,18 +135,18 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
         self._diag_status_frame = status
         status.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 12))
         status.grid_columnconfigure(0, weight=1)
-        
+
         ctk.CTkLabel(
             status,
             text="Runtime Status",
             font=ctk.CTkFont(size=18, weight="bold"),
         ).grid(row=0, column=0, sticky="w", padx=16, pady=(12, 8))
-        
+
         # Status fields
         fields = ctk.CTkFrame(status, fg_color="transparent")
         fields.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 12))
         fields.grid_columnconfigure(1, weight=1)
-        
+
         # Scanning status
         ctk.CTkLabel(fields, text="Scanning:", font=ctk.CTkFont(size=12, weight="bold")).grid(
             row=0, column=0, sticky="w", pady=2
@@ -155,46 +155,87 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
         ctk.CTkLabel(fields, textvariable=self._scanning_var).grid(
             row=0, column=1, sticky="w", padx=(12, 0), pady=2
         )
-        
+
         # Active scan ID
         ctk.CTkLabel(fields, text="Active scan ID:", font=ctk.CTkFont(size=12, weight="bold")).grid(
             row=1, column=0, sticky="w", pady=2
         )
+        id_row = ctk.CTkFrame(fields, fg_color="transparent")
+        id_row.grid(row=1, column=1, sticky="ew", padx=(12, 0), pady=2)
+        id_row.grid_columnconfigure(0, weight=1)
         self._active_id_var = ctk.StringVar(value="—")
-        ctk.CTkLabel(fields, textvariable=self._active_id_var).grid(
-            row=1, column=1, sticky="w", padx=(12, 0), pady=2
-        )
-        
+        ctk.CTkLabel(
+            id_row,
+            textvariable=self._active_id_var,
+            font=ctk.CTkFont(size=11),
+            wraplength=400,
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew")
+        ctk.CTkButton(
+            id_row,
+            text="Copy",
+            width=64,
+            command=self._copy_active_scan_id,
+        ).grid(row=0, column=1, padx=(8, 0))
+
         # Database path
         ctk.CTkLabel(fields, text="Database:", font=ctk.CTkFont(size=12, weight="bold")).grid(
             row=2, column=0, sticky="w", pady=2
         )
+        db_row = ctk.CTkFrame(fields, fg_color="transparent")
+        db_row.grid(row=2, column=1, sticky="ew", padx=(12, 0), pady=2)
+        db_row.grid_columnconfigure(0, weight=1)
         self._db_var = ctk.StringVar(value="—")
         ctk.CTkLabel(
-            fields,
+            db_row,
             textvariable=self._db_var,
             font=ctk.CTkFont(size=11),
-            wraplength=600,
+            wraplength=400,
             anchor="w",
-        ).grid(row=2, column=1, sticky="w", padx=(12, 0), pady=2)
+        ).grid(row=0, column=0, sticky="ew")
+        ctk.CTkButton(
+            db_row,
+            text="Copy",
+            width=64,
+            command=lambda: self._copy_clipboard(self._db_var.get()),
+        ).grid(row=0, column=1, padx=(8, 0))
+
+    def _copy_clipboard(self, text: str) -> None:
+        if not text or text == "—":
+            return
+        try:
+            r = self.winfo_toplevel()
+            r.clipboard_clear()
+            r.clipboard_append(text.strip())
+            r.update_idletasks()
+        except tk.TclError:
+            pass
+
+    def _copy_active_scan_id(self) -> None:
+        try:
+            aid = self._coordinator.get_active_scan_id() if self._coordinator else None
+            if aid:
+                self._copy_clipboard(str(aid))
+        except Exception:
+            self._copy_clipboard(self._active_id_var.get())
 
     def _build_session_overview(self) -> None:
         overview = ctk.CTkFrame(self, corner_radius=12)
         self._diag_overview_frame = overview
         overview.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 12))
         overview.grid_columnconfigure(0, weight=1)
-        
+
         ctk.CTkLabel(
             overview,
             text="Session Overview",
             font=ctk.CTkFont(size=18, weight="bold"),
         ).grid(row=0, column=0, sticky="w", padx=16, pady=(12, 8))
-        
+
         # Session selector
         selector = ctk.CTkFrame(overview, fg_color="transparent")
         selector.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
         selector.grid_columnconfigure(1, weight=1)
-        
+
         ctk.CTkLabel(selector, text="View session:").pack(side="left", padx=(0, 8))
         self._session_var = ctk.StringVar(value="")
         self._session_combo = ctk.CTkComboBox(
@@ -205,7 +246,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             command=self._on_session_change,
         )
         self._session_combo.pack(side="left", fill="x", expand=True)
-        
+
         # Overview fields
         self._overview_vars: dict[str, ctk.StringVar] = {}
         fields = [
@@ -214,7 +255,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             ("Schema Version", "—"),
             ("Root Fingerprint", "—"),
         ]
-        
+
         for i, (label, default) in enumerate(fields):
             ctk.CTkLabel(
                 overview,
@@ -222,7 +263,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
                 font=ctk.CTkFont(size=11, weight="bold"),
                 text_color=("gray50", "gray60"),
             ).grid(row=2 + i, column=0, sticky="w", padx=(0, 12), pady=2)
-            
+
             var = ctk.StringVar(value=default)
             ctk.CTkLabel(
                 overview,
@@ -231,7 +272,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
                 wraplength=500,
                 anchor="w",
             ).grid(row=2 + i, column=1, sticky="w", padx=(12, 0), pady=2)
-            
+
             self._overview_vars[label] = var
 
     def _build_tabbed_content(self) -> None:
@@ -240,7 +281,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
         self._diag_tab_container = tab_container
         tab_container.grid(row=3, column=0, sticky="nsew", padx=20, pady=(0, 20))
         tab_container.grid_columnconfigure(0, weight=1)
-        
+
         # Custom tab buttons (since CTK doesn't have notebook)
         self._tab_buttons: dict[str, ctk.CTkButton] = {}
         tabs = [
@@ -249,11 +290,11 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             ("artifacts", "Artifacts"),
             ("compatibility", "Compatibility"),
         ]
-        
+
         button_row = ctk.CTkFrame(tab_container, fg_color="transparent")
         button_row.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 8))
         button_row.grid_columnconfigure(0, weight=1)
-        
+
         for i, (tab_id, tab_name) in enumerate(tabs):
             btn = ctk.CTkButton(
                 button_row,
@@ -263,16 +304,16 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             )
             btn.grid(row=0, column=i, padx=(0, 8), sticky="w")
             self._tab_buttons[tab_id] = btn
-        
+
         # Set default tab
         self._current_tab = "phases"
         self._tab_buttons["phases"].configure(fg_color=("gray60", "gray40"))
-        
+
         # Tab content area
         self._tab_content = ctk.CTkFrame(tab_container, fg_color="transparent")
         self._tab_content.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 12))
         self._tab_content.grid_columnconfigure(0, weight=1)
-        
+
         # Build tab content areas
         self._build_phases_tab()
         self._build_events_tab()
@@ -284,15 +325,15 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
         # Reset all button colors
         for btn in self._tab_buttons.values():
             btn.configure(fg_color=("gray35", "gray50"))
-        
+
         # Highlight selected tab
         self._tab_buttons[tab_id].configure(fg_color=("gray60", "gray40"))
         self._current_tab = tab_id
-        
+
         # Clear and rebuild content
         for widget in self._tab_content.winfo_children():
             widget.destroy()
-        
+
         if tab_id == "phases":
             self._build_phases_content()
         elif tab_id == "events":
@@ -325,7 +366,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             text="Scan Phases",
             font=ctk.CTkFont(size=16, weight="bold"),
         ).grid(row=0, column=0, sticky="w", padx=16, pady=(12, 8))
-        
+
         # Phases table (scrollable)
         self._phases_scroll = ctk.CTkScrollableFrame(self._tab_content, corner_radius=8)
         self._phases_scroll.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 12))
@@ -337,13 +378,13 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
         header = ctk.CTkFrame(self._tab_content, fg_color="transparent")
         header.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 8))
         header.grid_columnconfigure(1, weight=1)
-        
+
         ctk.CTkLabel(
             header,
             text="Recent Events",
             font=ctk.CTkFont(size=16, weight="bold"),
         ).grid(row=0, column=0, sticky="w")
-        
+
         # Clear button
         ctk.CTkButton(
             header,
@@ -352,7 +393,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             fg_color=("#E67E22", "#D35400"),
             command=self._clear_recorder,
         ).grid(row=0, column=1, sticky="e", padx=(8, 0))
-        
+
         # Events log
         self._events_scroll = ctk.CTkTextbox(
             self._tab_content,
@@ -370,7 +411,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             text="Scan Artifacts",
             font=ctk.CTkFont(size=16, weight="bold"),
         ).grid(row=0, column=0, sticky="w", padx=16, pady=(12, 8))
-        
+
         # Artifacts list
         self._artifacts_scroll = ctk.CTkScrollableFrame(self._tab_content, corner_radius=8)
         self._artifacts_scroll.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 12))
@@ -383,7 +424,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             text="Compatibility Checks",
             font=ctk.CTkFont(size=16, weight="bold"),
         ).grid(row=0, column=0, sticky="w", padx=16, pady=(12, 8))
-        
+
         # Compatibility table
         self._compat_scroll = ctk.CTkScrollableFrame(self._tab_content, corner_radius=8)
         self._compat_scroll.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 12))
@@ -414,17 +455,17 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             for var in self._overview_vars.values():
                 var.set("—")
             return
-        
+
         # Use fast lookup from cache instead of O(n) loop
         session_data = self._history_lookup.get(session_id)
-        
+
         if not session_data:
             self._overview_vars["Session ID"].set("—")
             self._overview_vars["Config Hash"].set("—")
             self._overview_vars["Schema Version"].set("—")
             self._overview_vars["Root Fingerprint"].set("—")
             return
-        
+
         self._overview_vars["Session ID"].set(session_id)
         self._overview_vars["Config Hash"].set(str(session_data.get("config_hash", "—"))[:16] + "…")
         self._overview_vars["Schema Version"].set(str(session_data.get("schema_version", "—")))
@@ -449,11 +490,11 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             for widget in self._tab_content.winfo_children():
                 widget.destroy()
             self._build_phases_content()
-            
+
         # Clear existing content
         for widget in self._phases_scroll.winfo_children():
             widget.destroy()
-        
+
         if not self._selected_session_id:
             ctk.CTkLabel(
                 self._phases_scroll,
@@ -461,13 +502,47 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
                 text_color=("gray40", "gray70"),
             ).pack(pady=20)
             return
-        
-        # TODO: Populate with actual phase data from coordinator
-        ctk.CTkLabel(
-            self._phases_scroll,
-            text="Phase data will be populated from coordinator.",
-            text_color=("gray40", "gray70"),
-        ).pack(pady=20)
+
+        persist = getattr(self._coordinator, "persistence", None)
+        if persist is None:
+            ctk.CTkLabel(
+                self._phases_scroll,
+                text="Persistence not available.",
+                text_color=("gray40", "gray70"),
+            ).pack(pady=20)
+            return
+        try:
+            checkpoints = persist.checkpoint_repo.list_for_session(self._selected_session_id)
+        except Exception as ex:
+            _log.warning("list phase checkpoints: %s", ex)
+            checkpoints = []
+
+        if not checkpoints:
+            ctk.CTkLabel(
+                self._phases_scroll,
+                text=(
+                    "No phase checkpoints in the database for this session. "
+                    "Completed scans often only persist final results; run an in-progress or resumable scan to see rows here."
+                ),
+                text_color=("gray40", "gray70"),
+                wraplength=560,
+                justify="left",
+            ).pack(pady=16, padx=8, anchor="w")
+            return
+
+        for cp in checkpoints:
+            fr = ctk.CTkFrame(self._phases_scroll, corner_radius=6)
+            fr.pack(fill="x", pady=4, padx=4)
+            title = f"{cp.phase_name.value} — {cp.status.value}"
+            ctk.CTkLabel(fr, text=title, font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=10, pady=(8, 2))
+            tot = cp.total_units if cp.total_units is not None else "—"
+            sub = f"Units: {cp.completed_units} / {tot}  ·  Updated: {cp.updated_at.isoformat()[:19]}"
+            ctk.CTkLabel(
+                fr,
+                text=sub,
+                text_color=("gray40", "gray70"),
+                font=ctk.CTkFont(size=11),
+            ).pack(anchor="w", padx=10, pady=(0, 8))
 
     def _populate_events(self) -> None:
         """Populate the events log."""
@@ -476,17 +551,17 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             for widget in self._tab_content.winfo_children():
                 widget.destroy()
             self._build_events_content()
-            
+
         # Clear existing content
         self._events_scroll.delete("1.0", "end")
-        
+
         rec = get_diagnostics_recorder()
         events = rec.get_recent(100)
-        
+
         if not events:
             self._events_scroll.insert("1.0", "No events recorded in this session buffer.")
             return
-        
+
         lines = []
         for e in events:
             try:
@@ -495,7 +570,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
                 ts = "—"
             detail = f"  |  {e.detail}" if e.detail else ""
             lines.append(f"{ts}  [{e.category}] {e.message}{detail}")
-        
+
         self._events_scroll.insert("1.0", "\n".join(lines))
 
     def _populate_artifacts(self) -> None:
@@ -505,11 +580,11 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             for widget in self._tab_content.winfo_children():
                 widget.destroy()
             self._build_artifacts_content()
-            
+
         # Clear existing content
         for widget in self._artifacts_scroll.winfo_children():
             widget.destroy()
-        
+
         if not self._selected_session_id:
             ctk.CTkLabel(
                 self._artifacts_scroll,
@@ -517,13 +592,36 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
                 text_color=("gray40", "gray70"),
             ).pack(pady=20)
             return
-        
-        # TODO: Populate with actual artifact data from coordinator
-        ctk.CTkLabel(
-            self._artifacts_scroll,
-            text="Artifacts will be populated from coordinator.",
-            text_color=("gray40", "gray70"),
-        ).pack(pady=20)
+
+        persist = getattr(self._coordinator, "persistence", None)
+        cp_dir = persist.checkpoint_dir if persist else None
+        files: list[Path] = []
+        if cp_dir and Path(cp_dir).exists():
+            sid = self._selected_session_id
+            for p in sorted(Path(cp_dir).iterdir()):
+                if p.is_file() and sid in p.name:
+                    files.append(p)
+
+        if not files:
+            ctk.CTkLabel(
+                self._artifacts_scroll,
+                text="No checkpoint files on disk whose names include this session id. Checkpoints may live only in SQLite for this run.",
+                text_color=("gray40", "gray70"),
+                wraplength=520,
+                justify="left",
+            ).pack(pady=16, padx=8, anchor="w")
+            return
+
+        for p in files:
+            row = ctk.CTkFrame(self._artifacts_scroll, fg_color="transparent")
+            row.pack(fill="x", pady=2)
+            ctk.CTkLabel(row, text=p.name, font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w")
+            ctk.CTkLabel(
+                row,
+                text=str(p),
+                font=ctk.CTkFont(size=10),
+                text_color=("gray40", "gray70"),
+            ).pack(anchor="w")
 
     def _populate_compatibility(self) -> None:
         """Populate the compatibility checks."""
@@ -532,11 +630,11 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             for widget in self._tab_content.winfo_children():
                 widget.destroy()
             self._build_compatibility_content()
-            
+
         # Clear existing content
         for widget in self._compat_scroll.winfo_children():
             widget.destroy()
-        
+
         if not self._selected_session_id:
             ctk.CTkLabel(
                 self._compat_scroll,
@@ -544,41 +642,65 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
                 text_color=("gray40", "gray70"),
             ).pack(pady=20)
             return
-        
-        # TODO: Populate with actual compatibility data from coordinator
-        ctk.CTkLabel(
+
+        session_data = self._history_lookup.get(self._selected_session_id)
+        dv = (session_data or {}).get("deletion_verification_summary") or {}
+        bm = (session_data or {}).get("benchmark_summary") or {}
+
+        if not dv and not bm:
+            ctk.CTkLabel(
+                self._compat_scroll,
+                text="No deletion-verification or benchmark snapshot stored for this session (older runs may omit these fields).",
+                text_color=("gray40", "gray70"),
+                wraplength=520,
+                justify="left",
+            ).pack(pady=16, padx=8, anchor="w")
+            return
+
+        tb = ctk.CTkTextbox(
             self._compat_scroll,
-            text="Compatibility checks will be populated from coordinator.",
-            text_color=("gray40", "gray70"),
-        ).pack(pady=20)
+            wrap="word",
+            height=220,
+            fg_color=("#F3F4F6", "#11151d"),
+            text_color=("#111827", "#E5E7EB"),
+        )
+        tb.pack(fill="both", expand=True, padx=8, pady=8)
+        parts: list[str] = []
+        if dv:
+            parts.append("Deletion verification (summary_json)")
+            parts.append(json.dumps(dv, indent=2, default=str))
+        if bm:
+            parts.append("\nBenchmark (from metrics)")
+            parts.append(json.dumps(bm, indent=2, default=str))
+        tb.insert("1.0", "\n".join(parts))
 
     def reload(self) -> None:
         """Reload all diagnostics data."""
         # Update runtime status
         scanning = getattr(self._coordinator, 'is_scanning', False)
         self._scanning_var.set("Yes" if scanning else "No")
-        
+
         active_id = getattr(self._coordinator, 'get_active_scan_id', lambda: "—")()
         self._active_id_var.set((active_id[:16] + "…") if active_id and len(active_id) > 16 else (active_id or "—"))
-        
+
         persistence = getattr(self._coordinator, 'persistence', None)
         db_path = persistence.db_path if persistence else "—"
         self._db_var.set(str(db_path))
-        
+
         # Update session selector and cache for performance
         try:
             self._history_cache = self._coordinator.get_history(limit=50) or []
             self._history_lookup = {h.get("scan_id", ""): h for h in self._history_cache if h.get("scan_id")}
             session_ids = list(self._history_lookup.keys())
             self._session_combo.configure(values=session_ids)
-            
+
             if session_ids and not self._session_var.get():
                 self._session_var.set(session_ids[0])
                 self._selected_session_id = session_ids[0]
         except Exception:
             self._history_cache = []
             self._history_lookup = {}
-        
+
         self._update_session_overview(self._selected_session_id)
         self._refresh_tab_content()
 
@@ -591,7 +713,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
         )
         if not path:
             return
-        
+
         # Convert DiagnosticEntry objects to dictionaries for proper JSON serialization
         events = []
         for event in get_diagnostics_recorder().get_recent(100):
@@ -602,7 +724,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
                 "timestamp": event.timestamp,
                 "wall_time": event.wall_time,
             })
-        
+
         payload = {
             "export_format": "cerebro_diagnostics_v1",
             "exported_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -615,7 +737,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             },
             "events": events,
         }
-        
+
         try:
             Path(path).write_text(
                 json.dumps(payload, indent=2, default=str),

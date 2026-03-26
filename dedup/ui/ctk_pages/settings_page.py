@@ -9,6 +9,7 @@ Sections:
 
 from __future__ import annotations
 
+import tkinter as tk
 from typing import Callable, Optional
 
 import customtkinter as ctk
@@ -25,6 +26,8 @@ class SettingsPageCTK(ctk.CTkFrame):
         *,
         state: UIState,
         database_path: str,
+        config_json_path: str = "",
+        ui_settings_json_path: str = "",
         on_open_themes: Callable[[], None],
         on_open_diagnostics: Callable[[], None],
         on_settings_changed: Optional[Callable[[], None]] = None,
@@ -38,6 +41,8 @@ class SettingsPageCTK(ctk.CTkFrame):
         self._on_settings_changed = on_settings_changed
         self._on_toast = on_toast
         self._db_path = database_path
+        self._config_json_path = config_json_path
+        self._ui_settings_json_path = ui_settings_json_path
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -48,6 +53,19 @@ class SettingsPageCTK(ctk.CTkFrame):
         self._db_path = path
         if hasattr(self, "_db_var"):
             self._db_var.set(path)
+
+    def _copy_path(self, text: str) -> None:
+        if not text:
+            return
+        try:
+            r = self.winfo_toplevel()
+            r.clipboard_clear()
+            r.clipboard_append(text)
+            r.update_idletasks()
+            if self._on_toast:
+                self._on_toast("Path copied to clipboard")
+        except tk.TclError:
+            pass
 
     def _build(self) -> None:
         self._section_frames: list[ctk.CTkFrame] = []
@@ -204,21 +222,49 @@ class SettingsPageCTK(ctk.CTkFrame):
             font=ctk.CTkFont(size=14, weight="bold"),
         ).grid(row=0, column=0, sticky="w", padx=16, pady=(12, 12))
 
-        # DB Path
-        ctk.CTkLabel(section, text="Scan history database", text_color=("gray40", "gray70")).grid(
-            row=1, column=0, sticky="w", padx=16, pady=(0, 4)
-        )
-        self._db_var = ctk.StringVar(value=self._db_path)
         ctk.CTkLabel(
             section,
-            textvariable=self._db_var,
+            text="Local paths for scan history, engine defaults, and UI preferences. Copy when reporting issues.",
             font=ctk.CTkFont(size=11),
-            wraplength=400,
-        ).grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 12))
+            text_color=("gray40", "gray70"),
+            wraplength=520,
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 8))
 
-        # Open Diagnostics button
+        self._db_var = ctk.StringVar(value=self._db_path)
+        self._cfg_var = ctk.StringVar(value=self._config_json_path)
+        self._ui_settings_var = ctk.StringVar(value=self._ui_settings_json_path)
+
+        row = 2
+        for title, var in (
+            ("Scan history database", self._db_var),
+            ("Engine defaults (config.json)", self._cfg_var),
+            ("UI preferences (ui_settings.json)", self._ui_settings_var),
+        ):
+            ctk.CTkLabel(section, text=title, text_color=("gray40", "gray70")).grid(
+                row=row, column=0, sticky="w", padx=16, pady=(4, 0)
+            )
+            row_inner = ctk.CTkFrame(section, fg_color="transparent")
+            row_inner.grid(row=row + 1, column=0, sticky="ew", padx=16, pady=(0, 6))
+            row_inner.grid_columnconfigure(0, weight=1)
+            ctk.CTkLabel(
+                row_inner,
+                textvariable=var,
+                font=ctk.CTkFont(size=11),
+                wraplength=420,
+                anchor="w",
+                justify="left",
+            ).grid(row=0, column=0, sticky="ew")
+            ctk.CTkButton(
+                row_inner,
+                text="Copy",
+                width=72,
+                command=lambda v=var: self._copy_path(v.get()),
+            ).grid(row=0, column=1, padx=(8, 0))
+            row += 2
+
         btn_row = ctk.CTkFrame(section, fg_color="transparent")
-        btn_row.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 12))
+        btn_row.grid(row=row, column=0, sticky="ew", padx=16, pady=(4, 12))
         self._diag_btn = ctk.CTkButton(
             btn_row,
             text="Open Diagnostics…",
@@ -327,3 +373,8 @@ class SettingsPageCTK(ctk.CTkFrame):
         self._gradients_var.set(self._state.settings.reduced_gradients)
         self._mission_cap_var.set(self._state.settings.mission_show_capabilities)
         self._review_thumb_var.set(self._state.settings.review_show_thumbnails)
+        self._db_var.set(self._db_path)
+        if hasattr(self, "_cfg_var"):
+            self._cfg_var.set(self._config_json_path)
+        if hasattr(self, "_ui_settings_var"):
+            self._ui_settings_var.set(self._ui_settings_json_path)

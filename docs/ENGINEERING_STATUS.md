@@ -41,6 +41,15 @@
 
 ## Changelog (append newest first)
 
+### 2026-03-28 — CTK v3.0.0 ship prep (P1/P2 + QA)
+
+- **Version:** `3.0.0` (`dedup.__version__`, `setup.py`); classifier Production/Stable.
+- **History:** delete wired to `HistoryApplicationService.delete_scan`; **Resumable** in detail panel; `get_resumable_ids`; history limit 50.
+- **Settings:** `config.json` + `ui_settings.json` paths with **Copy**; Diagnostics link retained.
+- **Diagnostics:** phase checkpoints from DB; artifacts from checkpoint dir; compatibility from stored summaries; copy DB / active scan id.
+- **Themes:** P2 subtitle (presets, accent, Ctrl+7).
+- **Docs:** `docs/CTK_V3_ROADMAP.md` parity complete; new `docs/CTK_V3_MANUAL_QA.md`. Tag **`v3.0.0`** after QA sign-off.
+
 ### 2026-03-28 — Post–Phase 3 TODO closure (implementation pass)
 
 - **`dedup/infrastructure/ui_settings.py`:** `AppSettings` + JSON persistence (moved out of `ui/utils/ui_state.py`).

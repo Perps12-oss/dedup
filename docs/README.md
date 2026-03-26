@@ -83,6 +83,7 @@ See `docs/CONTROLLER_CONTRACTS.md`, `docs/REPO_AUTHORITY.md`, and **`docs/TODO_P
 | Doc | Role |
 |-----|------|
 | `docs/CTK_V3_ROADMAP.md` | **CTK → v3.0** — end goal, phases, parity checklist |
+| `docs/CTK_V3_MANUAL_QA.md` | **Pre-release QA** — matrix before tagging v3.0.0 |
 | `docs/ENGINEERING_STATUS.md` | **Living status** — update as features/phases land |
 | `docs/UI_AUTHORITY.md` | Primary shell, boundaries, migration snapshot |
 | `docs/TODO_POST_PHASE3.md` | **Queued work** after Phase 3 (Review decoupling, banners, tests) |

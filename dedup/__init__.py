@@ -18,7 +18,7 @@ Usage:
     print(f"Found {len(result.duplicate_groups)} duplicate groups")
 """
 
-__version__ = "3.0.0-beta.1"
+__version__ = "3.0.0"
 __author__ = "DEDUP Project"
 
 from .engine import (

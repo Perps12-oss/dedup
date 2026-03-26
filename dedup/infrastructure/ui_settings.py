@@ -56,6 +56,11 @@ class AppSettings:
         return cls(**{k: merged[k] for k in valid})
 
 
+def get_ui_settings_path() -> Path:
+    """Absolute path to `ui_settings.json` (same as used by `load_settings` / `save_settings`)."""
+    return _settings_path()
+
+
 def _settings_path() -> Path:
     if os.name == "nt":
         base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))

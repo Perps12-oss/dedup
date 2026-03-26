@@ -7,16 +7,18 @@ ProjectionHub → UIStateStore, ScanController, ReviewController, and ToastManag
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import Callable
 import tkinter as tk
+from pathlib import Path
 from tkinter import messagebox
+from typing import Callable
 
 import customtkinter as ctk
 
 from .. import __version__
 from ..application.runtime import ApplicationRuntime
 from ..engine.models import ScanResult
+from ..infrastructure.config import get_config_path
+from ..infrastructure.ui_settings import get_ui_settings_path
 from ..orchestration.coordinator import ScanCoordinator
 from .components.toast_manager import ToastManager
 from .controller.review_controller import ReviewController
@@ -30,15 +32,15 @@ from .ctk_pages.scan_page import ScanPageCTK
 from .ctk_pages.settings_page import SettingsPageCTK
 from .ctk_pages.themes_page import ThemesPageCTK
 from .ctk_pages.welcome_page import WelcomePageCTK
+from .ctk_shortcuts import CTKShortcutRegistry
 from .projections.history_projection import build_history_from_coordinator
 from .projections.hub import ProjectionHub
 from .state.hub_adapter import ProjectionHubStoreAdapter
 from .state.store import LastScanSummaryState, MissionState, UIAppState, UiDegradedFlags, UIStateStore
+from .theme.gradients import GradientBar, cinematic_chrome_color, paint_cinematic_backdrop
+from .theme.theme_manager import parse_gradient_stops_from_raw
 from .utils.formatting import fmt_bytes
 from .utils.ui_state import UIState
-from .ctk_shortcuts import CTKShortcutRegistry
-from .theme.theme_manager import parse_gradient_stops_from_raw
-from .theme.gradients import GradientBar, cinematic_chrome_color, paint_cinematic_backdrop
 
 _log = logging.getLogger(__name__)
 
@@ -57,7 +59,7 @@ class CerebroCTKApp:
         self.root.title(f"{self.APP_NAME} Dedup Engine v{self.APP_VERSION}")
         self.root.geometry("1180x760")
         self.root.minsize(760, 480)
-        
+
         # Accessibility improvements
         self.root.option_add('*tearOff', False)  # Disable tear-off menus
         self.root.focus_set()  # Set initial focus
@@ -325,7 +327,7 @@ class CerebroCTKApp:
             shortcuts = {
                 "Welcome": None,
                 "Mission": "Ctrl+1",
-                "Scan": "Ctrl+2", 
+                "Scan": "Ctrl+2",
                 "Review": "Ctrl+3",
                 "History": "Ctrl+4",
                 "Diagnostics": "Ctrl+5",
@@ -436,9 +438,11 @@ class CerebroCTKApp:
         self._pages["Review"].set_refresh_callback(self._runtime.review.get_last_result)  # type: ignore[attr-defined]
         self._pages["History"] = HistoryPageCTK(
             self._content_host,
-            get_history=lambda: self._runtime.history.get_history(30),
+            get_history=lambda: self._runtime.history.get_history(50),
             on_load_scan=self._open_history_scan_in_review,
             on_resume_scan=self._resume_scan_latest,
+            get_resumable_ids=lambda: self._runtime.history.get_resumable_scan_ids(),
+            on_delete_scan=lambda sid: self._runtime.history.delete_scan(sid),
             **_tp,
         )
         self._pages["Diagnostics"] = DiagnosticsPageCTK(self._content_host, runtime=self._runtime, **_tp)
@@ -453,6 +457,8 @@ class CerebroCTKApp:
             self._content_host,
             state=self.state,
             database_path=str(self._coordinator.persistence.db_path),
+            config_json_path=str(get_config_path()),
+            ui_settings_json_path=str(get_ui_settings_path()),
             on_open_themes=lambda: self._show_page("Themes"),
             on_open_diagnostics=lambda: self._show_page("Diagnostics"),
             on_settings_changed=self._on_settings_changed,
@@ -746,7 +752,7 @@ class CerebroCTKApp:
     def _bind_global_shortcuts(self) -> None:
         """Global keyboard shortcuts for navigation and common actions."""
         reg = CTKShortcutRegistry(self.root)
-        
+
         # Navigation shortcuts
         reg.register("<Control-Key-1>", "Mission Control", lambda e: self._show_page("Mission"))
         reg.register("<Control-Key-2>", "Live Scan Studio", lambda e: self._show_page("Scan"))
@@ -755,16 +761,16 @@ class CerebroCTKApp:
         reg.register("<Control-Key-5>", "Diagnostics", lambda e: self._show_page("Diagnostics"))
         reg.register("<Control-Key-7>", "Themes", lambda e: self._show_page("Themes"))
         reg.register("<Control-comma>", "Settings", lambda e: self._show_page("Settings"))
-        
+
         # Action shortcuts
         reg.register("<Control-Key-o>", "Open last review", lambda e: self._open_last_review())
         reg.register("<Control-Key-r>", "Resume last scan", lambda e: self._resume_scan_latest())
         reg.register("<Control-n>", "New scan", lambda e: self._show_page("Scan"))
         reg.register("<F5>", "Refresh current page", lambda e: self._refresh_current_page())
-        
+
         # Help shortcut
         reg.register("?", "Shortcut help", lambda e: self._show_shortcuts_help())
-        
+
         self._shortcut_registry = reg
 
     def _refresh_current_page(self) -> None:
@@ -777,7 +783,7 @@ class CerebroCTKApp:
     def _show_shortcuts_help(self) -> None:
         """Show keyboard shortcuts help dialog."""
         from tkinter import messagebox
-        
+
         shortcuts = [
             "Keyboard Shortcuts:",
             "",
@@ -800,7 +806,7 @@ class CerebroCTKApp:
             "  Ctrl+Enter           Start scan",
             "  Escape               Cancel scan",
         ]
-        
+
         messagebox.showinfo(
             "Keyboard Shortcuts",
             "\n".join(shortcuts),
