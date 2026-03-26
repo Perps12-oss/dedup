@@ -3,7 +3,8 @@
 **Purpose:** Single place to record **what is implemented now** as the project evolves. Update this file whenever you ship a phase, close an audit item, or change tooling.
 
 **Detailed phase history:** `docs/PHASE_ROLLOUT.md`  
-**Phase 1 report:** `docs/AUDIT_REPORT_PHASE1.md`
+**Phase 1 report:** `docs/AUDIT_REPORT_PHASE1.md`  
+**MVVM / next steps (tick in git):** `docs/MVVM_AND_NEXT_CHECKLIST.md`
 
 ---
 
@@ -39,6 +40,10 @@
 ---
 
 ## Changelog (append newest first)
+
+### 2026-03-28 — MVVM / next-direction checklist
+
+- **`docs/MVVM_AND_NEXT_CHECKLIST.md`:** tickable trace (foundation, core/services, per-page slices, quality, docs). Linked from `docs/README.md` and this file’s header.
 
 ### 2026-03-28 — Docs prune (stale audits + generated snapshots)
 

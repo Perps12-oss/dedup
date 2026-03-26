@@ -87,6 +87,7 @@ See `docs/CONTROLLER_CONTRACTS.md`, `docs/REPO_AUTHORITY.md`, and **`docs/TODO_P
 | `docs/UI_AUTHORITY.md` | Primary shell, boundaries, migration snapshot |
 | `docs/TODO_POST_PHASE3.md` | **Queued work** after Phase 3 (Review decoupling, banners, tests) |
 | `docs/PHASES_1_3_CHECKLIST.md` | Phase 1–3 completion checklist |
+| `docs/MVVM_AND_NEXT_CHECKLIST.md` | **MVVM / next direction** — tick as you complete slices |
 | `docs/PHASE_ROLLOUT.md` | Phase-by-phase history and what was skipped |
 | `docs/AUDIT_REPORT_PHASE1.md` | Phase 1 static audit completion |
 | `CONTRIBUTING.md` | Dev setup, Ruff, pre-commit, tests |
