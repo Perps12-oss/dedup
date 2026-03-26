@@ -13,7 +13,7 @@ from typing import Callable, Optional
 
 import customtkinter as ctk
 
-from ..utils.ui_state import UIState, save_settings
+from ..utils.ui_state import UIState
 
 
 class SettingsPageCTK(ctk.CTkFrame):
@@ -292,7 +292,7 @@ class SettingsPageCTK(ctk.CTkFrame):
         self._save_and_notify()
 
     def _save_and_notify(self) -> None:
-        save_settings(self._state.settings)
+        self._state.save()
         if self._on_settings_changed:
             try:
                 self._on_settings_changed()

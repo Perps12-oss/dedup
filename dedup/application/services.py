@@ -13,6 +13,15 @@ from typing import Any, Callable, Dict, List, Optional
 
 from ..engine.models import DeletionPlan, DeletionResult, ScanResult
 from ..infrastructure.config import Config, load_config, save_config
+from ..infrastructure.ui_settings import (
+    AppSettings,
+)
+from ..infrastructure.ui_settings import (
+    load_settings as load_ui_preferences_json,
+)
+from ..infrastructure.ui_settings import (
+    save_settings as save_ui_preferences_json,
+)
 from ..orchestration.coordinator import ScanCoordinator
 
 _log = logging.getLogger(__name__)
@@ -131,10 +140,18 @@ class HistoryApplicationService:
 
 
 class SettingsApplicationService:
-    """Persisted JSON config (engine defaults, window, etc.). Independent of coordinator."""
+    """Persisted JSON: engine `config.json` and UI `ui_settings.json`. Shells use this — not raw `load_config` / `save_settings` from pages."""
 
     def load(self) -> Config:
         return load_config()
 
     def save(self, config: Config) -> None:
         save_config(config)
+
+    def load_ui_preferences(self) -> AppSettings:
+        """Load `AppSettings` from `ui_settings.json`."""
+        return load_ui_preferences_json()
+
+    def persist_ui_preferences(self, settings: AppSettings) -> None:
+        """Write `AppSettings` to `ui_settings.json`."""
+        save_ui_preferences_json(settings)

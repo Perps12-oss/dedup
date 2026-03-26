@@ -14,13 +14,14 @@ import logging
 import tkinter
 from typing import Any, Callable, List, Optional
 
+from ..projections.hub import THROTTLE_MS
 from ..projections.metrics_projection import MetricsProjection
 from .store import UIStateStore
 
 _log = logging.getLogger(__name__)
 
-# Additional coalescing after hub-side throttle — reduces store subscribers re-running.
-_METRICS_COALESCE_MS = 100
+# Additional coalescing after hub-side throttle — bounded relative to `THROTTLE_MS["metrics"]`.
+_METRICS_COALESCE_MS = max(50, THROTTLE_MS["metrics"] // 4)
 
 
 class ProjectionHubStoreAdapter:

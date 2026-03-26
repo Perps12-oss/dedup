@@ -41,6 +41,16 @@
 
 ## Changelog (append newest first)
 
+### 2026-03-28 — Post–Phase 3 TODO closure (implementation pass)
+
+- **`dedup/infrastructure/ui_settings.py`:** `AppSettings` + JSON persistence (moved out of `ui/utils/ui_state.py`).
+- **`SettingsApplicationService`:** `load_ui_preferences` / `persist_ui_preferences`; **`UIState.attach_settings_service`** + **`CerebroCTKApp`** wiring.
+- **`ProjectionHub` / `hub_adapter`:** documented pipeline vs hub throttle; metrics coalesce derived from `THROTTLE_MS["metrics"]`.
+- **`pipeline.py`:** comment linking discovery progress to hub throttles.
+- **`ReviewPageCTK`:** `_ui_alive()` guards for hero/thumbnail paths; controller docstring cleanup.
+- **Tests:** `dedup/tests/test_controller_application_services.py` (+ destroyed-host regression).
+- **`docs/TODO_POST_PHASE3.md`:** remaining open items cleared except deferred `pipeline`/`models` split.
+
 ### 2026-03-28 — MVVM / next-direction checklist
 
 - **`docs/MVVM_AND_NEXT_CHECKLIST.md`:** tickable trace (foundation, core/services, per-page slices, quality, docs). Linked from `docs/README.md` and this file’s header.

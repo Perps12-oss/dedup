@@ -65,6 +65,7 @@ class CerebroCTKApp:
         self.state = UIState()
         self._coordinator = ScanCoordinator()
         self._runtime = ApplicationRuntime(self._coordinator)
+        self.state.attach_settings_service(self._runtime.settings)
         self.store = UIStateStore(tk_root=self.root)
         self.hub = ProjectionHub(event_bus=self._coordinator.event_bus, tk_root=self.root)
         self._hub_store_adapter = ProjectionHubStoreAdapter(self.hub, self.store)

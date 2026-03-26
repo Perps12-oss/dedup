@@ -935,7 +935,8 @@ class ScanPipeline:
                     last_checkpoint_at = self._files_found
                     last_checkpoint_ts = time.monotonic()
 
-            # Throttle progress updates
+            # Throttle progress updates (pipeline → coordinator → hub; UI delivery further throttled
+            # in `ProjectionHub.THROTTLE_MS` / `ProjectionHubStoreAdapter` — see `docs/TODO_POST_PHASE3.md`).
             current_time = time.time()
             if progress_cb and (current_time - last_progress_time) >= progress_interval:
                 progress_cb(

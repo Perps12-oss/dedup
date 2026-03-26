@@ -1,9 +1,9 @@
 """
 ReviewController — handles review intents from store + ReviewApplicationService only.
 
-ReviewPage and SafetyPanel emit intents; controller updates store (review selection)
-and uses application services for plan/execute. UI refresh is via a single callbacks interface
-(no page reference, no lambdas closing over page internals).
+ReviewPage implements ``IReviewCallbacks``; the controller updates store (review selection)
+and uses application services for plan/execute. UI refresh is via that protocol only
+(no widget types, no page references).
 """
 
 from __future__ import annotations

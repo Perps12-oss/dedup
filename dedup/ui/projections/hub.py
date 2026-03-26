@@ -18,9 +18,12 @@ Design rules
 2. Snapshots are replaced atomically (frozen dataclasses — no in-place mutation).
 3. Throttle intervals ensure the UI is never flooded with updates.
 4. Phase and session transitions are delivered immediately (throttle = 0 ms).
-5. Metrics updates are coalesced at 300 ms intervals.
-6. Event-log entries are batched at 750 ms.
-7. No widget should listen to raw EventBus events directly.
+5. Metrics deliveries use `THROTTLE_MS["metrics"]` (see dict below). The store adapter applies a
+   second, shorter coalesce (`hub_adapter._METRICS_COALESCE_MS` ≈ metrics/4) on the Tk thread.
+6. Event-log entries are batched per `THROTTLE_MS["events_log"]`.
+7. Engine `ScanConfig.progress_interval_ms` (see `dedup/engine/pipeline.py` discovery) governs how
+   often the **pipeline** invokes progress callbacks; hub throttles **projection** delivery separately.
+8. No widget should listen to raw EventBus events directly.
 
 UI event type labels (for subscription keys)
 --------------------------------------------

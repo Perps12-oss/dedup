@@ -37,6 +37,13 @@ class ReviewPageCTK(ctk.CTkFrame):
     _HERO_MIN = 280
     _HERO_MAX = 900
 
+    def _ui_alive(self) -> bool:
+        """False after destroy — avoids configuring heroes from stale callbacks."""
+        try:
+            return bool(self.winfo_exists())
+        except (tkinter.TclError, RuntimeError):
+            return False
+
     def __init__(
         self,
         parent,
@@ -302,6 +309,8 @@ class ReviewPageCTK(ctk.CTkFrame):
 
     def _apply_hero_resize(self) -> None:
         self._resize_after_id = None
+        if not self._ui_alive():
+            return
         try:
             w = int(self._hero_viewport.winfo_width())
             h = int(self._hero_viewport.winfo_height())
@@ -565,6 +574,8 @@ class ReviewPageCTK(ctk.CTkFrame):
         self._hero_right_caption.set("")
 
     def _pil_to_ctk(self, path: Path, max_size: tuple[int, int]) -> ctk.CTkImage | None:
+        if not self._ui_alive():
+            return None
         cached = get_thumbnail_path(str(path), size=max_size)
         if not cached or not cached.exists():
             return None
@@ -586,6 +597,8 @@ class ReviewPageCTK(ctk.CTkFrame):
         return (s, s)
 
     def _refresh_heroes(self) -> None:
+        if not self._ui_alive():
+            return
         gid = self._group_var.get()
         keep = self._keep_map.get(gid, "") if gid else ""
         compare = self._compare_path or ""
