@@ -7,6 +7,12 @@ Features:
 - Accent gradient editor with draggable stops
 - WCAG contrast snapshot
 - JSON import/export for theme bundles
+
+REFACTORED: Visual redesign with modern aesthetics while preserving all APIs.
+- Enhanced glassmorphism-inspired panels
+- Improved gradient editor with better visual feedback
+- Modern swatch grid with hover states
+- Consistent design token usage
 """
 
 from __future__ import annotations
@@ -25,6 +31,8 @@ from ..theme.gradients import color_at_gradient_position, draw_horizontal_multi_
 from ..theme.theme_config import ThemeConfig
 from ..theme.theme_manager import get_theme_manager
 from ..theme.theme_registry import DEFAULT_THEME, THEMES, get_theme, get_theme_names
+from .design_tokens import get_theme_colors
+from .ui_utils import resolve_color, safe_callback
 
 _MAX_STOPS = 8
 _THEME_EXPORT_FORMAT = "cerebro_theme_config_v1"
@@ -32,6 +40,10 @@ _THEME_EXPORT_FORMAT = "cerebro_theme_config_v1"
 
 class ThemesPageCTK(ctk.CTkFrame):
     """Premium theme lab with presets, gradient editor, and import/export."""
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # PUBLIC API - PRESERVED FROM ORIGINAL
+    # ══════════════════════════════════════════════════════════════════════════
 
     def __init__(
         self,
@@ -50,6 +62,8 @@ class ThemesPageCTK(ctk.CTkFrame):
         self._working_stops: List[Tuple[float, str]] = []
         self._current_theme_key = DEFAULT_THEME
 
+        self._tokens = get_theme_colors()
+
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
@@ -57,13 +71,52 @@ class ThemesPageCTK(ctk.CTkFrame):
         self._tm.subscribe(self._on_tokens_update)
         self._on_tokens_update(self._tm.tokens)
 
+    def set_current_theme(self, key: str) -> None:
+        """Set the current theme externally. API UNCHANGED."""
+        self._current_theme_key = key
+        for k, btn in self._swatch_buttons.items():
+            if k == key:
+                btn.configure(
+                    border_width=3,
+                    border_color=self._tokens["accent_primary"],
+                )
+            else:
+                btn.configure(border_width=0)
+
+    def apply_theme_tokens(self, tokens: dict) -> None:
+        """Apply theme tokens to the page. API UNCHANGED."""
+        panel = str(tokens.get("bg_panel", "#161b22"))
+        bg = str(tokens.get("bg_base", "#0f131c"))
+        for f in self._panel_sections:
+            f.configure(fg_color=panel)
+        if hasattr(self, "_scroll"):
+            self._scroll.configure(fg_color=bg)
+        if hasattr(self, "_grad_canvas"):
+            canvas_bg = resolve_color(self._tokens["bg_panel"])
+            self._grad_canvas.configure(bg=canvas_bg)
+            self._paint_gradient()
+
+    def on_show(self) -> None:
+        """Called when page becomes visible. API UNCHANGED."""
+        self._working_stops = self._load_editor_stops()
+        self._rebuild_stop_rows()
+        self._paint_gradient()
+        self._on_tokens_update(self._tm.tokens)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # PRIVATE UI BUILD METHODS - REFACTORED FOR VISUAL ENHANCEMENT
+    # ══════════════════════════════════════════════════════════════════════════
+
     def _build(self) -> None:
         self._panel_sections: list[ctk.CTkFrame] = []
-        # Main scrollable container
-        # Avoid "transparent" here: CTkScrollableFrame uses an internal Tk Canvas which can
-        # repaint with raw Tk defaults (white) on hover/scroll unless we give it a real color.
-        self._scroll = ctk.CTkScrollableFrame(self, fg_color=("#F6F7F9", "#0f131c"))
-        self._scroll.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
+
+        # Main scrollable container with modern styling
+        self._scroll = ctk.CTkScrollableFrame(
+            self,
+            fg_color=self._tokens["bg_base"],
+            corner_radius=0,
+        )
+        self._scroll.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
         self._scroll.grid_columnconfigure(0, weight=1)
 
         # Header
@@ -71,7 +124,7 @@ class ThemesPageCTK(ctk.CTkFrame):
 
         # Content grid: left for presets, right for gradient + contrast
         content = ctk.CTkFrame(self._scroll, fg_color="transparent")
-        content.grid(row=1, column=0, sticky="ew", pady=(20, 0))
+        content.grid(row=1, column=0, sticky="ew", pady=(24, 0), padx=24)
         content.grid_columnconfigure(0, weight=3)
         content.grid_columnconfigure(1, weight=2)
 
@@ -88,34 +141,42 @@ class ThemesPageCTK(ctk.CTkFrame):
         self._build_contrast_section(right)
         self._build_import_export(right)
 
-    def _on_mode(self, value: str) -> None:
-        """Handle appearance mode change."""
-        ctk.set_appearance_mode(value)
-        mode_map = {"Dark": "dark", "Light": "light", "System": "system"}
-        self._tm.set_appearance_mode(mode_map.get(value, "dark"))
-
     def _build_header(self, parent: ctk.CTkFrame) -> None:
+        """Build the page header with title and description."""
         header = ctk.CTkFrame(parent, fg_color="transparent")
-        header.grid(row=0, column=0, sticky="ew")
+        header.grid(row=0, column=0, sticky="ew", padx=24, pady=(24, 0))
         header.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(
-            header,
-            text="Themes",
-            font=ctk.CTkFont(size=28, weight="bold"),
-        ).grid(row=0, column=0, sticky="w")
+        # Title with icon
+        title_frame = ctk.CTkFrame(header, fg_color="transparent")
+        title_frame.grid(row=0, column=0, sticky="w")
 
         ctk.CTkLabel(
+            title_frame,
+            text="🎨  Themes",
+            font=ctk.CTkFont(size=28, weight="bold"),
+            text_color=self._tokens["text_primary"],
+        ).pack(side="left")
+
+        # Subtitle
+        ctk.CTkLabel(
             header,
-            text=(
-                "Presets, accent, top-bar gradient, and contrast tools — saved with your UI preferences. "
-                "Global shortcut: Ctrl+7."
-            ),
-            font=ctk.CTkFont(size=12),
-            text_color=("gray40", "gray70"),
+            text="Presets, accent gradients, and contrast tools — saved with your UI preferences. Shortcut: Ctrl+7",
+            font=ctk.CTkFont(size=13),
+            text_color=self._tokens["text_secondary"],
             wraplength=720,
             justify="left",
-        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+        ).grid(row=1, column=0, sticky="w", pady=(6, 0))
+
+        # Accent underline
+        accent_line = ctk.CTkFrame(
+            header,
+            height=3,
+            width=80,
+            fg_color=self._tokens["accent_primary"],
+            corner_radius=2,
+        )
+        accent_line.grid(row=2, column=0, sticky="w", pady=(12, 0))
 
     def _build_presets_section(self, parent: ctk.CTkFrame) -> None:
         """Build the preset swatches grid."""
@@ -123,30 +184,65 @@ class ThemesPageCTK(ctk.CTkFrame):
         section.grid(row=0, column=0, sticky="nsew")
         section.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(
-            section,
-            text="Presets",
-            font=ctk.CTkFont(size=16, weight="bold"),
-        ).grid(row=0, column=0, sticky="w", pady=(0, 12))
+        # Section header
+        header_frame = ctk.CTkFrame(section, fg_color="transparent")
+        header_frame.grid(row=0, column=0, sticky="w", pady=(0, 16))
 
-        # Swatches grid (4 columns)
-        swatches_frame = ctk.CTkFrame(section, fg_color="transparent")
+        ctk.CTkLabel(
+            header_frame,
+            text="Preset Themes",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=self._tokens["text_primary"],
+        ).pack(side="left")
+
+        # Count badge
+        theme_count = len(get_theme_names())
+        ctk.CTkLabel(
+            header_frame,
+            text=f"{theme_count} available",
+            font=ctk.CTkFont(size=11),
+            text_color=self._tokens["text_muted"],
+            fg_color=self._tokens["bg_overlay"],
+            corner_radius=8,
+            padx=8,
+            pady=3,
+        ).pack(side="left", padx=(12, 0))
+
+        # Swatches grid (4 columns) with modern card styling
+        swatches_frame = ctk.CTkFrame(
+            section,
+            fg_color=self._tokens["bg_panel"],
+            corner_radius=16,
+            border_width=1,
+            border_color=self._tokens["border_subtle"],
+        )
         swatches_frame.grid(row=1, column=0, sticky="ew")
+        self._panel_sections.append(swatches_frame)
+
+        inner_grid = ctk.CTkFrame(swatches_frame, fg_color="transparent")
+        inner_grid.pack(fill="x", padx=16, pady=16)
 
         self._swatch_buttons: dict[str, ctk.CTkButton] = {}
         col, row = 0, 0
 
         for key in get_theme_names():
             theme = get_theme(key)
+            is_selected = key == self._current_theme_key
+
+            accent = theme.get("accent_primary", "#3B8ED0")
             btn = ctk.CTkButton(
-                swatches_frame,
+                inner_grid,
                 text=theme.get("name", key),
-                width=140,
-                height=40,
-                corner_radius=8,
-                fg_color=theme.get("accent_primary", "#3B8ED0"),
+                width=130,
+                height=44,
+                corner_radius=10,
+                fg_color=accent,
                 hover_color=theme.get("accent_secondary", "#36719F"),
                 text_color=theme.get("text_on_accent", "#FFFFFF"),
+                border_width=3 if is_selected else 0,
+                # CTkButton rejects border_color="transparent"; match face when border_width=0
+                border_color=self._tokens["accent_primary"] if is_selected else accent,
+                font=ctk.CTkFont(size=12, weight="bold" if is_selected else "normal"),
                 command=lambda k=key: self._select_theme(k),
             )
             btn.grid(row=row, column=col, padx=6, pady=6)
@@ -159,7 +255,13 @@ class ThemesPageCTK(ctk.CTkFrame):
 
     def _build_appearance_section(self, parent: ctk.CTkFrame) -> None:
         """Appearance mode selector."""
-        section = ctk.CTkFrame(parent, fg_color=("gray95", "gray15"))
+        section = ctk.CTkFrame(
+            parent,
+            fg_color=self._tokens["bg_panel"],
+            corner_radius=14,
+            border_width=1,
+            border_color=self._tokens["border_subtle"],
+        )
         self._panel_sections.append(section)
         section.grid(row=0, column=0, sticky="ew", pady=(0, 16))
         section.grid_columnconfigure(0, weight=1)
@@ -167,90 +269,130 @@ class ThemesPageCTK(ctk.CTkFrame):
         ctk.CTkLabel(
             section,
             text="Appearance",
-            font=ctk.CTkFont(size=14, weight="bold"),
-        ).grid(row=0, column=0, sticky="w", padx=16, pady=(12, 8))
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=self._tokens["text_primary"],
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(14, 10))
 
         mode_frame = ctk.CTkFrame(section, fg_color="transparent")
-        mode_frame.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 12))
+        mode_frame.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 14))
 
-        ctk.CTkLabel(mode_frame, text="Mode").pack(side="left")
+        ctk.CTkLabel(
+            mode_frame,
+            text="Mode",
+            font=ctk.CTkFont(size=13),
+            text_color=self._tokens["text_secondary"],
+        ).pack(side="left")
 
         mode = ctk.CTkSegmentedButton(
             mode_frame,
             values=["Dark", "Light", "System"],
             command=self._on_mode,
             width=200,
+            height=32,
+            corner_radius=8,
+            font=ctk.CTkFont(size=12),
         )
         mode.pack(side="right")
         cur_raw = str(ctk.get_appearance_mode() or "dark")
         cur_map = {"dark": "Dark", "light": "Light", "system": "System"}
         mode.set(cur_map.get(cur_raw.lower(), "Dark"))
 
+    def _on_mode(self, value: str) -> None:
+        """Handle appearance mode change."""
+        ctk.set_appearance_mode(value)
+        mode_map = {"Dark": "dark", "Light": "light", "System": "system"}
+        self._tm.set_appearance_mode(mode_map.get(value, "dark"))
+
     def _build_gradient_section(self, parent: ctk.CTkFrame) -> None:
         """Accent gradient editor with canvas-based preview."""
-        section = ctk.CTkFrame(parent, fg_color=("gray95", "gray15"))
+        section = ctk.CTkFrame(
+            parent,
+            fg_color=self._tokens["bg_panel"],
+            corner_radius=14,
+            border_width=1,
+            border_color=self._tokens["border_subtle"],
+        )
         self._panel_sections.append(section)
         section.grid(row=1, column=0, sticky="ew", pady=(0, 16))
         section.grid_columnconfigure(0, weight=1)
 
+        # Header
         ctk.CTkLabel(
             section,
             text="Accent Gradient",
-            font=ctk.CTkFont(size=14, weight="bold"),
-        ).grid(row=0, column=0, sticky="w", padx=16, pady=(12, 4))
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=self._tokens["text_primary"],
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(14, 4))
 
         ctk.CTkLabel(
             section,
             text="Used for accent bars and highlights.",
             font=ctk.CTkFont(size=11),
-            text_color=("gray40", "gray70"),
-        ).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 8))
+            text_color=self._tokens["text_muted"],
+        ).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 10))
 
-        # Gradient preview canvas
-        # NOTE: Tk `Canvas` does not understand "transparent" as a color name.
-        # Use the CTk frame's resolved `fg_color` so Tk gets a valid color string.
-        canvas_bg = section._apply_appearance_mode(section._fg_color)
-        self._grad_canvas = tk.Canvas(
+        # Gradient preview canvas with rounded container
+        preview_container = ctk.CTkFrame(
             section,
+            fg_color=self._tokens["bg_surface"],
+            corner_radius=10,
+        )
+        preview_container.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 10))
+
+        canvas_bg = resolve_color(self._tokens["bg_panel"])
+        self._grad_canvas = tk.Canvas(
+            preview_container,
             height=56,
             highlightthickness=0,
             borderwidth=0,
             bg=canvas_bg,
         )
-        self._grad_canvas.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 8))
+        self._grad_canvas.pack(fill="x", padx=4, pady=4)
         self._grad_canvas.bind("<Configure>", self._paint_gradient)
 
         # Stop controls
         self._stops_frame = ctk.CTkFrame(section, fg_color="transparent")
-        self._stops_frame.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 8))
+        self._stops_frame.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 10))
 
-        # Action buttons
+        # Action buttons with modern styling
         btn_frame = ctk.CTkFrame(section, fg_color="transparent")
-        btn_frame.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 12))
+        btn_frame.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 14))
 
         ctk.CTkButton(
             btn_frame,
-            text="Add Stop",
-            width=90,
-            height=28,
+            text="+ Add Stop",
+            width=100,
+            height=32,
+            corner_radius=8,
+            fg_color=self._tokens["bg_elevated"],
+            hover_color=self._tokens["bg_overlay"],
+            text_color=self._tokens["text_primary"],
+            font=ctk.CTkFont(size=12),
             command=self._add_gradient_stop,
         ).pack(side="left", padx=(0, 8))
 
         ctk.CTkButton(
             btn_frame,
             text="Apply",
-            width=90,
-            height=28,
-            fg_color=("#3B8ED0", "#1F6AA5"),
+            width=80,
+            height=32,
+            corner_radius=8,
+            fg_color=self._tokens["accent_primary"],
+            hover_color=self._tokens["accent_secondary"],
+            font=ctk.CTkFont(size=12, weight="bold"),
             command=self._apply_gradient,
         ).pack(side="left", padx=(0, 8))
 
         ctk.CTkButton(
             btn_frame,
             text="Reset",
-            width=90,
-            height=28,
-            fg_color=("gray70", "gray30"),
+            width=80,
+            height=32,
+            corner_radius=8,
+            fg_color=self._tokens["bg_elevated"],
+            hover_color=self._tokens["bg_overlay"],
+            text_color=self._tokens["text_secondary"],
+            font=ctk.CTkFont(size=12),
             command=self._reset_gradient,
         ).pack(side="left")
 
@@ -259,27 +401,42 @@ class ThemesPageCTK(ctk.CTkFrame):
 
     def _build_contrast_section(self, parent: ctk.CTkFrame) -> None:
         """WCAG contrast snapshot."""
-        section = ctk.CTkFrame(parent, fg_color=("gray95", "gray15"))
+        section = ctk.CTkFrame(
+            parent,
+            fg_color=self._tokens["bg_panel"],
+            corner_radius=14,
+            border_width=1,
+            border_color=self._tokens["border_subtle"],
+        )
+        self._panel_sections.append(section)
         section.grid(row=2, column=0, sticky="ew", pady=(0, 16))
         section.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
             section,
             text="Contrast (WCAG)",
-            font=ctk.CTkFont(size=14, weight="bold"),
-        ).grid(row=0, column=0, sticky="w", padx=16, pady=(12, 8))
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=self._tokens["text_primary"],
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(14, 10))
 
         self._contrast_lbl = ctk.CTkLabel(
             section,
             text="",
             font=ctk.CTkFont(family="Consolas", size=11),
+            text_color=self._tokens["text_secondary"],
             justify="left",
         )
-        self._contrast_lbl.grid(row=1, column=0, sticky="w", padx=16, pady=(0, 12))
+        self._contrast_lbl.grid(row=1, column=0, sticky="w", padx=16, pady=(0, 14))
 
     def _build_import_export(self, parent: ctk.CTkFrame) -> None:
         """Import/export theme bundles."""
-        section = ctk.CTkFrame(parent, fg_color=("gray95", "gray15"))
+        section = ctk.CTkFrame(
+            parent,
+            fg_color=self._tokens["bg_panel"],
+            corner_radius=14,
+            border_width=1,
+            border_color=self._tokens["border_subtle"],
+        )
         self._panel_sections.append(section)
         section.grid(row=3, column=0, sticky="ew")
         section.grid_columnconfigure(0, weight=1)
@@ -287,23 +444,36 @@ class ThemesPageCTK(ctk.CTkFrame):
         ctk.CTkLabel(
             section,
             text="Import / Export",
-            font=ctk.CTkFont(size=14, weight="bold"),
-        ).grid(row=0, column=0, sticky="w", padx=16, pady=(12, 12))
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=self._tokens["text_primary"],
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(14, 12))
 
         btn_frame = ctk.CTkFrame(section, fg_color="transparent")
-        btn_frame.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 12))
+        btn_frame.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
 
         ctk.CTkButton(
             btn_frame,
-            text="Export JSON…",
+            text="📤 Export JSON",
             width=120,
+            height=32,
+            corner_radius=8,
+            fg_color=self._tokens["bg_elevated"],
+            hover_color=self._tokens["bg_overlay"],
+            text_color=self._tokens["text_primary"],
+            font=ctk.CTkFont(size=12),
             command=self._export_theme_json,
         ).pack(side="left", padx=(0, 8))
 
         ctk.CTkButton(
             btn_frame,
-            text="Import JSON…",
+            text="📥 Import JSON",
             width=120,
+            height=32,
+            corner_radius=8,
+            fg_color=self._tokens["bg_elevated"],
+            hover_color=self._tokens["bg_overlay"],
+            text_color=self._tokens["text_primary"],
+            font=ctk.CTkFont(size=12),
             command=self._import_theme_json,
         ).pack(side="left")
 
@@ -311,8 +481,12 @@ class ThemesPageCTK(ctk.CTkFrame):
             section,
             text="Export includes theme key, gradient stops, and UI flags.",
             font=ctk.CTkFont(size=10),
-            text_color=("gray50", "gray60"),
-        ).grid(row=2, column=0, sticky="w", padx=16, pady=(0, 12))
+            text_color=self._tokens["text_muted"],
+        ).grid(row=2, column=0, sticky="w", padx=16, pady=(0, 14))
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # GRADIENT EDITOR METHODS - PRESERVED FUNCTIONALITY
+    # ══════════════════════════════════════════════════════════════════════════
 
     def _paint_gradient(self, event=None) -> None:
         """Paint the gradient preview on canvas."""
@@ -328,9 +502,9 @@ class ThemesPageCTK(ctk.CTkFrame):
 
         for i, (pos, col) in enumerate(self._working_stops):
             row = ctk.CTkFrame(self._stops_frame, fg_color="transparent")
-            row.pack(fill="x", pady=2)
+            row.pack(fill="x", pady=3)
 
-            # Position spinbox (using tk.Spinbox within CTK)
+            # Position spinbox
             pos_frame = ctk.CTkFrame(row, fg_color="transparent", width=80)
             pos_frame.pack(side="left")
             pos_frame.pack_propagate(False)
@@ -349,34 +523,41 @@ class ThemesPageCTK(ctk.CTkFrame):
             sp.bind("<FocusOut>", lambda e, idx=i, v=var: self._spin_pos_commit(idx, v))
             sp.bind("<Return>", lambda e, idx=i, v=var: self._spin_pos_commit(idx, v))
 
-            # Color chip
+            # Color chip with modern styling
             chip = tk.Label(
                 row,
                 text="   ",
                 width=3,
                 background=col,
-                relief="solid",
-                borderwidth=1,
+                relief="flat",
+                borderwidth=0,
             )
-            chip.pack(side="left", padx=(8, 8))
+            chip.pack(side="left", padx=(10, 10))
 
             # Color picker button
             ctk.CTkButton(
                 row,
                 text="Color",
-                width=60,
-                height=24,
+                width=64,
+                height=26,
+                corner_radius=6,
+                fg_color=self._tokens["bg_elevated"],
+                hover_color=self._tokens["bg_overlay"],
+                text_color=self._tokens["text_primary"],
+                font=ctk.CTkFont(size=11),
                 command=lambda idx=i: self._pick_stop_color(idx),
-            ).pack(side="left", padx=(0, 4))
+            ).pack(side="left", padx=(0, 6))
 
-            # Remove button (disabled if only 2 stops)
+            # Remove button
             ctk.CTkButton(
                 row,
                 text="×",
                 width=28,
-                height=24,
-                fg_color=("#E74C3C", "#C0392B"),
-                hover_color=("#C0392B", "#A93226"),
+                height=26,
+                corner_radius=6,
+                fg_color=self._tokens["error"],
+                hover_color=("#B91C1C", "#DC2626"),
+                font=ctk.CTkFont(size=12, weight="bold"),
                 command=lambda idx=i: self._remove_stop(idx),
             ).pack(side="right")
 
@@ -405,9 +586,10 @@ class ThemesPageCTK(ctk.CTkFrame):
             self._paint_gradient()
 
     def _remove_stop(self, index: int) -> None:
-        if len(self._working_stops) <= 2 or index < 0 or index >= len(self._working_stops):
+        """Remove a gradient stop by index."""
+        if len(self._working_stops) <= 2 or not (0 <= index < len(self._working_stops)):
             return
-        del self._working_stops[index]
+        self._working_stops = [stop for i, stop in enumerate(self._working_stops) if i != index]
         self._rebuild_stop_rows()
         self._paint_gradient()
 
@@ -427,15 +609,10 @@ class ThemesPageCTK(ctk.CTkFrame):
             messagebox.showwarning("Gradient", "Add at least two color stops.")
             return
 
-        # Store in theme manager
         self._tm.set_custom_gradient_stops(srt)
         self._notify_toast("Accent gradient applied")
 
-        if self._on_preference_changed:
-            try:
-                self._on_preference_changed()
-            except Exception:
-                pass
+        safe_callback(self._on_preference_changed, context="on_preference_changed (apply gradient)")
 
     def _reset_gradient(self) -> None:
         self._tm.clear_custom_gradient_stops()
@@ -444,11 +621,7 @@ class ThemesPageCTK(ctk.CTkFrame):
         self._paint_gradient()
         self._notify_toast("Using preset gradient")
 
-        if self._on_preference_changed:
-            try:
-                self._on_preference_changed()
-            except Exception:
-                pass
+        safe_callback(self._on_preference_changed, context="on_preference_changed (reset gradient)")
 
     def _load_editor_stops(self) -> List[Tuple[float, str]]:
         """Load gradient stops from theme manager or use defaults."""
@@ -462,6 +635,10 @@ class ThemesPageCTK(ctk.CTkFrame):
         gm = str(tokens.get("gradient_mid", color_at_gradient_position([(0.0, gs), (1.0, ge)], 0.5)))
         return [(0.0, gs), (0.5, gm), (1.0, ge)]
 
+    # ══════════════════════════════════════════════════════════════════════════
+    # THEME SELECTION AND UPDATE METHODS
+    # ══════════════════════════════════════════════════════════════════════════
+
     def _select_theme(self, key: str) -> None:
         """Select a preset theme."""
         self._current_theme_key = key
@@ -470,8 +647,8 @@ class ThemesPageCTK(ctk.CTkFrame):
         for k, btn in self._swatch_buttons.items():
             if k == key:
                 btn.configure(
-                    border_width=2,
-                    border_color=("#FFFFFF", "#FFFFFF"),
+                    border_width=3,
+                    border_color=self._tokens["accent_primary"],
                 )
             else:
                 btn.configure(border_width=0)
@@ -479,11 +656,7 @@ class ThemesPageCTK(ctk.CTkFrame):
         # Apply theme
         self._tm.apply_theme(key)
 
-        if self._on_theme_change:
-            try:
-                self._on_theme_change(key)
-            except Exception:
-                pass
+        safe_callback(self._on_theme_change, key, context="on_theme_change")
 
         # Reset gradient to theme defaults
         if not self._tm.get_custom_gradient_stops():
@@ -517,6 +690,10 @@ class ThemesPageCTK(ctk.CTkFrame):
             f"Accent/BG: {format_ratio(r2)}  ({ok2})",
         )
         self._contrast_lbl.configure(text="\n".join(lines))
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # IMPORT/EXPORT METHODS
+    # ══════════════════════════════════════════════════════════════════════════
 
     def _export_theme_json(self) -> None:
         """Export current theme configuration to JSON."""
@@ -593,41 +770,4 @@ class ThemesPageCTK(ctk.CTkFrame):
         self._notify_toast("Theme imported")
 
     def _notify_toast(self, msg: str) -> None:
-        if self._on_toast:
-            try:
-                self._on_toast(msg)
-            except Exception:
-                pass
-
-    def set_current_theme(self, key: str) -> None:
-        """Set the current theme externally."""
-        self._current_theme_key = key
-        for k, btn in self._swatch_buttons.items():
-            if k == key:
-                btn.configure(
-                    border_width=2,
-                    border_color=("#FFFFFF", "#FFFFFF"),
-                )
-            else:
-                btn.configure(border_width=0)
-
-    def apply_theme_tokens(self, tokens: dict) -> None:
-        panel = str(tokens.get("bg_panel", "#161b22"))
-        bg = str(tokens.get("bg_base", "#0f131c"))
-        for f in self._panel_sections:
-            f.configure(fg_color=panel)
-        if hasattr(self, "_scroll"):
-            self._scroll.configure(fg_color=("#F6F7F9", bg))
-        if hasattr(self, "_grad_canvas"):
-            parent = self._grad_canvas.master
-            if parent is not None and hasattr(parent, "_apply_appearance_mode"):
-                cb = parent._apply_appearance_mode(parent._fg_color)
-                self._grad_canvas.configure(bg=cb)
-            self._paint_gradient()
-
-    def on_show(self) -> None:
-        """Called when page becomes visible."""
-        self._working_stops = self._load_editor_stops()
-        self._rebuild_stop_rows()
-        self._paint_gradient()
-        self._on_tokens_update(self._tm.tokens)
+        safe_callback(self._on_toast, msg, context="on_toast")

@@ -23,6 +23,7 @@ from ...engine.thumbnails import get_thumbnail_path
 from ..state.store import ReviewIndexState, ReviewPlanState, ReviewPreviewState, ReviewSelectionState
 from ..utils.formatting import fmt_bytes
 from ..utils.review_keep import coerce_keep_selections, default_keep_map_from_result
+from .design_tokens import get_theme_colors
 
 if TYPE_CHECKING:
     from ..controller.review_controller import ReviewController
@@ -70,6 +71,7 @@ class ReviewPageCTK(ctk.CTkFrame):
         self._group_row_frames: dict[str, ctk.CTkFrame] = {}
         self._keep_label_to_path: dict[str, str] = {}
         self._compare_label_to_path: dict[str, str] = {}
+        self._tokens = get_theme_colors()
 
         self.grid_columnconfigure(0, weight=0, minsize=200)
         self.grid_columnconfigure(1, weight=1, minsize=360)
@@ -79,38 +81,64 @@ class ReviewPageCTK(ctk.CTkFrame):
         self._build()
 
     def _build(self) -> None:
-        top = ctk.CTkFrame(self, corner_radius=12)
+        tk = self._tokens
+        top = ctk.CTkFrame(
+            self,
+            corner_radius=16,
+            fg_color=tk["bg_panel"],
+            border_width=1,
+            border_color=tk["border_subtle"],
+        )
         top.grid(row=0, column=0, columnspan=3, sticky="ew", padx=20, pady=(20, 12))
         top.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(top, text="Review Lite", font=ctk.CTkFont(size=26, weight="bold")).grid(
-            row=0, column=0, sticky="w", padx=16, pady=(14, 4)
-        )
+        ctk.CTkLabel(
+            top,
+            text="📊  Review Lite",
+            font=ctk.CTkFont(size=26, weight="bold"),
+            text_color=tk["text_primary"],
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(14, 4))
         self._summary_var = ctk.StringVar(value="No scan loaded")
-        ctk.CTkLabel(top, textvariable=self._summary_var, text_color=("gray40", "gray70")).grid(
+        ctk.CTkLabel(top, textvariable=self._summary_var, text_color=tk["text_secondary"]).grid(
             row=1, column=0, sticky="w", padx=16, pady=(0, 12)
         )
 
         # --- Column 0: groups (text grid) ---
-        left = ctk.CTkFrame(self, corner_radius=12, width=220)
+        left = ctk.CTkFrame(
+            self,
+            corner_radius=16,
+            width=220,
+            fg_color=tk["bg_panel"],
+            border_width=1,
+            border_color=tk["border_subtle"],
+        )
         left.grid(row=1, column=0, sticky="nsew", padx=(20, 8), pady=(0, 12))
         left.grid_rowconfigure(1, weight=1)
         left.grid_propagate(False)
-        ctk.CTkLabel(left, text="Groups", font=ctk.CTkFont(size=16, weight="bold")).grid(
+        ctk.CTkLabel(left, text="Groups", font=ctk.CTkFont(size=16, weight="bold"), text_color=tk["text_primary"]).grid(
             row=0, column=0, sticky="w", padx=12, pady=(12, 8)
         )
         self._group_scroll = ctk.CTkScrollableFrame(left, fg_color="transparent")
         self._group_scroll.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 12))
 
         # --- Column 1: comparison container only ---
-        center = ctk.CTkFrame(self, corner_radius=12)
+        center = ctk.CTkFrame(
+            self,
+            corner_radius=16,
+            fg_color=tk["bg_panel"],
+            border_width=1,
+            border_color=tk["border_subtle"],
+        )
         center.grid(row=1, column=1, sticky="nsew", padx=8, pady=(0, 12))
         center.grid_columnconfigure(0, weight=1)
         center.grid_columnconfigure(1, weight=1)
         center.grid_rowconfigure(1, weight=1)
 
-        ctk.CTkLabel(center, text="Image comparison", font=ctk.CTkFont(size=16, weight="bold")).grid(
-            row=0, column=0, columnspan=2, pady=(14, 10)
-        )
+        ctk.CTkLabel(
+            center,
+            text="Image comparison",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=tk["text_primary"],
+        ).grid(row=0, column=0, columnspan=2, pady=(14, 10))
 
         self._hero_viewport = ctk.CTkFrame(center, fg_color="transparent")
         self._hero_viewport.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=8, pady=4)
@@ -122,30 +150,37 @@ class ReviewPageCTK(ctk.CTkFrame):
         self._hero_left_label = ctk.CTkLabel(self._hero_viewport, text="Keep preview")
         self._hero_left_label.grid(row=0, column=0, padx=12, pady=8, sticky="nsew")
         self._hero_left_caption = ctk.StringVar(value="")
-        ctk.CTkLabel(center, textvariable=self._hero_left_caption, text_color=("gray40", "gray70")).grid(
+        ctk.CTkLabel(center, textvariable=self._hero_left_caption, text_color=tk["text_secondary"]).grid(
             row=2, column=0, padx=16, pady=(6, 14)
         )
 
         self._hero_right_label = ctk.CTkLabel(self._hero_viewport, text="Compare preview")
         self._hero_right_label.grid(row=0, column=1, padx=12, pady=8, sticky="nsew")
         self._hero_right_caption = ctk.StringVar(value="")
-        ctk.CTkLabel(center, textvariable=self._hero_right_caption, text_color=("gray40", "gray70")).grid(
+        ctk.CTkLabel(center, textvariable=self._hero_right_caption, text_color=tk["text_secondary"]).grid(
             row=2, column=1, padx=16, pady=(6, 14)
         )
 
         # --- Column 2: actions (top-aligned content + vertical stretch) ---
-        right = ctk.CTkFrame(self, corner_radius=12, width=300)
+        right = ctk.CTkFrame(
+            self,
+            corner_radius=16,
+            width=300,
+            fg_color=tk["bg_panel"],
+            border_width=1,
+            border_color=tk["border_subtle"],
+        )
         right.grid(row=1, column=2, sticky="nsew", padx=(8, 20), pady=(0, 12))
         right.grid_columnconfigure(0, weight=1)
         right.grid_rowconfigure(5, weight=1)
 
-        ctk.CTkLabel(right, text="Keep file", text_color=("gray40", "gray70")).grid(
+        ctk.CTkLabel(right, text="Keep file", text_color=tk["text_secondary"]).grid(
             row=0, column=0, sticky="w", padx=16, pady=(16, 6)
         )
         self._keep_menu = ctk.CTkOptionMenu(right, variable=self._keep_var, values=[""], command=self._on_keep_change)
         self._keep_menu.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 10))
 
-        ctk.CTkLabel(right, text="Compare file", text_color=("gray40", "gray70")).grid(
+        ctk.CTkLabel(right, text="Compare file", text_color=tk["text_secondary"]).grid(
             row=2, column=0, sticky="w", padx=16, pady=(4, 6)
         )
         self._compare_menu = ctk.CTkOptionMenu(
@@ -158,30 +193,57 @@ class ReviewPageCTK(ctk.CTkFrame):
 
         row = ctk.CTkFrame(right, fg_color="transparent")
         row.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 12))
-        self._execute_btn = ctk.CTkButton(row, text="Execute Deletion", command=self._execute)
+        self._execute_btn = ctk.CTkButton(
+            row,
+            text="Execute Deletion",
+            fg_color=tk["accent_primary"],
+            hover_color=tk["accent_secondary"],
+            text_color=("#FFFFFF", "#0A0E14"),
+            command=self._execute,
+        )
         self._execute_btn.pack(side="left", padx=(0, 8))
-        self._refresh_btn = ctk.CTkButton(row, text="Refresh Last Scan", fg_color="gray35", command=self._refresh_callback)
+        self._refresh_btn = ctk.CTkButton(
+            row,
+            text="Refresh Last Scan",
+            fg_color=tk["bg_elevated"],
+            hover_color=tk["bg_overlay"],
+            text_color=tk["text_secondary"],
+            border_width=1,
+            border_color=tk["border_subtle"],
+            command=self._refresh_callback,
+        )
         self._refresh_btn.pack(side="left")
 
         ctk.CTkFrame(right, fg_color="transparent").grid(row=5, column=0, sticky="nsew")
 
-        self._result_panel = ctk.CTkFrame(self, corner_radius=12)
+        self._result_panel = ctk.CTkFrame(
+            self,
+            corner_radius=16,
+            fg_color=tk["bg_panel"],
+            border_width=1,
+            border_color=tk["border_subtle"],
+        )
         self._result_panel.grid(row=2, column=0, columnspan=3, sticky="ew", padx=20, pady=(0, 12))
         self._result_panel.grid_columnconfigure(0, weight=1)
         self._result_var = ctk.StringVar(value="No deletion executed yet.")
-        ctk.CTkLabel(self._result_panel, text="Execution Result", font=ctk.CTkFont(size=18, weight="bold")).grid(
-            row=0, column=0, sticky="w", padx=16, pady=(12, 6)
-        )
-        ctk.CTkLabel(self._result_panel, textvariable=self._result_var, text_color=("gray40", "gray70")).grid(
+        ctk.CTkLabel(
+            self._result_panel,
+            text="Execution Result",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=tk["text_primary"],
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(12, 6))
+        ctk.CTkLabel(self._result_panel, textvariable=self._result_var, text_color=tk["text_secondary"]).grid(
             row=1, column=0, sticky="w", padx=16, pady=(0, 12)
         )
 
         self._details = ctk.CTkTextbox(
             self,
             wrap="word",
-            # Use fixed hex colors so CTk theme switching doesn't remap "grayXX" token names.
-            fg_color=("#F3F4F6", "#11151d"),
-            text_color=("#111827", "#E5E7EB"),
+            corner_radius=12,
+            fg_color=tk["bg_surface"],
+            text_color=tk["text_secondary"],
+            border_width=1,
+            border_color=tk["border_subtle"],
         )
         self._details.grid(row=3, column=0, columnspan=3, sticky="nsew", padx=20, pady=(0, 20))
         self._details.insert("end", "Load a scan result to review duplicate groups.\n")
@@ -193,10 +255,14 @@ class ReviewPageCTK(ctk.CTkFrame):
         panel = str(tokens.get("bg_panel", "#161b22"))
         elev = str(tokens.get("bg_elevated", "#21262d"))
         acc = str(tokens.get("accent_primary", "#3B8ED0"))
+        br = str(tokens.get("border_subtle", "#21262D"))
+        surf = str(tokens.get("bg_surface", "#0D1117"))
+        txt = str(tokens.get("text_secondary", "#94A3B8"))
         for f in self._themed_sections:
-            f.configure(fg_color=panel)
-        self._execute_btn.configure(fg_color=acc)
-        self._refresh_btn.configure(fg_color=elev)
+            f.configure(fg_color=panel, border_color=br)
+        self._execute_btn.configure(fg_color=acc, hover_color=str(tokens.get("accent_secondary", "#36719F")))
+        self._refresh_btn.configure(fg_color=elev, border_color=br)
+        self._details.configure(fg_color=surf, text_color=txt, border_color=br)
 
     def set_refresh_callback(self, callback: Callable[[], ScanResult | None]) -> None:
         self._refresh_callback = lambda: self.load_result(callback())

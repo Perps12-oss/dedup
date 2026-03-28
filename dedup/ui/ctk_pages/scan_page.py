@@ -17,6 +17,8 @@ from ..ctk_action_contracts import KeepPolicy, PostScanRoute, ScanMode, ScanStar
 from ..projections.phase_projection import PHASE_LABELS, canonical_phase
 from ..state.selectors import scan_metrics, scan_session
 from ..utils.formatting import fmt_duration, fmt_int
+from .design_tokens import get_theme_colors
+from .ui_utils import safe_callback
 
 if TYPE_CHECKING:
     from ..state.store import UIStateStore
@@ -65,52 +67,94 @@ class ScanPageCTK(ctk.CTkFrame):
         self._pct_var = ctk.StringVar(value="0%")
         self._eta_var = ctk.StringVar(value="ETA: —")
         self._unsub_store: Optional[Callable[[], None]] = None
+        self._tokens = get_theme_colors()
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(7, weight=1)
         self._build()
 
     def _build(self) -> None:
-        header = ctk.CTkFrame(self, corner_radius=12)
+        tk = self._tokens
+        header = ctk.CTkFrame(
+            self,
+            corner_radius=16,
+            fg_color=tk["bg_panel"],
+            border_width=1,
+            border_color=tk["border_subtle"],
+        )
         header.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 12))
         header.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(header, text="Scan Setup", font=ctk.CTkFont(size=26, weight="bold")).grid(
-            row=0, column=0, sticky="w", padx=16, pady=(14, 4)
-        )
-        self._mode_label = ctk.CTkLabel(header, text="Preset: Files", text_color=("gray40", "gray70"))
+        ctk.CTkLabel(
+            header,
+            text="🔍  Scan Setup",
+            font=ctk.CTkFont(size=26, weight="bold"),
+            text_color=tk["text_primary"],
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(14, 4))
+        self._mode_label = ctk.CTkLabel(header, text="Preset: Files", text_color=tk["text_secondary"])
         self._mode_label.grid(row=1, column=0, sticky="w", padx=16, pady=(0, 12))
-        ctk.CTkLabel(header, textvariable=self._status_var, text_color=("gray40", "gray70")).grid(
+        ctk.CTkLabel(header, textvariable=self._status_var, text_color=tk["text_secondary"]).grid(
             row=2, column=0, sticky="w", padx=16, pady=(0, 12)
         )
 
         # Lightweight session bar until CTK status strip is migrated.
         sbar = ctk.CTkFrame(header, fg_color="transparent")
         sbar.grid(row=3, column=0, sticky="w", padx=16, pady=(0, 12))
-        ctk.CTkLabel(sbar, text="Session:", text_color=("gray40", "gray70")).pack(side="left")
-        ctk.CTkLabel(sbar, textvariable=self._session_id_var).pack(side="left", padx=(6, 14))
-        ctk.CTkLabel(sbar, text="Stage:", text_color=("gray40", "gray70")).pack(side="left")
-        ctk.CTkLabel(sbar, textvariable=self._phase_var).pack(side="left", padx=(6, 0))
+        ctk.CTkLabel(sbar, text="Session:", text_color=tk["text_muted"]).pack(side="left")
+        ctk.CTkLabel(sbar, textvariable=self._session_id_var, text_color=tk["text_primary"]).pack(side="left", padx=(6, 14))
+        ctk.CTkLabel(sbar, text="Stage:", text_color=tk["text_muted"]).pack(side="left")
+        ctk.CTkLabel(sbar, textvariable=self._phase_var, text_color=tk["text_primary"]).pack(side="left", padx=(6, 0))
 
-        target = ctk.CTkFrame(self, corner_radius=12)
+        target = ctk.CTkFrame(
+            self,
+            corner_radius=16,
+            fg_color=tk["bg_panel"],
+            border_width=1,
+            border_color=tk["border_subtle"],
+        )
         target.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 12))
         target.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(target, text="Target Folder", font=ctk.CTkFont(size=18, weight="bold")).grid(
+        ctk.CTkLabel(target, text="📂  Target Folder", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]).grid(
             row=0, column=0, sticky="w", padx=16, pady=(12, 8)
         )
         self._path_var = ctk.StringVar(value="")
-        ctk.CTkEntry(target, textvariable=self._path_var, placeholder_text="Choose a folder...").grid(
-            row=1, column=0, sticky="ew", padx=16, pady=(0, 10)
+        ctk.CTkEntry(
+            target,
+            textvariable=self._path_var,
+            placeholder_text="Choose a folder...",
+            height=40,
+            corner_radius=10,
+            fg_color=tk["bg_elevated"],
+            border_color=tk["border_subtle"],
+            text_color=tk["text_primary"],
+        ).grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 10))
+        self._browse_btn = ctk.CTkButton(
+            target,
+            text="Browse…",
+            width=120,
+            height=40,
+            corner_radius=10,
+            fg_color=tk["bg_elevated"],
+            hover_color=tk["bg_overlay"],
+            text_color=tk["text_secondary"],
+            border_width=1,
+            border_color=tk["border_subtle"],
+            command=self._browse,
         )
-        self._browse_btn = ctk.CTkButton(target, text="Browse...", width=120, fg_color="gray35", command=self._browse)
         self._browse_btn.grid(row=1, column=1, padx=(0, 16), pady=(0, 10), sticky="e")
 
         # Decisions that used to concentrate in Review are moved earlier to Scan setup.
-        routing = ctk.CTkFrame(self, corner_radius=12)
+        routing = ctk.CTkFrame(
+            self,
+            corner_radius=16,
+            fg_color=tk["bg_panel"],
+            border_width=1,
+            border_color=tk["border_subtle"],
+        )
         routing.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 12))
         routing.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(routing, text="Decision Defaults", font=ctk.CTkFont(size=18, weight="bold")).grid(
+        ctk.CTkLabel(routing, text="Decision Defaults", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]).grid(
             row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 10)
         )
-        ctk.CTkLabel(routing, text="Default keep policy", text_color=("gray40", "gray70")).grid(
+        ctk.CTkLabel(routing, text="Default keep policy", text_color=tk["text_secondary"]).grid(
             row=1, column=0, sticky="w", padx=16, pady=(0, 8)
         )
         ctk.CTkOptionMenu(
@@ -118,9 +162,15 @@ class ScanPageCTK(ctk.CTkFrame):
             variable=self._keep_policy,
             values=["newest", "oldest", "largest", "smallest", "first"],
             width=220,
+            height=36,
+            corner_radius=10,
+            fg_color=tk["bg_elevated"],
+            button_color=tk["bg_elevated"],
+            button_hover_color=tk["accent_secondary"],
+            dropdown_fg_color=tk["bg_panel"],
         ).grid(row=1, column=1, sticky="w", padx=(0, 16), pady=(0, 8))
 
-        ctk.CTkLabel(routing, text="After scan completes", text_color=("gray40", "gray70")).grid(
+        ctk.CTkLabel(routing, text="After scan completes", text_color=tk["text_secondary"]).grid(
             row=2, column=0, sticky="w", padx=16, pady=(0, 14)
         )
         ctk.CTkOptionMenu(
@@ -128,100 +178,174 @@ class ScanPageCTK(ctk.CTkFrame):
             variable=self._post_scan_route,
             values=["review", "scan", "mission"],
             width=220,
+            height=36,
+            corner_radius=10,
+            fg_color=tk["bg_elevated"],
+            button_color=tk["bg_elevated"],
+            button_hover_color=tk["accent_secondary"],
+            dropdown_fg_color=tk["bg_panel"],
         ).grid(row=2, column=1, sticky="w", padx=(0, 16), pady=(0, 14))
 
-        actions = ctk.CTkFrame(self, corner_radius=12)
+        actions = ctk.CTkFrame(
+            self,
+            corner_radius=16,
+            fg_color=tk["bg_panel"],
+            border_width=1,
+            border_color=tk["border_subtle"],
+        )
         actions.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 12))
-        ctk.CTkLabel(actions, text="Actions", font=ctk.CTkFont(size=18, weight="bold")).pack(
+        ctk.CTkLabel(actions, text="Actions", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]).pack(
             anchor="w", padx=16, pady=(12, 8)
         )
         row = ctk.CTkFrame(actions, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=(0, 14))
-        self._start_btn = ctk.CTkButton(row, text="Start Scan", width=150, command=self._start)
+        self._start_btn = ctk.CTkButton(
+            row,
+            text="▶  Start Scan",
+            width=160,
+            height=40,
+            corner_radius=10,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=tk["accent_primary"],
+            hover_color=tk["accent_secondary"],
+            text_color=("#FFFFFF", "#0A0E14"),
+            command=self._start,
+        )
         self._start_btn.pack(side="left", padx=(0, 8))
-        self._resume_btn = ctk.CTkButton(row, text="Resume", width=150, command=self._on_resume)
+        self._resume_btn = ctk.CTkButton(
+            row,
+            text="Resume",
+            width=140,
+            height=40,
+            corner_radius=10,
+            fg_color=tk["accent_primary"],
+            hover_color=tk["accent_secondary"],
+            text_color=("#FFFFFF", "#0A0E14"),
+            command=self._on_resume,
+        )
         self._resume_btn.pack(side="left", padx=(0, 8))
-        self._cancel_btn = ctk.CTkButton(row, text="Back", width=150, fg_color="gray35", command=self._on_cancel)
+        self._cancel_btn = ctk.CTkButton(
+            row,
+            text="Back",
+            width=130,
+            height=40,
+            corner_radius=10,
+            fg_color=tk["bg_elevated"],
+            hover_color=tk["bg_overlay"],
+            text_color=tk["text_secondary"],
+            border_width=1,
+            border_color=tk["border_subtle"],
+            command=self._on_cancel,
+        )
         self._cancel_btn.pack(side="left")
 
         # Completion summary to avoid forcing users into full Review immediately.
-        self._ready = ctk.CTkFrame(self, corner_radius=12)
+        self._ready = ctk.CTkFrame(
+            self,
+            corner_radius=16,
+            fg_color=tk["bg_panel"],
+            border_width=1,
+            border_color=tk["border_subtle"],
+        )
         self._ready.grid(row=4, column=0, sticky="ew", padx=20, pady=(0, 12))
         self._ready.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(self._ready, text="Review Readiness", font=ctk.CTkFont(size=18, weight="bold")).grid(
+        ctk.CTkLabel(self._ready, text="Review Readiness", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]).grid(
             row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 6)
         )
-        ctk.CTkLabel(self._ready, text="Groups found", text_color=("gray40", "gray70")).grid(
+        ctk.CTkLabel(self._ready, text="Groups found", text_color=tk["text_secondary"]).grid(
             row=1, column=0, sticky="w", padx=16, pady=(0, 4)
         )
-        ctk.CTkLabel(self._ready, textvariable=self._ready_groups_var).grid(
+        ctk.CTkLabel(self._ready, textvariable=self._ready_groups_var, text_color=tk["text_primary"]).grid(
             row=1, column=1, sticky="w", padx=(0, 16), pady=(0, 4)
         )
-        ctk.CTkLabel(self._ready, text="Estimated reclaim", text_color=("gray40", "gray70")).grid(
+        ctk.CTkLabel(self._ready, text="Estimated reclaim", text_color=tk["text_secondary"]).grid(
             row=2, column=0, sticky="w", padx=16, pady=(0, 8)
         )
-        ctk.CTkLabel(self._ready, textvariable=self._ready_reclaim_var).grid(
+        ctk.CTkLabel(self._ready, textvariable=self._ready_reclaim_var, text_color=tk["text_primary"]).grid(
             row=2, column=1, sticky="w", padx=(0, 16), pady=(0, 8)
         )
-        self._route_btn = ctk.CTkButton(self._ready, text="Open Review", width=170)
+        self._route_btn = ctk.CTkButton(
+            self._ready,
+            text="Open Review",
+            width=180,
+            height=40,
+            corner_radius=10,
+            fg_color=tk["accent_primary"],
+            hover_color=tk["accent_secondary"],
+            text_color=("#FFFFFF", "#0A0E14"),
+        )
         self._route_btn.grid(row=3, column=0, padx=16, pady=(0, 14), sticky="w")
         self._ready.grid_remove()
 
         # Lightweight live metrics while scan is running.
-        metrics = ctk.CTkFrame(self, corner_radius=12)
+        metrics = ctk.CTkFrame(
+            self,
+            corner_radius=16,
+            fg_color=tk["bg_panel"],
+            border_width=1,
+            border_color=tk["border_subtle"],
+        )
         metrics.grid(row=6, column=0, sticky="ew", padx=20, pady=(0, 12))
         # Fixed key/value columns prevent "side-to-side" jitter while values change.
         metrics.grid_columnconfigure(0, minsize=180)
         metrics.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(metrics, text="Live Metrics", font=ctk.CTkFont(size=18, weight="bold")).grid(
+        ctk.CTkLabel(metrics, text="Live Metrics", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]).grid(
             row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 8)
         )
-        ctk.CTkLabel(metrics, text="Files scanned", text_color=("gray40", "gray70")).grid(
+        ctk.CTkLabel(metrics, text="Files scanned", text_color=tk["text_secondary"]).grid(
             row=1, column=0, sticky="w", padx=16, pady=(0, 4)
         )
-        ctk.CTkLabel(metrics, textvariable=self._m_files_var, anchor="e").grid(
+        ctk.CTkLabel(metrics, textvariable=self._m_files_var, anchor="e", text_color=tk["text_primary"]).grid(
             row=1, column=1, sticky="ew", padx=(0, 16), pady=(0, 4)
         )
-        ctk.CTkLabel(metrics, text="Groups found", text_color=("gray40", "gray70")).grid(
+        ctk.CTkLabel(metrics, text="Groups found", text_color=tk["text_secondary"]).grid(
             row=2, column=0, sticky="w", padx=16, pady=(0, 4)
         )
-        ctk.CTkLabel(metrics, textvariable=self._m_groups_var, anchor="e").grid(
+        ctk.CTkLabel(metrics, textvariable=self._m_groups_var, anchor="e", text_color=tk["text_primary"]).grid(
             row=2, column=1, sticky="ew", padx=(0, 16), pady=(0, 4)
         )
-        ctk.CTkLabel(metrics, text="Elapsed", text_color=("gray40", "gray70")).grid(
+        ctk.CTkLabel(metrics, text="Elapsed", text_color=tk["text_secondary"]).grid(
             row=3, column=0, sticky="w", padx=16, pady=(0, 4)
         )
-        ctk.CTkLabel(metrics, textvariable=self._m_elapsed_var, anchor="e").grid(
+        ctk.CTkLabel(metrics, textvariable=self._m_elapsed_var, anchor="e", text_color=tk["text_primary"]).grid(
             row=3, column=1, sticky="ew", padx=(0, 16), pady=(0, 4)
         )
-        ctk.CTkLabel(metrics, text="Current file", text_color=("gray40", "gray70")).grid(
+        ctk.CTkLabel(metrics, text="Current file", text_color=tk["text_secondary"]).grid(
             row=4, column=0, sticky="w", padx=16, pady=(0, 12)
         )
-        ctk.CTkLabel(metrics, textvariable=self._m_current_var, anchor="e").grid(
+        ctk.CTkLabel(metrics, textvariable=self._m_current_var, anchor="e", text_color=tk["text_primary"]).grid(
             row=4, column=1, sticky="ew", padx=(0, 16), pady=(0, 12)
         )
 
-        prog = ctk.CTkFrame(self, corner_radius=12)
+        prog = ctk.CTkFrame(
+            self,
+            corner_radius=16,
+            fg_color=tk["bg_panel"],
+            border_width=1,
+            border_color=tk["border_subtle"],
+        )
         # Keep progress above metrics so it's visible without scrolling.
         prog.grid(row=5, column=0, sticky="ew", padx=20, pady=(0, 12))
         prog.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(prog, text="Progress", font=ctk.CTkFont(size=18, weight="bold")).grid(
+        ctk.CTkLabel(prog, text="Progress", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]).grid(
             row=0, column=0, sticky="w", padx=16, pady=(12, 8)
         )
-        self._bar = ctk.CTkProgressBar(prog)
+        self._bar = ctk.CTkProgressBar(prog, progress_color=tk["accent_primary"], fg_color=tk["bg_elevated"])
         self._bar.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
         self._bar.set(0.0)
         meta = ctk.CTkFrame(prog, fg_color="transparent")
         meta.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 12))
-        ctk.CTkLabel(meta, textvariable=self._pct_var).pack(side="left")
-        ctk.CTkLabel(meta, textvariable=self._eta_var, text_color=("gray40", "gray70")).pack(side="right")
+        ctk.CTkLabel(meta, textvariable=self._pct_var, text_color=tk["text_primary"]).pack(side="left")
+        ctk.CTkLabel(meta, textvariable=self._eta_var, text_color=tk["text_secondary"]).pack(side="right")
 
         self._info = ctk.CTkTextbox(
             self,
             wrap="word",
-            # Use fixed hex colors so CTk theme switching doesn't remap "grayXX" token names.
-            fg_color=("#F3F4F6", "#11151d"),
-            text_color=("#111827", "#E5E7EB"),
+            corner_radius=12,
+            fg_color=tk["bg_surface"],
+            text_color=tk["text_secondary"],
+            border_width=1,
+            border_color=tk["border_subtle"],
         )
         self._info.grid(row=7, column=0, sticky="nsew", padx=20, pady=(0, 20))
         self._info.insert(
@@ -243,13 +367,18 @@ class ScanPageCTK(ctk.CTkFrame):
         panel = str(tokens.get("bg_panel", "#161b22"))
         elev = str(tokens.get("bg_elevated", "#21262d"))
         acc = str(tokens.get("accent_primary", "#3B8ED0"))
+        br = str(tokens.get("border_subtle", "#21262D"))
+        surf = str(tokens.get("bg_surface", "#0D1117"))
+        txt = str(tokens.get("text_secondary", "#94A3B8"))
         for f in self._themed_sections:
-            f.configure(fg_color=panel)
+            f.configure(fg_color=panel, border_color=br)
         self._start_btn.configure(fg_color=acc)
         self._resume_btn.configure(fg_color=acc)
-        self._browse_btn.configure(fg_color=elev)
-        self._cancel_btn.configure(fg_color=elev)
+        self._browse_btn.configure(fg_color=elev, border_color=br)
+        self._cancel_btn.configure(fg_color=elev, border_color=br)
         self._route_btn.configure(fg_color=acc)
+        self._bar.configure(progress_color=acc, fg_color=elev)
+        self._info.configure(fg_color=surf, text_color=txt, border_color=br)
 
     def set_scan_busy(self, busy: bool) -> None:
         """Disable start/resume while a scan worker is active (shell syncs via coordinator)."""
@@ -317,10 +446,7 @@ class ScanPageCTK(ctk.CTkFrame):
 
     def detach_store(self) -> None:
         if self._unsub_store:
-            try:
-                self._unsub_store()
-            except Exception:
-                pass
+            safe_callback(self._unsub_store, context="ScanPageCTK detach_store")
             self._unsub_store = None
 
     def _browse(self) -> None:
