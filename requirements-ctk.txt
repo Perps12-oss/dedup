@@ -1,3 +1,7 @@
-# Desktop UI (CustomTkinter) — required for `python -m dedup`
-# Install: pip install -r requirements-ctk.txt
+# Desktop UI (CustomTkinter) — install for `python -m dedup` / Cerebro GUI
+#   pip install -r requirements-ctk.txt
 customtkinter>=5.2.0
+xxhash>=3.0.0
+send2trash>=1.8.0
+tkinterdnd2>=0.4.2
+Pillow>=9.0.0
