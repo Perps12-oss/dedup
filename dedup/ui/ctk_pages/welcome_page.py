@@ -13,7 +13,6 @@ REFACTORED: Visual redesign with modern aesthetics while preserving all APIs.
 
 from __future__ import annotations
 
-import platform
 from typing import Callable
 
 import customtkinter as ctk

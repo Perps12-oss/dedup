@@ -310,7 +310,6 @@ class ReviewPageCTK(ctk.CTkFrame):
     def apply_theme_tokens(self, tokens: dict) -> None:
         panel = str(tokens.get("bg_panel", "#161b22"))
         elev = str(tokens.get("bg_elevated", "#21262d"))
-        acc = str(tokens.get("accent_primary", "#3B8ED0"))
         br = resolve_border_token(tokens)
         surf = str(tokens.get("bg_surface", "#0D1117"))
         txt = str(tokens.get("text_secondary", "#94A3B8"))
@@ -631,8 +630,8 @@ class ReviewPageCTK(ctk.CTkFrame):
         ).pack(expand=True, pady=24)
 
     @staticmethod
-    def _group_card_labels(group: object) -> tuple[str, str]:
-        """User-facing title/sub for a duplicate group (extensions + size, not internal ids)."""
+    def _group_card_labels(group: object, *, ordinal: int | None = None) -> tuple[str, str]:
+        """User-facing title/sub for a duplicate group (ordinal + extensions + size, not raw UUIDs)."""
         files = list(getattr(group, "files", []) or [])
         n = len(files)
         exts = sorted(
@@ -648,15 +647,16 @@ class ReviewPageCTK(ctk.CTkFrame):
         size_b = int(getattr(group, "total_size", 0) or 0)
         if size_b <= 0:
             size_b = sum(int(getattr(f, "size", 0) or 0) for f in files)
-        title = f"{n} × {ext_label}"
+        prefix = f"#{ordinal} · " if ordinal is not None else ""
+        title = f"{prefix}{n} × {ext_label}"
         sub = fmt_bytes(size_b) if size_b else "—"
         return title, sub
 
     def _rebuild_group_rows(self, gids: list[str]) -> None:
         self._clear_group_rows()
-        for gid in gids:
+        for i, gid in enumerate(gids):
             group = self._group_map[gid]
-            title_txt, sub_txt = self._group_card_labels(group)
+            title_txt, sub_txt = self._group_card_labels(group, ordinal=i + 1)
             inner = ctk.CTkFrame(self._group_scroll, corner_radius=8, fg_color=self._group_row_normal)
             inner.pack(fill="x", pady=4)
             title_lbl = ctk.CTkLabel(
@@ -916,7 +916,9 @@ class ReviewPageCTK(ctk.CTkFrame):
             self._set_details("No group selected.")
             return
         keep = self._keep_map.get(gid, "")
-        head, _sz = self._group_card_labels(group)
+        gids = list(self._group_map.keys())
+        ord_i = gids.index(gid) + 1
+        head, _sz = self._group_card_labels(group, ordinal=ord_i)
         lines = [head, f"Keep: {Path(keep).name if keep else '—'}", ""]
         for f in getattr(group, "files", []):
             marker = "KEEP" if f.path == keep else "DEL "

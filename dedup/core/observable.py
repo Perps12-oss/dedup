@@ -7,7 +7,7 @@ Tkinter UI updates must be scheduled with root.after(...) from background thread
 
 from __future__ import annotations
 
-from typing import Any, Callable, Generic, List, Optional, TypeVar
+from typing import Any, Callable, Generic, List, TypeVar
 
 T = TypeVar("T")
 Observer = Callable[[T], None]

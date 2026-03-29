@@ -154,6 +154,27 @@ class FullHashRepository:
         )
         self.conn.commit()
 
+    def upsert_batch(
+        self,
+        rows: List[Tuple[str, int, str, str, str]],
+    ) -> None:
+        """
+        Batch INSERT OR REPLACE into full_hashes.
+
+        Each row: session_id, file_id, algorithm, full_hash, computed_at (ISO timestamp).
+        """
+        if not rows:
+            return
+        self.conn.executemany(
+            """
+            INSERT OR REPLACE INTO full_hashes (
+                session_id, file_id, algorithm, full_hash, computed_at
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+        self.conn.commit()
+
 
 class DuplicateGroupRepository:
     def __init__(self, conn: sqlite3.Connection):
