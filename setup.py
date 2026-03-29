@@ -17,7 +17,7 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="DEDUP Project",
-    python_requires=">=3.9",
+    python_requires=">=3.11",
     packages=find_packages(exclude=["dedup.tests", "dedup.tests.*"]),
     entry_points={
         "console_scripts": [
@@ -29,11 +29,11 @@ setup(
     },
     install_requires=[
         "customtkinter>=5.2.0",
+        "xxhash>=3.0.0",
+        "send2trash>=1.8.0",
     ],
     extras_require={
         "recommended": [
-            "xxhash>=3.0.0",
-            "send2trash>=1.8.0",
             "tkinterdnd2>=0.4.2",
             "Pillow>=9.0.0",
         ],
@@ -53,10 +53,9 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.9",
-        "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
         "Topic :: System :: Filesystems",
         "Topic :: Utilities",
     ],

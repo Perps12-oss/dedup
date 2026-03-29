@@ -1,14 +1,14 @@
 """
 CustomTkinter Scan page (experimental).
 
-Receives a mode preset from Welcome and centralizes scan command entry points
-to reduce duplication with Mission.
+Receives a mode preset from Home and centralizes scan command entry points
+to reduce duplication with the dashboard.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from tkinter import filedialog
+from tkinter import TclError, filedialog
 from typing import TYPE_CHECKING, Callable, Optional
 
 import customtkinter as ctk
@@ -17,6 +17,7 @@ from ..ctk_action_contracts import KeepPolicy, PostScanRoute, ScanMode, ScanStar
 from ..projections.phase_projection import PHASE_LABELS, canonical_phase
 from ..state.selectors import scan_metrics, scan_session
 from ..utils.formatting import fmt_duration, fmt_int
+from ..components.ctk_tooltip import CTkToolTip
 from .design_tokens import get_theme_colors, resolve_border_token
 from .ui_utils import safe_callback
 
@@ -35,6 +36,49 @@ _PHASE_EXACT_LABELS: dict[str, str] = {
     "idle": "—",
 }
 
+# Display labels in UI ↔ internal contract values
+_KEEP_OPTIONS: tuple[tuple[str, KeepPolicy], ...] = (
+    ("Newest file", "newest"),
+    ("Oldest file", "oldest"),
+    ("Largest file", "largest"),
+    ("Smallest file", "smallest"),
+    ("First found", "first"),
+)
+_KEEP_LABEL_TO_INTERNAL: dict[str, KeepPolicy] = {a: b for a, b in _KEEP_OPTIONS}
+_INTERNAL_TO_KEEP_LABEL: dict[str, str] = {b: a for a, b in _KEEP_OPTIONS}
+
+_POST_OPTIONS: tuple[tuple[str, PostScanRoute], ...] = (
+    ("Review results", "review"),
+    ("Stay on this page", "scan"),
+    ("Home", "mission"),
+)
+_POST_LABEL_TO_INTERNAL: dict[str, PostScanRoute] = {a: b for a, b in _POST_OPTIONS}
+_INTERNAL_TO_POST_LABEL: dict[str, str] = {b: a for a, b in _POST_OPTIONS}
+
+_KEEP_POLICY_TOOLTIP = (
+    "Which duplicate to keep when you delete extras:\n\n"
+    "• Newest file — highest modified time\n"
+    "• Oldest file — earliest modified time\n"
+    "• Largest / Smallest — by file size on disk\n"
+    "• First found — first path encountered during scan (stable order)"
+)
+
+_POST_ROUTE_TOOLTIP = (
+    "Where to go after the scan finishes:\n\n"
+    "• Review results — open the duplicate review screen\n"
+    "• Stay on this page — remain on Scan\n"
+    "• Home — return to the dashboard"
+)
+
+
+def _shorten_path(path: str, max_len: int = 72) -> str:
+    p = (path or "").strip()
+    if len(p) <= max_len:
+        return p or "—"
+    head = max_len // 2 - 2
+    tail = max_len - head - 3
+    return f"{p[:head]}…{p[-tail:]}"
+
 
 class ScanPageCTK(ctk.CTkFrame):
     """Task-oriented scan setup surface for CTK backend."""
@@ -51,12 +95,15 @@ class ScanPageCTK(ctk.CTkFrame):
         super().__init__(parent, **kwargs)
         self._on_start = on_start
         self._on_resume = on_resume
-        self._on_cancel = on_cancel
+        self._on_cancel_shell = on_cancel
         self._mode: ScanMode = "files"
-        self._keep_policy = ctk.StringVar(value="newest")
-        self._post_scan_route = ctk.StringVar(value="review")
+        self._keep_policy = ctk.StringVar(value=_INTERNAL_TO_KEEP_LABEL["newest"])
+        self._post_scan_route = ctk.StringVar(value=_INTERNAL_TO_POST_LABEL["review"])
         self._status_var = ctk.StringVar(value="Idle")
-        self._session_id_var = ctk.StringVar(value="—")
+        self._status_dots_var = ctk.StringVar(value="")
+        self._scan_dots_after_id: str | None = None
+        self._scan_dots_busy = False
+        self._folder_display_var = ctk.StringVar(value="—")
         self._phase_var = ctk.StringVar(value="—")
         self._ready_groups_var = ctk.StringVar(value="—")
         self._ready_reclaim_var = ctk.StringVar(value="—")
@@ -65,17 +112,22 @@ class ScanPageCTK(ctk.CTkFrame):
         self._m_elapsed_var = ctk.StringVar(value="0s")
         self._m_current_var = ctk.StringVar(value="—")
         self._pct_var = ctk.StringVar(value="0%")
+        self._header_pct_var = ctk.StringVar(value="—")
         self._eta_var = ctk.StringVar(value="ETA: —")
         self._unsub_store: Optional[Callable[[], None]] = None
         self._tokens = get_theme_colors()
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(7, weight=1)
+        self.grid_rowconfigure(0, weight=1)
         self._build()
 
     def _build(self) -> None:
         tk = self._tokens
+        scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        scroll.grid(row=0, column=0, sticky="nsew")
+        scroll.grid_columnconfigure(0, weight=1)
+
         header = ctk.CTkFrame(
-            self,
+            scroll,
             corner_radius=16,
             fg_color=tk["bg_panel"],
             border_width=1,
@@ -91,20 +143,46 @@ class ScanPageCTK(ctk.CTkFrame):
         ).grid(row=0, column=0, sticky="w", padx=16, pady=(14, 4))
         self._mode_label = ctk.CTkLabel(header, text="Preset: Files", text_color=tk["text_secondary"])
         self._mode_label.grid(row=1, column=0, sticky="w", padx=16, pady=(0, 12))
-        ctk.CTkLabel(header, textvariable=self._status_var, text_color=tk["text_secondary"]).grid(
-            row=2, column=0, sticky="w", padx=16, pady=(0, 12)
+        status_row = ctk.CTkFrame(header, fg_color="transparent")
+        status_row.grid(row=2, column=0, sticky="w", padx=16, pady=(0, 8))
+        ctk.CTkLabel(status_row, textvariable=self._status_var, text_color=tk["text_secondary"]).pack(
+            side="left", anchor="w"
         )
+        ctk.CTkLabel(
+            status_row,
+            textvariable=self._status_dots_var,
+            text_color=tk["text_secondary"],
+            width=28,
+            anchor="w",
+        ).pack(side="left", padx=(2, 0))
 
-        # Lightweight session bar until CTK status strip is migrated.
-        sbar = ctk.CTkFrame(header, fg_color="transparent")
-        sbar.grid(row=3, column=0, sticky="w", padx=16, pady=(0, 12))
-        ctk.CTkLabel(sbar, text="Session:", text_color=tk["text_muted"]).pack(side="left")
-        ctk.CTkLabel(sbar, textvariable=self._session_id_var, text_color=tk["text_primary"]).pack(side="left", padx=(6, 14))
-        ctk.CTkLabel(sbar, text="Stage:", text_color=tk["text_muted"]).pack(side="left")
-        ctk.CTkLabel(sbar, textvariable=self._phase_var, text_color=tk["text_primary"]).pack(side="left", padx=(6, 0))
+        path_row = ctk.CTkFrame(header, fg_color="transparent")
+        path_row.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 6))
+        path_row.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(path_row, text="Folder:", text_color=tk["text_muted"]).grid(row=0, column=0, sticky="nw")
+        ctk.CTkLabel(
+            path_row,
+            textvariable=self._folder_display_var,
+            text_color=tk["text_primary"],
+            wraplength=720,
+            justify="left",
+            anchor="w",
+        ).grid(row=0, column=1, sticky="ew", padx=(6, 0))
+        meta_row = ctk.CTkFrame(header, fg_color="transparent")
+        meta_row.grid(row=4, column=0, sticky="w", padx=16, pady=(0, 12))
+        ctk.CTkLabel(meta_row, text="Stage:", text_color=tk["text_muted"]).pack(side="left")
+        ctk.CTkLabel(meta_row, textvariable=self._phase_var, text_color=tk["text_primary"]).pack(side="left", padx=(6, 16))
+        ctk.CTkLabel(meta_row, text="Progress:", text_color=tk["text_muted"]).pack(side="left")
+        self._header_pct_label = ctk.CTkLabel(
+            meta_row,
+            textvariable=self._header_pct_var,
+            text_color=tk["accent_primary"],
+            font=ctk.CTkFont(size=14, weight="bold"),
+        )
+        self._header_pct_label.pack(side="left", padx=(6, 0))
 
         target = ctk.CTkFrame(
-            self,
+            scroll,
             corner_radius=16,
             fg_color=tk["bg_panel"],
             border_width=1,
@@ -116,6 +194,7 @@ class ScanPageCTK(ctk.CTkFrame):
             row=0, column=0, sticky="w", padx=16, pady=(12, 8)
         )
         self._path_var = ctk.StringVar(value="")
+        self._path_var.trace_add("write", lambda *_: self._sync_folder_display())
         ctk.CTkEntry(
             target,
             textvariable=self._path_var,
@@ -141,9 +220,8 @@ class ScanPageCTK(ctk.CTkFrame):
         )
         self._browse_btn.grid(row=1, column=1, padx=(0, 16), pady=(0, 10), sticky="e")
 
-        # Decisions that used to concentrate in Review are moved earlier to Scan setup.
         routing = ctk.CTkFrame(
-            self,
+            scroll,
             corner_radius=16,
             fg_color=tk["bg_panel"],
             border_width=1,
@@ -151,16 +229,25 @@ class ScanPageCTK(ctk.CTkFrame):
         )
         routing.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 12))
         routing.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(routing, text="Decision Defaults", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]).grid(
+        ctk.CTkLabel(routing, text="Deletion preferences", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]).grid(
             row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 10)
         )
-        ctk.CTkLabel(routing, text="Default keep policy", text_color=tk["text_secondary"]).grid(
-            row=1, column=0, sticky="w", padx=16, pady=(0, 8)
+        keep_lbl = ctk.CTkFrame(routing, fg_color="transparent")
+        keep_lbl.grid(row=1, column=0, sticky="w", padx=16, pady=(0, 8))
+        ctk.CTkLabel(keep_lbl, text="Which copy to keep", text_color=tk["text_secondary"]).pack(side="left")
+        tip_k = ctk.CTkLabel(
+            keep_lbl,
+            text=" ⓘ",
+            text_color=tk["text_muted"],
+            cursor="hand2",
+            font=ctk.CTkFont(size=14),
         )
-        ctk.CTkOptionMenu(
+        tip_k.pack(side="left")
+        CTkToolTip(tip_k, _KEEP_POLICY_TOOLTIP, wraplength=340)
+        self._keep_menu = ctk.CTkOptionMenu(
             routing,
             variable=self._keep_policy,
-            values=["newest", "oldest", "largest", "smallest", "first"],
+            values=[a for a, _ in _KEEP_OPTIONS],
             width=220,
             height=36,
             corner_radius=10,
@@ -168,15 +255,26 @@ class ScanPageCTK(ctk.CTkFrame):
             button_color=tk["bg_elevated"],
             button_hover_color=tk["accent_secondary"],
             dropdown_fg_color=tk["bg_panel"],
-        ).grid(row=1, column=1, sticky="w", padx=(0, 16), pady=(0, 8))
-
-        ctk.CTkLabel(routing, text="After scan completes", text_color=tk["text_secondary"]).grid(
-            row=2, column=0, sticky="w", padx=16, pady=(0, 14)
         )
-        ctk.CTkOptionMenu(
+        self._keep_menu.grid(row=1, column=1, sticky="w", padx=(0, 16), pady=(0, 8))
+        CTkToolTip(self._keep_menu, _KEEP_POLICY_TOOLTIP, wraplength=340)
+
+        post_lbl = ctk.CTkFrame(routing, fg_color="transparent")
+        post_lbl.grid(row=2, column=0, sticky="w", padx=16, pady=(0, 14))
+        ctk.CTkLabel(post_lbl, text="When done, go to", text_color=tk["text_secondary"]).pack(side="left")
+        tip_p = ctk.CTkLabel(
+            post_lbl,
+            text=" ⓘ",
+            text_color=tk["text_muted"],
+            cursor="hand2",
+            font=ctk.CTkFont(size=14),
+        )
+        tip_p.pack(side="left")
+        CTkToolTip(tip_p, _POST_ROUTE_TOOLTIP, wraplength=320)
+        self._post_menu = ctk.CTkOptionMenu(
             routing,
             variable=self._post_scan_route,
-            values=["review", "scan", "mission"],
+            values=[a for a, _ in _POST_OPTIONS],
             width=220,
             height=36,
             corner_radius=10,
@@ -184,10 +282,12 @@ class ScanPageCTK(ctk.CTkFrame):
             button_color=tk["bg_elevated"],
             button_hover_color=tk["accent_secondary"],
             dropdown_fg_color=tk["bg_panel"],
-        ).grid(row=2, column=1, sticky="w", padx=(0, 16), pady=(0, 14))
+        )
+        self._post_menu.grid(row=2, column=1, sticky="w", padx=(0, 16), pady=(0, 14))
+        CTkToolTip(self._post_menu, _POST_ROUTE_TOOLTIP, wraplength=320)
 
         actions = ctk.CTkFrame(
-            self,
+            scroll,
             corner_radius=16,
             fg_color=tk["bg_panel"],
             border_width=1,
@@ -218,9 +318,11 @@ class ScanPageCTK(ctk.CTkFrame):
             width=140,
             height=40,
             corner_radius=10,
-            fg_color=tk["accent_primary"],
-            hover_color=tk["accent_secondary"],
-            text_color=("#FFFFFF", "#0A0E14"),
+            fg_color=tk["bg_elevated"],
+            hover_color=tk["bg_overlay"],
+            text_color=tk["text_secondary"],
+            border_width=1,
+            border_color=tk["border_subtle"],
             command=self._on_resume,
         )
         self._resume_btn.pack(side="left", padx=(0, 8))
@@ -235,13 +337,12 @@ class ScanPageCTK(ctk.CTkFrame):
             text_color=tk["text_secondary"],
             border_width=1,
             border_color=tk["border_subtle"],
-            command=self._on_cancel,
+            command=self._on_cancel_shell,
         )
         self._cancel_btn.pack(side="left")
 
-        # Completion summary to avoid forcing users into full Review immediately.
         self._ready = ctk.CTkFrame(
-            self,
+            scroll,
             corner_radius=16,
             fg_color=tk["bg_panel"],
             border_width=1,
@@ -249,7 +350,7 @@ class ScanPageCTK(ctk.CTkFrame):
         )
         self._ready.grid(row=4, column=0, sticky="ew", padx=20, pady=(0, 12))
         self._ready.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(self._ready, text="Review Readiness", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]).grid(
+        ctk.CTkLabel(self._ready, text="Results", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]).grid(
             row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 6)
         )
         ctk.CTkLabel(self._ready, text="Groups found", text_color=tk["text_secondary"]).grid(
@@ -277,16 +378,14 @@ class ScanPageCTK(ctk.CTkFrame):
         self._route_btn.grid(row=3, column=0, padx=16, pady=(0, 14), sticky="w")
         self._ready.grid_remove()
 
-        # Lightweight live metrics while scan is running.
         metrics = ctk.CTkFrame(
-            self,
+            scroll,
             corner_radius=16,
             fg_color=tk["bg_panel"],
             border_width=1,
             border_color=tk["border_subtle"],
         )
-        metrics.grid(row=6, column=0, sticky="ew", padx=20, pady=(0, 12))
-        # Fixed key/value columns prevent "side-to-side" jitter while values change.
+        metrics.grid(row=5, column=0, sticky="ew", padx=20, pady=(0, 12))
         metrics.grid_columnconfigure(0, minsize=180)
         metrics.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(metrics, text="Live Metrics", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]).grid(
@@ -318,14 +417,13 @@ class ScanPageCTK(ctk.CTkFrame):
         )
 
         prog = ctk.CTkFrame(
-            self,
+            scroll,
             corner_radius=16,
             fg_color=tk["bg_panel"],
             border_width=1,
             border_color=tk["border_subtle"],
         )
-        # Keep progress above metrics so it's visible without scrolling.
-        prog.grid(row=5, column=0, sticky="ew", padx=20, pady=(0, 12))
+        prog.grid(row=6, column=0, sticky="ew", padx=20, pady=(0, 12))
         prog.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(prog, text="Progress", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]).grid(
             row=0, column=0, sticky="w", padx=16, pady=(12, 8)
@@ -339,7 +437,8 @@ class ScanPageCTK(ctk.CTkFrame):
         ctk.CTkLabel(meta, textvariable=self._eta_var, text_color=tk["text_secondary"]).pack(side="right")
 
         self._info = ctk.CTkTextbox(
-            self,
+            scroll,
+            height=120,
             wrap="word",
             corner_radius=12,
             fg_color=tk["bg_surface"],
@@ -347,20 +446,20 @@ class ScanPageCTK(ctk.CTkFrame):
             border_width=1,
             border_color=tk["border_subtle"],
         )
-        self._info.grid(row=7, column=0, sticky="nsew", padx=20, pady=(0, 20))
+        self._info.grid(row=7, column=0, sticky="ew", padx=20, pady=(0, 20))
         self._info.insert(
             "end",
-            "Preset behavior:\n"
-            "- Photos: image-focused category and common defaults\n"
-            "- Videos: video-focused category and common defaults\n"
-            "- Files: all media/files default\n\n"
-            "Flow redistribution in progress:\n"
-            "- Default keep-policy is configured here (not Review).\n"
-            "- Post-scan destination is configured here.\n",
+            "Select a folder and press Start Scan.\n\n"
+            "Set which copy to keep and where to go when the scan finishes before you start.\n",
         )
         self._info.configure(state="disabled")
 
         self._themed_sections = [header, target, routing, actions, self._ready, metrics, prog]
+        self._sync_folder_display()
+
+    def _sync_folder_display(self) -> None:
+        raw = self._path_var.get().strip()
+        self._folder_display_var.set(_shorten_path(raw) if raw else "—")
 
     def apply_theme_tokens(self, tokens: dict) -> None:
         """Sync panel surfaces with CEREBRO semantic tokens (CTk defaults do not follow ThemeManager)."""
@@ -372,8 +471,15 @@ class ScanPageCTK(ctk.CTkFrame):
         txt = str(tokens.get("text_secondary", "#94A3B8"))
         for f in self._themed_sections:
             f.configure(fg_color=panel, border_color=br)
+        if hasattr(self, "_header_pct_label"):
+            self._header_pct_label.configure(text_color=acc)
         self._start_btn.configure(fg_color=acc)
-        self._resume_btn.configure(fg_color=acc)
+        self._resume_btn.configure(
+            fg_color=elev,
+            hover_color=str(tokens.get("bg_overlay", "#21262d")),
+            text_color=txt,
+            border_color=br,
+        )
         self._browse_btn.configure(fg_color=elev, border_color=br)
         self._cancel_btn.configure(fg_color=elev, border_color=br)
         self._route_btn.configure(fg_color=acc)
@@ -386,21 +492,28 @@ class ScanPageCTK(ctk.CTkFrame):
         self._start_btn.configure(state=st)
         self._resume_btn.configure(state=st)
         self._cancel_btn.configure(
-            text="Stop scan" if busy else "Back",
+            text="Cancel scan" if busy else "Back",
             state="normal",
         )
+        if busy:
+            self._start_scan_dots_animation()
+        else:
+            self._stop_scan_dots_animation()
+            self._header_pct_var.set("—")
+            self._bar.set(0.0)
+            self._pct_var.set("0%")
 
     def set_target_path(self, path: str) -> None:
         self._path_var.set(path.strip())
 
     def apply_decision_defaults(self, keep_policy: KeepPolicy, post_scan_route: PostScanRoute) -> None:
-        kp = keep_policy if keep_policy in ("newest", "oldest", "largest", "smallest", "first") else "newest"
-        pr = post_scan_route if post_scan_route in ("review", "scan", "mission") else "review"
-        self._keep_policy.set(kp)
-        self._post_scan_route.set(pr)
+        kp = keep_policy if keep_policy in _INTERNAL_TO_KEEP_LABEL else "newest"
+        pr = post_scan_route if post_scan_route in _INTERNAL_TO_POST_LABEL else "review"
+        self._keep_policy.set(_INTERNAL_TO_KEEP_LABEL[kp])
+        self._post_scan_route.set(_INTERNAL_TO_POST_LABEL[pr])
 
     def set_mode(self, mode: str) -> None:
-        """Update page from Welcome entry point."""
+        """Update page from Home entry point."""
         self._mode = mode if mode in ("photos", "videos", "files") else "files"
         self._mode_label.configure(text=f"Preset: {self._mode.title()}")
 
@@ -412,13 +525,11 @@ class ScanPageCTK(ctk.CTkFrame):
             sess = scan_session(state)
             met = scan_metrics(state)
             if sess is not None and getattr(sess, "session_id", ""):
-                sid = str(sess.session_id)
-                short = (sid[:8] + "…") if len(sid) > 8 else sid
                 phase = getattr(sess, "current_phase", None) or ""
-                self.set_session(session_id=short, phase=phase or None)
+                self.set_session(phase=phase or None)
                 st = getattr(sess, "status", "") or ""
                 if st == "running":
-                    self.set_status(f"Running ({short})")
+                    self.set_status("Scanning…")
                 elif st == "completed":
                     self.set_status("Completed")
                 elif st in ("cancelled", "failed"):
@@ -455,18 +566,10 @@ class ScanPageCTK(ctk.CTkFrame):
             self._path_var.set(str(Path(path).resolve()))
 
     def _start(self) -> None:
-        keep_policy: KeepPolicy = self._keep_policy.get() if self._keep_policy.get() in {
-            "newest",
-            "oldest",
-            "largest",
-            "smallest",
-            "first",
-        } else "newest"
-        post_scan_route: PostScanRoute = self._post_scan_route.get() if self._post_scan_route.get() in {
-            "review",
-            "scan",
-            "mission",
-        } else "review"
+        lbl_k = self._keep_policy.get()
+        lbl_p = self._post_scan_route.get()
+        keep_policy: KeepPolicy = _KEEP_LABEL_TO_INTERNAL.get(lbl_k, "newest")
+        post_scan_route: PostScanRoute = _POST_LABEL_TO_INTERNAL.get(lbl_p, "review")
         payload: ScanStartPayload = {
             "mode": self._mode,
             "path": self._path_var.get().strip(),
@@ -478,6 +581,32 @@ class ScanPageCTK(ctk.CTkFrame):
 
     def set_status(self, text: str) -> None:
         self._status_var.set(text)
+
+    def _start_scan_dots_animation(self) -> None:
+        """Ellipsis pulse next to status while a scan is active (does not replace hub-driven status text)."""
+        self._stop_scan_dots_animation()
+        self._scan_dots_busy = True
+        self._scan_dots_i = 0
+
+        def tick() -> None:
+            if not self._scan_dots_busy:
+                return
+            self._scan_dots_i = (self._scan_dots_i + 1) % 4
+            self._status_dots_var.set("." * self._scan_dots_i)
+            self._scan_dots_after_id = self.after(500, tick)
+
+        tick()
+
+    def _stop_scan_dots_animation(self) -> None:
+        self._scan_dots_busy = False
+        aid = getattr(self, "_scan_dots_after_id", None)
+        if aid:
+            try:
+                self.after_cancel(aid)
+            except (TclError, ValueError, RuntimeError):
+                pass
+            self._scan_dots_after_id = None
+        self._status_dots_var.set("")
 
     def get_status(self) -> str:
         return str(self._status_var.get() or "")
@@ -504,9 +633,7 @@ class ScanPageCTK(ctk.CTkFrame):
         session_id: str | None = None,
         phase: str | None = None,
     ) -> None:
-        """Update session id and/or pipeline phase (omit either field to leave it unchanged)."""
-        if session_id is not None:
-            self._session_id_var.set(session_id or "—")
+        """Update pipeline phase; session_id is accepted for API compatibility but not shown in the UI."""
         if phase is not None:
             self._phase_var.set(self._format_pipeline_phase(phase))
 
@@ -536,7 +663,9 @@ class ScanPageCTK(ctk.CTkFrame):
         if total_files and total_files > 0:
             frac = max(0.0, min(1.0, files_scanned / total_files))
             self._bar.set(frac)
-            self._pct_var.set(f"{int(frac * 100):d}%")
+            pct = f"{int(frac * 100):d}%"
+            self._pct_var.set(pct)
+            self._header_pct_var.set(pct)
             rem = max(0, total_files - files_scanned)
             if elapsed_s > 0.6 and files_scanned > 10:
                 rate = files_scanned / elapsed_s
@@ -550,6 +679,7 @@ class ScanPageCTK(ctk.CTkFrame):
         pulse = min(0.93, 1.0 - pow(2.718281828, -(max(files_scanned, 0) / 6000.0))) if files_scanned > 0 else 0.0
         self._bar.set(pulse)
         self._pct_var.set("…")
+        self._header_pct_var.set("…")
         if elapsed_s > 0.6 and files_scanned > 0:
             rate = files_scanned / elapsed_s
             self._eta_var.set(f"~{rate:,.0f} files/s · total unknown")
@@ -579,24 +709,5 @@ class ScanPageCTK(ctk.CTkFrame):
 
     def _bind_scan_shortcuts(self) -> None:
         """Bind scan page specific keyboard shortcuts."""
-        # Use page-local bindings instead of global to avoid conflicts
-        self.bind("<Control-Key-Return>", lambda e: self._start_scan())
-        self.bind("<Escape>", lambda e: self._on_cancel())
-
-    def _start_scan(self) -> None:
-        """Start the scan with current settings."""
-        if hasattr(self, '_start_btn') and self._start_btn.winfo_exists():
-            try:
-                if self._start_btn.cget('state') == 'normal':
-                    self._start_btn.invoke()
-            except Exception:
-                pass  # Button may be destroyed or in invalid state
-
-    def _on_cancel(self) -> None:
-        """Cancel the current scan."""
-        if hasattr(self, '_cancel_btn') and self._cancel_btn.winfo_exists():
-            try:
-                if self._cancel_btn.cget('state') == 'normal':
-                    self._cancel_btn.invoke()
-            except Exception:
-                pass  # Button may be destroyed or in invalid state
+        self.bind("<Control-Key-Return>", lambda e: self._start())
+        self.bind("<Escape>", lambda e: self._on_cancel_shell())

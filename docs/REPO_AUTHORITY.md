@@ -31,7 +31,7 @@ One place that states **who is the authority** for reads and commands. Avoid dup
 - **No app → page-private methods** for actions. Use controller or public page API.
 - **ScanPage**: When store is attached, only store drives display; hub is detached.
 - **Review**: All review state reads via selectors; writes via store.set_review_selection. Commands via ReviewController only.
-- **Packaging**: Tests excluded from distribution. Optional deps in setup.py extras_require and requirements.txt.
+- **Packaging**: Tests excluded from distribution. Core and optional deps in `setup.py` and `requirements-ctk.txt` / `requirements-dev.txt`.
 
 ---
 

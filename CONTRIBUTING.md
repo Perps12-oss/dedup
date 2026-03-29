@@ -9,9 +9,10 @@
 
 ## Development setup
 
+**Python:** 3.11+ (aligned with `setup.py`, Ruff, and mypy in `pyproject.toml`).
+
 ```bash
-pip install -r requirements-dev.txt
-pip install -r docs/requirements.txt   # optional runtime extras
+pip install -r requirements-dev.txt   # includes runtime deps from requirements-ctk.txt
 pre-commit install   # optional: git hooks from .pre-commit-config.yaml
 python -m pytest dedup/tests
 python -m ruff check dedup

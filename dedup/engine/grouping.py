@@ -397,6 +397,18 @@ class FullHashReducer:
             all_paths.extend(f.path for f in files)
         path_to_id = persistence.inventory_repo.get_file_ids_by_paths(scan_id, all_paths)
 
+        algo = self.hash_engine.algorithm.value
+        computed_at = datetime.now().isoformat()
+        full_rows: List[Tuple[str, int, str, str, str]] = []
+        for hash_value, files in confirmed_groups.items():
+            for file in files:
+                file_id = path_to_id.get(file.path)
+                if file_id is None:
+                    continue
+                full_rows.append((scan_id, file_id, algo, hash_value, computed_at))
+        if full_rows:
+            persistence.full_hash_repo.upsert_batch(full_rows)
+
         for hash_value, files in confirmed_groups.items():
             group = DuplicateGroup(group_id="", group_hash=hash_value, files=files)
             duplicate_groups.append(group)
@@ -407,12 +419,6 @@ class FullHashReducer:
                 file_id = path_to_id.get(file.path)
                 if file_id is None:
                     continue
-                persistence.full_hash_repo.upsert(
-                    session_id=scan_id,
-                    file_id=file_id,
-                    algorithm=self.hash_engine.algorithm.value,
-                    full_hash=hash_value,
-                )
                 members.append((file_id, "keeper" if file.path == keeper_path else "delete_candidate"))
 
             if members:

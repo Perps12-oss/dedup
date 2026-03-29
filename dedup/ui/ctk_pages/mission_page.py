@@ -13,9 +13,10 @@ REFACTORED: Visual redesign with modern aesthetics while preserving all APIs.
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 import customtkinter as ctk
 
@@ -33,6 +34,19 @@ def _quick_scan_options() -> dict:
     return {"media_category": "all", "scan_mode": "deep", "include_hidden": False, "scan_subfolders": True}
 
 
+def _format_session_date(started_at: str) -> str:
+    raw = (started_at or "").strip()
+    if not raw:
+        return "—"
+    try:
+        if "T" in raw:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            return dt.strftime("%Y-%m-%d %H:%M")
+    except (ValueError, TypeError, OSError):
+        pass
+    return raw[:19] if len(raw) > 19 else raw
+
+
 class MissionPageCTK(ctk.CTkFrame):
     """Mission landing surface for CTK backend."""
 
@@ -48,6 +62,7 @@ class MissionPageCTK(ctk.CTkFrame):
         on_resume_scan: Callable[[], None],
         on_open_last_review: Callable[[], None],
         on_quick_scan: Callable[[ScanStartPayload], None],
+        on_open_scan: Callable[[str], None] | None = None,
         **kwargs,
     ) -> None:
         super().__init__(parent, **kwargs)
@@ -57,6 +72,7 @@ class MissionPageCTK(ctk.CTkFrame):
         self._on_resume_scan = on_resume_scan
         self._on_open_last_review = on_open_last_review
         self._on_quick_scan = on_quick_scan
+        self._on_open_scan = on_open_scan
 
         # State variables - UNCHANGED
         self._quick_path_var = ctk.StringVar(value="")
@@ -107,18 +123,8 @@ class MissionPageCTK(ctk.CTkFrame):
             res_ids = getattr(m, "resumable_scan_ids", ()) or ()
             n_res = len(res_ids)
             self.set_resume_hint("None" if n_res == 0 else f"{n_res} session(s)")
-            lines: list[str] = []
-            for d in getattr(m, "recent_sessions", ()) or ():
-                sid = str(d.get("scan_id", ""))
-                short = (sid[:10] + "…") if len(sid) > 10 else sid or "—"
-                lines.append(
-                    f"{short}  ·  {d.get('status', '—')}  ·  {fmt_int(d.get('files_scanned') or 0)} files"
-                )
-            self.set_recent_sessions_text(
-                "\n".join(lines)
-                if lines
-                else "No saved scans in history yet. Complete a scan to populate this list."
-            )
+            sessions = list(getattr(m, "recent_sessions", ()) or ())
+            self._render_recent_sessions(sessions)
 
         self._unsub_store = store.subscribe(on_state, fire_immediately=True)
 
@@ -129,13 +135,102 @@ class MissionPageCTK(ctk.CTkFrame):
             self._unsub_store = None
 
     def set_recent_sessions_text(self, text: str) -> None:
-        """Update recent sessions display. API UNCHANGED."""
+        """Legacy: retained for API compatibility; recent list is card-based."""
         self._recent_var.set(text)
-        if hasattr(self, "_recent_box"):
-            self._recent_box.configure(state="normal")
-            self._recent_box.delete("1.0", "end")
-            self._recent_box.insert("1.0", text)
-            self._recent_box.configure(state="disabled")
+
+    def _render_recent_sessions(self, sessions: list[dict[str, Any]]) -> None:
+        """Fill recent sessions with clickable rows."""
+        if not hasattr(self, "_recent_list_host"):
+            return
+        for w in self._recent_list_host.winfo_children():
+            w.destroy()
+        tk = self._tokens
+        if not sessions:
+            empty = ctk.CTkFrame(self._recent_list_host, fg_color="transparent")
+            empty.pack(fill="x", pady=(4, 12))
+            ctk.CTkLabel(empty, text="📭", font=ctk.CTkFont(size=36)).pack(pady=(8, 4))
+            ctk.CTkLabel(
+                empty,
+                text="No recent scans yet",
+                font=ctk.CTkFont(size=16, weight="bold"),
+                text_color=tk["text_primary"],
+            ).pack()
+            ctk.CTkLabel(
+                empty,
+                text="When you finish a scan, it appears here with date, folder, and a shortcut to open results in Review.",
+                text_color=tk["text_muted"],
+                font=ctk.CTkFont(size=13),
+                wraplength=520,
+                justify="center",
+            ).pack(pady=(8, 4))
+            ctk.CTkLabel(
+                empty,
+                text="Start from Home or Scan, or browse History for older runs.",
+                text_color=tk["text_secondary"],
+                font=ctk.CTkFont(size=12),
+                wraplength=520,
+                justify="center",
+            ).pack(pady=(0, 12))
+            return
+        for d in sessions[:8]:
+            sid = str(d.get("scan_id", "") or "")
+            roots = d.get("roots") or []
+            folder = str(roots[0]) if roots else "—"
+            if len(folder) > 72:
+                folder = folder[:34] + "…" + folder[-34:]
+            dupes = int(d.get("duplicates_found") or 0)
+            files_n = int(d.get("files_scanned") or 0)
+            when = _format_session_date(str(d.get("started_at", "") or ""))
+
+            row = ctk.CTkFrame(
+                self._recent_list_host,
+                corner_radius=10,
+                fg_color=tk["bg_elevated"],
+                border_width=1,
+                border_color=tk["border_subtle"],
+            )
+            row.pack(fill="x", pady=6)
+            inner = ctk.CTkFrame(row, fg_color="transparent")
+            inner.pack(fill="x", padx=10, pady=10)
+            left = ctk.CTkFrame(inner, fg_color="transparent")
+            left.pack(side="left", fill="both", expand=True)
+
+            ctk.CTkLabel(
+                left,
+                text=when,
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color=tk["text_primary"],
+                anchor="w",
+            ).pack(anchor="w")
+            ctk.CTkLabel(
+                left,
+                text=folder,
+                font=ctk.CTkFont(size=12),
+                text_color=tk["text_secondary"],
+                anchor="w",
+                wraplength=480,
+                justify="left",
+            ).pack(anchor="w", pady=(4, 0))
+            ctk.CTkLabel(
+                left,
+                text=f"{fmt_int(files_n)} files scanned · {fmt_int(dupes)} duplicate groups",
+                font=ctk.CTkFont(size=11),
+                text_color=tk["text_muted"],
+                anchor="w",
+            ).pack(anchor="w", pady=(4, 0))
+
+            if sid and self._on_open_scan:
+                ctk.CTkButton(
+                    inner,
+                    text="Open in Review",
+                    width=130,
+                    height=32,
+                    corner_radius=8,
+                    fg_color=tk["accent_primary"],
+                    hover_color=tk["accent_secondary"],
+                    text_color=("#FFFFFF", "#0A0E14"),
+                    command=lambda s=sid: self._on_open_scan(s),
+                ).pack(side="right", padx=(8, 0))
 
     def apply_theme_tokens(self, tokens: dict) -> None:
         """Apply theme tokens to styled components. API UNCHANGED."""
@@ -155,8 +250,8 @@ class MissionPageCTK(ctk.CTkFrame):
         self._quick_start_btn.configure(fg_color=acc)
 
         txt_sec = str(tokens.get("text_secondary", "#94A3B8"))
-        if hasattr(self, "_recent_box"):
-            self._recent_box.configure(fg_color=elev, text_color=txt_sec, border_color=border)
+        if hasattr(self, "_recent_list_host"):
+            self._recent_list_host.configure(fg_color="transparent")
         if hasattr(self, "_quick_path_entry"):
             self._quick_path_entry.configure(fg_color=elev, border_color=border)
         if hasattr(self, "_quick_browse_btn"):
@@ -206,7 +301,7 @@ class MissionPageCTK(ctk.CTkFrame):
 
         ctk.CTkLabel(
             title_frame,
-            text="Mission Control",
+            text="Home",
             font=ctk.CTkFont(size=28, weight="bold"),
             text_color=self._tokens["text_primary"],
         ).pack(anchor="w")
@@ -321,27 +416,18 @@ class MissionPageCTK(ctk.CTkFrame):
 
         ctk.CTkLabel(
             recent_header,
-            text="📋  Recent Sessions",
+            text="📋  Recent scans",
             font=ctk.CTkFont(size=18, weight="bold"),
             text_color=self._tokens["text_primary"],
         ).pack(side="left")
 
-        # Sessions list
-        self._recent_box = ctk.CTkTextbox(
+        self._recent_list_host = ctk.CTkScrollableFrame(
             recent,
-            height=120,
-            wrap="word",
-            activate_scrollbars=True,
-            corner_radius=10,
-            fg_color=self._tokens["bg_elevated"],
-            text_color=self._tokens["text_secondary"],
-            font=ctk.CTkFont(family="SF Mono", size=12),
-            border_width=1,
-            border_color=self._tokens["border_subtle"],
+            fg_color="transparent",
+            height=220,
         )
-        self._recent_box.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 20))
-        self._recent_box.insert("1.0", self._recent_var.get())
-        self._recent_box.configure(state="disabled")
+        self._recent_list_host.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 16))
+        self._recent_list_host.grid_columnconfigure(0, weight=1)
 
         # ── Quick Scan Section ──────────────────────────────────────────────
         quick = ctk.CTkFrame(

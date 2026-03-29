@@ -43,6 +43,7 @@ htmlcov/
 .tox/
 
 # DEDUP specific
+docs/pip_audit_report.json
 *.log
 *.db
 *.sqlite

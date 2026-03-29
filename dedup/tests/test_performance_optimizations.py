@@ -6,7 +6,7 @@ import sqlite3
 
 from dedup.engine.hashing import HashEngine, HashStrategy
 from dedup.engine.models import FileMetadata
-from dedup.infrastructure.repositories.hash_repo import PartialHashRepository
+from dedup.infrastructure.repositories.hash_repo import FullHashRepository, PartialHashRepository
 
 
 def test_hash_batch_partial_progress_throttled(tmp_path):
@@ -51,6 +51,29 @@ def test_partial_hash_upsert_batch_inserts_rows(tmp_path):
     ]
     repo.upsert_batch(rows)
     n = conn.execute("SELECT COUNT(*) AS c FROM partial_hashes").fetchone()["c"]
+    assert n == 50
+
+
+def test_full_hash_upsert_batch_inserts_rows():
+    """Batch full-hash upsert writes all rows in one executemany."""
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        """
+        CREATE TABLE full_hashes (
+            session_id TEXT NOT NULL,
+            file_id INTEGER NOT NULL,
+            algorithm TEXT NOT NULL,
+            full_hash TEXT NOT NULL,
+            computed_at TEXT NOT NULL,
+            PRIMARY KEY (session_id, file_id, algorithm)
+        );
+        """
+    )
+    repo = FullHashRepository(conn)
+    rows = [("s1", i, "md5", f"h{i}", "2020-01-01T00:00:00") for i in range(50)]
+    repo.upsert_batch(rows)
+    n = conn.execute("SELECT COUNT(*) AS c FROM full_hashes").fetchone()["c"]
     assert n == 50
 
 

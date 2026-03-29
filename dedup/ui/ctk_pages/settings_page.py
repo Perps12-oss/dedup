@@ -21,7 +21,7 @@ from typing import Callable, Optional
 import customtkinter as ctk
 
 from ..utils.ui_state import UIState
-from .design_tokens import resolve_border_token
+from .design_tokens import get_theme_colors, resolve_border_token
 from .ui_utils import safe_callback
 
 
@@ -62,20 +62,8 @@ class SettingsPageCTK(ctk.CTkFrame):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # Design tokens - UI-only
-        self._tokens = {
-            "bg_base": ("#F8FAFC", "#0A0E14"),
-            "bg_surface": ("#FFFFFF", "#0D1117"),
-            "bg_elevated": ("#F1F5F9", "#161B22"),
-            "bg_panel": ("#E2E8F0", "#1C2128"),
-            "accent_primary": ("#0891B2", "#22D3EE"),
-            "accent_secondary": ("#0E7490", "#06B6D4"),
-            "text_primary": ("#0F172A", "#F1F5F9"),
-            "text_secondary": ("#475569", "#94A3B8"),
-            "text_muted": ("#64748B", "#64748B"),
-            "border_subtle": ("#E2E8F0", "#21262D"),
-            "success": ("#059669", "#10B981"),
-        }
+        # Design tokens — same source as other CTK pages (pairs for light/dark appearance).
+        self._tokens = get_theme_colors()
 
         self._build()
 
@@ -101,7 +89,7 @@ class SettingsPageCTK(ctk.CTkFrame):
         if hasattr(self, "_themes_btn"):
             self._themes_btn.configure(fg_color=acc)
         if hasattr(self, "_diag_btn"):
-            self._diag_btn.configure(fg_color=elev)
+            self._diag_btn.configure(fg_color=elev, border_color=border)
 
     def on_show(self) -> None:
         """Called when page becomes visible - refresh from state. API UNCHANGED."""
@@ -117,6 +105,7 @@ class SettingsPageCTK(ctk.CTkFrame):
             self._cfg_var.set(self._config_json_path)
         if hasattr(self, "_ui_settings_var"):
             self._ui_settings_var.set(self._ui_settings_json_path)
+        self._sync_advanced_section_visibility()
 
     # ══════════════════════════════════════════════════════════════════════════
     # PRIVATE IMPLEMENTATION - VISUAL REFACTOR
@@ -173,6 +162,9 @@ class SettingsPageCTK(ctk.CTkFrame):
 
         self._build_data_section(right)
         self._build_view_section(right)
+
+        self._build_advanced_section(self._scroll)
+        self._sync_advanced_section_visibility()
 
     def _build_header(self, parent: ctk.CTkFrame) -> None:
         """Build page header."""
@@ -305,22 +297,7 @@ class SettingsPageCTK(ctk.CTkFrame):
         )
         self._contrast_switch.pack(side="right")
 
-        # Open Themes button
-        btn_row = ctk.CTkFrame(section, fg_color="transparent")
-        btn_row.pack(fill="x", padx=20, pady=(8, 20))
-
-        self._themes_btn = ctk.CTkButton(
-            btn_row,
-            text="🎭  Open Themes…",
-            width=160,
-            height=40,
-            corner_radius=10,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            fg_color=self._tokens["accent_primary"],
-            text_color=("#FFFFFF", "#0A0E14"),
-            command=self._on_open_themes,
-        )
-        self._themes_btn.pack(side="left")
+        ctk.CTkFrame(section, height=8, fg_color="transparent").pack()
 
     def _build_behavior_section(self, parent: ctk.CTkFrame) -> None:
         """Build behavior settings section."""
@@ -405,14 +382,52 @@ class SettingsPageCTK(ctk.CTkFrame):
         for title, var in paths:
             self._build_path_row(section, title, var)
 
-        # Diagnostics button
+        ctk.CTkFrame(section, height=8, fg_color="transparent").pack()
+
+    def _build_advanced_section(self, parent: ctk.CTkFrame) -> None:
+        """Themes + Diagnostics — shown only when Advanced Mode is enabled."""
+        section = ctk.CTkFrame(
+            parent,
+            corner_radius=16,
+            fg_color=self._tokens["bg_panel"],
+            border_width=1,
+            border_color=self._tokens["border_subtle"],
+        )
+        self._section_frames.append(section)
+        self._advanced_section = section
+        section.grid(row=2, column=0, sticky="ew", padx=24, pady=(0, 24))
+
+        self._build_section_header(section, "🔧", "Advanced tools")
+
+        ctk.CTkLabel(
+            section,
+            text="Theme customization and technical diagnostics. Enable “Advanced Mode” in Behavior to show this section.",
+            font=ctk.CTkFont(size=12),
+            text_color=self._tokens["text_muted"],
+            wraplength=720,
+            justify="left",
+        ).pack(anchor="w", padx=20, pady=(0, 12))
+
         btn_row = ctk.CTkFrame(section, fg_color="transparent")
-        btn_row.pack(fill="x", padx=20, pady=(8, 20))
+        btn_row.pack(fill="x", padx=20, pady=(0, 20))
+
+        self._themes_btn = ctk.CTkButton(
+            btn_row,
+            text="🎭  Open Themes…",
+            width=170,
+            height=40,
+            corner_radius=10,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=self._tokens["accent_primary"],
+            text_color=("#FFFFFF", "#0A0E14"),
+            command=self._on_open_themes,
+        )
+        self._themes_btn.pack(side="left", padx=(0, 12))
 
         self._diag_btn = ctk.CTkButton(
             btn_row,
             text="🔬  Open Diagnostics…",
-            width=180,
+            width=190,
             height=40,
             corner_radius=10,
             font=ctk.CTkFont(size=14),
@@ -423,6 +438,13 @@ class SettingsPageCTK(ctk.CTkFrame):
             command=self._on_open_diagnostics,
         )
         self._diag_btn.pack(side="left")
+
+    def _sync_advanced_section_visibility(self) -> None:
+        if hasattr(self, "_advanced_section"):
+            if self._state.settings.advanced_mode:
+                self._advanced_section.grid()
+            else:
+                self._advanced_section.grid_remove()
 
     def _build_path_row(self, parent: ctk.CTkFrame, title: str, var: ctk.StringVar) -> None:
         """Build a path display row with copy button."""
@@ -529,6 +551,7 @@ class SettingsPageCTK(ctk.CTkFrame):
 
     def _on_advanced_changed(self) -> None:
         self._state.settings.advanced_mode = self._advanced_var.get()
+        self._sync_advanced_section_visibility()
         self._save_and_notify()
 
     def _on_gradients_changed(self) -> None:

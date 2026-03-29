@@ -1,5 +1,5 @@
 """
-CustomTkinter Review Lite page (experimental).
+CustomTkinter Review page (experimental).
 
 Three-column layout:
 - left: scrollable groups grid (text only, no thumbnails)
@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import tkinter
 from pathlib import Path
-from tkinter import messagebox
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 import customtkinter as ctk
@@ -23,6 +22,7 @@ from ...engine.thumbnails import get_thumbnail_path
 from ..state.store import ReviewIndexState, ReviewPlanState, ReviewPreviewState, ReviewSelectionState
 from ..utils.formatting import fmt_bytes
 from ..utils.review_keep import coerce_keep_selections, default_keep_map_from_result
+from ..utils.theme_helpers import theme_pair
 from .design_tokens import get_theme_colors, resolve_border_token
 
 if TYPE_CHECKING:
@@ -93,7 +93,7 @@ class ReviewPageCTK(ctk.CTkFrame):
         top.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
             top,
-            text="📊  Review Lite",
+            text="📊  Review",
             font=ctk.CTkFont(size=26, weight="bold"),
             text_color=tk["text_primary"],
         ).grid(row=0, column=0, sticky="w", padx=16, pady=(14, 4))
@@ -103,7 +103,7 @@ class ReviewPageCTK(ctk.CTkFrame):
         )
 
         # --- Column 0: groups (text grid) ---
-        left = ctk.CTkFrame(
+        self._review_left = ctk.CTkFrame(
             self,
             corner_radius=16,
             width=220,
@@ -111,6 +111,7 @@ class ReviewPageCTK(ctk.CTkFrame):
             border_width=1,
             border_color=tk["border_subtle"],
         )
+        left = self._review_left
         left.grid(row=1, column=0, sticky="nsew", padx=(20, 8), pady=(0, 12))
         left.grid_rowconfigure(1, weight=1)
         left.grid_propagate(False)
@@ -121,24 +122,26 @@ class ReviewPageCTK(ctk.CTkFrame):
         self._group_scroll.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 12))
 
         # --- Column 1: comparison container only ---
-        center = ctk.CTkFrame(
+        self._review_center = ctk.CTkFrame(
             self,
             corner_radius=16,
             fg_color=tk["bg_panel"],
             border_width=1,
             border_color=tk["border_subtle"],
         )
+        center = self._review_center
         center.grid(row=1, column=1, sticky="nsew", padx=8, pady=(0, 12))
         center.grid_columnconfigure(0, weight=1)
         center.grid_columnconfigure(1, weight=1)
         center.grid_rowconfigure(1, weight=1)
 
-        ctk.CTkLabel(
+        self._preview_title = ctk.CTkLabel(
             center,
-            text="Image comparison",
+            text="File preview",
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color=tk["text_primary"],
-        ).grid(row=0, column=0, columnspan=2, pady=(14, 10))
+        )
+        self._preview_title.grid(row=0, column=0, columnspan=2, pady=(14, 10))
 
         self._hero_viewport = ctk.CTkFrame(center, fg_color="transparent")
         self._hero_viewport.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=8, pady=4)
@@ -162,7 +165,7 @@ class ReviewPageCTK(ctk.CTkFrame):
         )
 
         # --- Column 2: actions (top-aligned content + vertical stretch) ---
-        right = ctk.CTkFrame(
+        self._review_right = ctk.CTkFrame(
             self,
             corner_radius=16,
             width=300,
@@ -170,6 +173,7 @@ class ReviewPageCTK(ctk.CTkFrame):
             border_width=1,
             border_color=tk["border_subtle"],
         )
+        right = self._review_right
         right.grid(row=1, column=2, sticky="nsew", padx=(8, 20), pady=(0, 12))
         right.grid_columnconfigure(0, weight=1)
         right.grid_rowconfigure(5, weight=1)
@@ -193,11 +197,13 @@ class ReviewPageCTK(ctk.CTkFrame):
 
         row = ctk.CTkFrame(right, fg_color="transparent")
         row.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 12))
+        danger = tk["danger"]
+        danger_hover = tk["danger_hover"]
         self._execute_btn = ctk.CTkButton(
             row,
-            text="Execute Deletion",
-            fg_color=tk["accent_primary"],
-            hover_color=tk["accent_secondary"],
+            text="🗑️ Move to Trash",
+            fg_color=danger,
+            hover_color=danger_hover,
             text_color=("#FFFFFF", "#0A0E14"),
             command=self._execute,
         )
@@ -223,9 +229,8 @@ class ReviewPageCTK(ctk.CTkFrame):
             border_width=1,
             border_color=tk["border_subtle"],
         )
-        self._result_panel.grid(row=2, column=0, columnspan=3, sticky="ew", padx=20, pady=(0, 12))
         self._result_panel.grid_columnconfigure(0, weight=1)
-        self._result_var = ctk.StringVar(value="No deletion executed yet.")
+        self._result_var = ctk.StringVar(value="")
         ctk.CTkLabel(
             self._result_panel,
             text="Execution Result",
@@ -249,20 +254,81 @@ class ReviewPageCTK(ctk.CTkFrame):
         self._details.insert("end", "Load a scan result to review duplicate groups.\n")
         self._details.configure(state="disabled")
 
-        self._themed_sections = [top, left, center, right, self._result_panel]
+        self._review_empty = ctk.CTkFrame(
+            self,
+            corner_radius=16,
+            fg_color=tk["bg_panel"],
+            border_width=1,
+            border_color=tk["border_subtle"],
+        )
+        self._review_empty.grid_columnconfigure(0, weight=1)
+        self._review_empty.grid_rowconfigure(0, weight=1)
+        empty_inner = ctk.CTkFrame(self._review_empty, fg_color="transparent")
+        empty_inner.grid(row=0, column=0, sticky="nsew", padx=40, pady=48)
+        ctk.CTkLabel(
+            empty_inner,
+            text="📭",
+            font=ctk.CTkFont(size=48),
+        ).pack(pady=(0, 12))
+        ctk.CTkLabel(
+            empty_inner,
+            text="No scan to review",
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color=tk["text_primary"],
+        ).pack()
+        ctk.CTkLabel(
+            empty_inner,
+            text="Run a scan from Home or Scan, open a result from History,\nor refresh if you already completed a scan in this session.",
+            font=ctk.CTkFont(size=14),
+            text_color=tk["text_secondary"],
+            wraplength=520,
+            justify="center",
+        ).pack(pady=(12, 0))
+
+        self._themed_sections = [top, left, center, right, self._result_panel, self._review_empty]
+        self._layout_review_empty(True)
+        self._group_row_normal = "transparent"
+        self._group_row_hover = self._tokens["bg_overlay"]
+        self._group_row_selected = self._tokens["bg_elevated"]
+        self._result_panel.grid_remove()
+
+    def _layout_review_empty(self, show: bool) -> None:
+        """Toggle full-page empty state vs the three-column review layout."""
+        if not hasattr(self, "_review_empty"):
+            return
+        if show:
+            self._review_left.grid_remove()
+            self._review_center.grid_remove()
+            self._review_right.grid_remove()
+            self._review_empty.grid(row=1, column=0, columnspan=3, sticky="nsew", padx=20, pady=(0, 12))
+        else:
+            self._review_empty.grid_remove()
+            self._review_left.grid(row=1, column=0, sticky="nsew", padx=(20, 8), pady=(0, 12))
+            self._review_center.grid(row=1, column=1, sticky="nsew", padx=8, pady=(0, 12))
+            self._review_right.grid(row=1, column=2, sticky="nsew", padx=(8, 20), pady=(0, 12))
 
     def apply_theme_tokens(self, tokens: dict) -> None:
         panel = str(tokens.get("bg_panel", "#161b22"))
         elev = str(tokens.get("bg_elevated", "#21262d"))
-        acc = str(tokens.get("accent_primary", "#3B8ED0"))
         br = resolve_border_token(tokens)
         surf = str(tokens.get("bg_surface", "#0D1117"))
         txt = str(tokens.get("text_secondary", "#94A3B8"))
         for f in self._themed_sections:
             f.configure(fg_color=panel, border_color=br)
-        self._execute_btn.configure(fg_color=acc, hover_color=str(tokens.get("accent_secondary", "#36719F")))
+        self._execute_btn.configure(
+            fg_color=str(tokens.get("danger", "#E53E3E")),
+            hover_color=str(tokens.get("danger_hover", "#9B2C2C")),
+        )
+        if hasattr(self, "_preview_title"):
+            self._preview_title.configure(text_color=str(tokens.get("text_primary", "#F1F5F9")))
         self._refresh_btn.configure(fg_color=elev, border_color=br)
         self._details.configure(fg_color=surf, text_color=txt, border_color=br)
+
+        self._group_row_hover = theme_pair(tokens.get("bg_overlay"), self._tokens["bg_overlay"])
+        self._group_row_selected = theme_pair(tokens.get("bg_elevated"), self._tokens["bg_elevated"])
+        cur = self._group_var.get()
+        if cur and self._group_row_frames:
+            self._highlight_group_row(cur)
 
     def set_refresh_callback(self, callback: Callable[[], ScanResult | None]) -> None:
         self._refresh_callback = lambda: self.load_result(callback())
@@ -296,23 +362,92 @@ class ReviewPageCTK(ctk.CTkFrame):
             self._render_group_details(cur)
             self._refresh_heroes()
 
+    def _ctk_confirm(self, title: str, message: str) -> bool:
+        """Themed confirmation (matches CTK chrome; avoids native messagebox on dark UI)."""
+        tk = self._tokens
+        bg = tk["bg_base"]
+        txt = tk["text_primary"]
+        muted = tk["text_secondary"]
+        danger = tk["danger"]
+        danger_hover = tk["danger_hover"]
+        root = self.winfo_toplevel()
+        out: list[bool] = [False]
+
+        dlg = ctk.CTkToplevel(root)
+        dlg.title(title)
+        dlg.geometry("440x260")
+        dlg.configure(fg_color=bg)
+        dlg.transient(root)
+        dlg.grab_set()
+
+        ctk.CTkLabel(
+            dlg,
+            text=title,
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=txt,
+        ).pack(pady=(16, 8))
+        ctk.CTkLabel(
+            dlg,
+            text=message,
+            wraplength=400,
+            justify="left",
+            font=ctk.CTkFont(size=13),
+            text_color=muted,
+        ).pack(padx=20, pady=(0, 16))
+
+        row = ctk.CTkFrame(dlg, fg_color="transparent")
+        row.pack(pady=(0, 16))
+        ctk.CTkButton(
+            row,
+            text="Cancel",
+            width=120,
+            fg_color=tk["bg_elevated"],
+            hover_color=tk["bg_overlay"],
+            text_color=muted,
+            command=dlg.destroy,
+        ).pack(side="left", padx=8)
+        ctk.CTkButton(
+            row,
+            text="Move to Trash",
+            width=140,
+            fg_color=danger,
+            hover_color=danger_hover,
+            text_color=("#FFFFFF", "#0A0E14"),
+            command=lambda: (out.__setitem__(0, True), dlg.destroy()),
+        ).pack(side="left", padx=8)
+
+        dlg.protocol("WM_DELETE_WINDOW", dlg.destroy)
+        try:
+            dlg.focus_force()
+        except (tkinter.TclError, RuntimeError):
+            pass
+        dlg.wait_window()
+        return out[0]
+
+    def _show_result_panel(self) -> None:
+        """Show execution summary after a delete run (hidden until first outcome)."""
+        if hasattr(self, "_result_panel"):
+            self._result_panel.grid(row=2, column=0, columnspan=3, sticky="ew", padx=20, pady=(0, 12))
+
     def confirm_deletion(self, plan: Any, prev: dict) -> str:
         n = prev.get("total_files", "?")
         sz = prev.get("human_readable_size", "?")
-        if not messagebox.askyesno(
-            "Confirm Deletion",
-            f"Delete {n} file(s) (~{sz})?\nFiles are moved to Trash per your deletion policy.",
-            parent=self.winfo_toplevel(),
-        ):
+        msg = (
+            f"Move {n} duplicate file(s) to Trash?\n\n"
+            f"Total size: ~{sz}\n\n"
+            "Files can be restored from the Recycle Bin or Trash until you empty it."
+        )
+        if not self._ctk_confirm("Move to Trash", msg):
             return "cancel"
         return "proceed"
 
     def on_execute_start(self) -> None:
-        self._execute_btn.configure(state="disabled", text="Executing…")
+        self._execute_btn.configure(state="disabled", text="Working…")
         self.update_idletasks()
 
     def on_execute_done(self, result: DeletionResult) -> None:
-        self._execute_btn.configure(state="normal", text="Execute Deletion")
+        self._execute_btn.configure(state="normal", text="🗑️ Move to Trash")
+        self._show_result_panel()
         self._result_var.set(
             f"Deleted {len(result.deleted_files)} · Failed {len(result.failed_files)} · Reclaimed {fmt_bytes(result.bytes_reclaimed)}"
         )
@@ -392,7 +527,10 @@ class ReviewPageCTK(ctk.CTkFrame):
 
     def load_result(self, result: ScanResult | None) -> None:
         self._result = result
+        if hasattr(self, "_result_panel"):
+            self._result_panel.grid_remove()
         if not result or not result.duplicate_groups:
+            self._layout_review_empty(True)
             self._summary_var.set("No duplicate groups available")
             self._group_map = {}
             self._keep_map = {}
@@ -406,8 +544,37 @@ class ReviewPageCTK(ctk.CTkFrame):
             self._compare_var.set(_COMPARE_EMPTY)
             self._clear_compare_ui()
             self._set_details("No duplicate groups in last scan.")
+            if hasattr(self, "_preview_title"):
+                self._preview_title.configure(text="File preview")
             return
         self._group_map = {str(g.group_id): g for g in result.duplicate_groups if len(getattr(g, "files", []) or []) >= 2}
+        if not self._group_map:
+            self._layout_review_empty(False)
+            reclaim = int(getattr(result, "total_reclaimable_bytes", 0) or 0)
+            self._summary_var.set(
+                f"No duplicate groups of 2+ files · {fmt_bytes(reclaim)} reclaimable (scan result)"
+                if reclaim
+                else "No duplicate groups of 2+ files in this scan"
+            )
+            self._keep_map = {}
+            self._group_var.set("")
+            self._clear_group_rows()
+            self._show_no_duplicates_empty()
+            self._keep_menu.configure(values=[""])
+            self._keep_var.set("")
+            self._keep_label_to_path.clear()
+            self._compare_label_to_path.clear()
+            self._compare_menu.configure(values=[_COMPARE_EMPTY])
+            self._compare_var.set(_COMPARE_EMPTY)
+            self._clear_compare_ui()
+            self._set_details("No groups with at least two files to compare.")
+            if hasattr(self, "_preview_title"):
+                self._preview_title.configure(text="File preview")
+            if self._store:
+                self._store.set_review_selection(ReviewSelectionState(keep_selections={}, selected_group_id=None))
+            self._push_review_slices_to_store()
+            return
+        self._layout_review_empty(False)
         self._keep_map = {gid: self._default_keep_for_group(self._group_map[gid]) for gid in self._group_map}
         if self._store:
             km = default_keep_map_from_result(result)
@@ -448,36 +615,79 @@ class ReviewPageCTK(ctk.CTkFrame):
             w.destroy()
         self._group_row_frames.clear()
 
+    def _show_no_duplicates_empty(self) -> None:
+        """In-list empty state when a result is loaded but no 2+ file groups exist."""
+        empty = ctk.CTkFrame(self._group_scroll, fg_color="transparent")
+        empty.pack(fill="both", expand=True)
+        ctk.CTkLabel(
+            empty,
+            text="🎉 No duplicates found!\n\n"
+            "Your files are well-organized.",
+            justify="center",
+            wraplength=200,
+            text_color=self._tokens["text_secondary"],
+            font=ctk.CTkFont(size=13),
+        ).pack(expand=True, pady=24)
+
+    @staticmethod
+    def _group_card_labels(group: object, *, ordinal: int | None = None) -> tuple[str, str]:
+        """User-facing title/sub for a duplicate group (ordinal + extensions + size, not raw UUIDs)."""
+        files = list(getattr(group, "files", []) or [])
+        n = len(files)
+        exts = sorted(
+            {Path(getattr(f, "path", "") or "").suffix.lower() for f in files if getattr(f, "path", "")}
+        )
+        exts = [e for e in exts if e]
+        if not exts:
+            ext_label = "files"
+        elif len(exts) <= 4:
+            ext_label = ", ".join(exts)
+        else:
+            ext_label = f"{exts[0]}, … ({len(exts)} types)"
+        size_b = int(getattr(group, "total_size", 0) or 0)
+        if size_b <= 0:
+            size_b = sum(int(getattr(f, "size", 0) or 0) for f in files)
+        prefix = f"#{ordinal} · " if ordinal is not None else ""
+        title = f"{prefix}{n} × {ext_label}"
+        sub = fmt_bytes(size_b) if size_b else "—"
+        return title, sub
+
     def _rebuild_group_rows(self, gids: list[str]) -> None:
         self._clear_group_rows()
-        for gid in gids:
+        for i, gid in enumerate(gids):
             group = self._group_map[gid]
-            n = len(getattr(group, "files", []) or [])
-            inner = ctk.CTkFrame(self._group_scroll, corner_radius=8)
+            title_txt, sub_txt = self._group_card_labels(group, ordinal=i + 1)
+            inner = ctk.CTkFrame(self._group_scroll, corner_radius=8, fg_color=self._group_row_normal)
             inner.pack(fill="x", pady=4)
-            title_lbl = ctk.CTkLabel(inner, text=f"Group {gid}", font=ctk.CTkFont(weight="bold"), anchor="w")
+            title_lbl = ctk.CTkLabel(
+                inner, text=title_txt, font=ctk.CTkFont(weight="bold"), text_color=self._tokens["text_primary"], anchor="w"
+            )
             title_lbl.pack(anchor="w", padx=10, pady=(8, 0))
-            sub = ctk.CTkLabel(inner, text=f"{n} files", text_color=("gray45", "gray65"), anchor="w")
+            sub = ctk.CTkLabel(inner, text=sub_txt, text_color=self._tokens["text_secondary"], anchor="w")
             sub.pack(anchor="w", padx=10, pady=(0, 8))
             for w in (inner, title_lbl, sub):
                 w.bind("<Button-1>", lambda _e, g=gid: self._select_group(g))
-            inner.bind("<Enter>", lambda _e, fr=inner: fr.configure(fg_color=("gray85", "gray25")))
+            inner.bind("<Enter>", lambda _e, g=gid, fr=inner: self._on_group_row_enter(fr, g))
             inner.bind("<Leave>", lambda _e, fr=inner, g=gid: self._group_row_leave(fr, g))
             self._group_row_frames[gid] = inner
         self._highlight_group_row(self._group_var.get())
 
+    def _on_group_row_enter(self, fr: ctk.CTkFrame, gid: str) -> None:
+        if self._group_var.get() != gid:
+            fr.configure(fg_color=self._group_row_hover)
+
     def _group_row_leave(self, fr: ctk.CTkFrame, gid: str) -> None:
         if self._group_var.get() == gid:
-            fr.configure(fg_color=("gray78", "gray28"))
+            fr.configure(fg_color=self._group_row_selected)
         else:
-            fr.configure(fg_color=("gray90", "gray20"))
+            fr.configure(fg_color=self._group_row_normal)
 
     def _highlight_group_row(self, gid: str) -> None:
         for g, fr in self._group_row_frames.items():
             if g == gid:
-                fr.configure(fg_color=("gray78", "gray28"))
+                fr.configure(fg_color=self._group_row_selected)
             else:
-                fr.configure(fg_color=("gray90", "gray20"))
+                fr.configure(fg_color=self._group_row_normal)
 
     def _select_group(self, gid: str) -> None:
         if gid not in self._group_map:
@@ -489,7 +699,23 @@ class ReviewPageCTK(ctk.CTkFrame):
         self._rebuild_compare_menu(gid)
         self._render_group_details(gid)
         self._refresh_heroes()
+        self._update_preview_heading(gid)
         self._push_review_slices_to_store()
+
+    def _update_preview_heading(self, gid: str) -> None:
+        if not hasattr(self, "_preview_title"):
+            return
+        group = self._group_map.get(gid)
+        if group is None:
+            self._preview_title.configure(text="File preview")
+            return
+        has_img = False
+        for f in getattr(group, "files", []) or []:
+            p = getattr(f, "path", "") or ""
+            if p and is_image_extension(Path(p).suffix.lower().lstrip(".")):
+                has_img = True
+                break
+        self._preview_title.configure(text="Image comparison" if has_img else "File preview")
 
     def _push_review_slices_to_store(self) -> None:
         """Publish review index / preview / plan slices for subscribers (store-first contract)."""
@@ -690,7 +916,10 @@ class ReviewPageCTK(ctk.CTkFrame):
             self._set_details("No group selected.")
             return
         keep = self._keep_map.get(gid, "")
-        lines = [f"Group {gid}", f"Keep: {Path(keep).name if keep else '—'}", ""]
+        gids = list(self._group_map.keys())
+        ord_i = gids.index(gid) + 1
+        head, _sz = self._group_card_labels(group, ordinal=ord_i)
+        lines = [head, f"Keep: {Path(keep).name if keep else '—'}", ""]
         for f in getattr(group, "files", []):
             marker = "KEEP" if f.path == keep else "DEL "
             lines.append(f"[{marker}] {f.path}")
@@ -701,20 +930,18 @@ class ReviewPageCTK(ctk.CTkFrame):
             self._review_controller.handle_execute_deletion()
             return
         if not self._on_execute:
-            self._result_var.set("Review controller not wired.")
+            self._set_details("Review execution is not wired.")
             return
         if not self._keep_map:
-            self._result_var.set("Nothing to execute.")
             self._set_details("Nothing to execute.")
             return
         if not self._confirm_execute():
-            self._result_var.set("Execution cancelled.")
             return
         result = self._on_execute(dict(self._keep_map))
         if result is None:
-            self._result_var.set("Deletion failed or no plan generated.")
             self._set_details("Deletion execution failed or no plan generated.")
             return
+        self._show_result_panel()
         self._result_var.set(
             f"Deleted {len(result.deleted_files)} · Failed {len(result.failed_files)} · Reclaimed {fmt_bytes(result.bytes_reclaimed)}"
         )
@@ -734,12 +961,12 @@ class ReviewPageCTK(ctk.CTkFrame):
                 if f.path != keep:
                     files_to_delete += 1
                     reclaimable += int(getattr(f, "size", 0) or 0)
-        return messagebox.askyesno(
-            "Confirm Deletion",
-            f"Delete {files_to_delete} file(s)?\nEstimated reclaim: {fmt_bytes(reclaimable)}\n\n"
-            "Files will be moved according to active deletion policy.",
-            parent=self.winfo_toplevel(),
+        msg = (
+            f"Move {files_to_delete} file(s) to Trash?\n\n"
+            f"Estimated space to free: {fmt_bytes(reclaimable)}\n\n"
+            "Files go to the Recycle Bin or Trash (not permanently deleted) unless your system policy says otherwise."
         )
+        return self._ctk_confirm("Move to Trash", msg)
 
     def _default_keep_for_group(self, group) -> str:
         files = list(getattr(group, "files", []) or [])

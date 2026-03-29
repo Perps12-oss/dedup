@@ -31,7 +31,6 @@ from .ctk_pages.review_page import ReviewPageCTK
 from .ctk_pages.scan_page import ScanPageCTK
 from .ctk_pages.settings_page import SettingsPageCTK
 from .ctk_pages.themes_page import ThemesPageCTK
-from .ctk_pages.welcome_page import WelcomePageCTK
 from .ctk_shortcuts import CTKShortcutRegistry
 from .projections.history_projection import build_history_from_coordinator
 from .projections.hub import ProjectionHub
@@ -43,6 +42,8 @@ from .utils.formatting import fmt_bytes
 from .utils.ui_state import UIState
 
 _log = logging.getLogger(__name__)
+
+_MIN_W, _MIN_H = 760, 480
 
 
 class CerebroCTKApp:
@@ -56,8 +57,7 @@ class CerebroCTKApp:
         ctk.set_default_color_theme("blue")
 
         self.root = ctk.CTk()
-        self.root.title(f"{self.APP_NAME} Dedup Engine v{self.APP_VERSION}")
-        self.root.geometry("1180x760")
+        self.root.title(f"{self.APP_NAME}  —  Duplicate File Cleaner  v{self.APP_VERSION}")
         self.root.minsize(760, 480)
 
         # Accessibility improvements
@@ -65,6 +65,7 @@ class CerebroCTKApp:
         self.root.focus_set()  # Set initial focus
 
         self.state = UIState()
+        self._apply_saved_window_geometry()
         self._coordinator = ScanCoordinator()
         self._runtime = ApplicationRuntime(self._coordinator)
         self.state.attach_settings_service(self._runtime.settings)
@@ -88,7 +89,7 @@ class CerebroCTKApp:
 
         self._pages: dict[str, ctk.CTkFrame] = {}
         self._nav_buttons: dict[str, ctk.CTkButton] = {}
-        self._active_page: str = "Welcome"
+        self._active_page: str = "Home"
         self._content_host: ctk.CTkFrame | None = None
         self._nav: ctk.CTkFrame | None = None
         self._content: ctk.CTkFrame | None = None
@@ -111,7 +112,7 @@ class CerebroCTKApp:
         self._bind_global_shortcuts()
         # Shell widgets exist now — sync chrome/panels to finalized theme tokens.
         self._on_theme_tokens(self._tm.tokens)
-        self._show_page("Welcome")
+        self._show_page("Home")
         try:
             self.root.after(80, self._paint_cinematic_backdrop)
             self.root.after(300, self._paint_cinematic_backdrop)
@@ -131,6 +132,22 @@ class CerebroCTKApp:
         except Exception as e:
             _log.warning("Theme apply failed (degraded styling): %s", e)
             self.store.set_ui_degraded(UiDegradedFlags(theme_apply_failed=True, theme_last_error=str(e)[:400]))
+
+    def _apply_saved_window_geometry(self) -> None:
+        """Restore width/height/position from ui_settings when valid; else use defaults."""
+        s = self.state.settings
+        w, h = int(s.window_width or 0), int(s.window_height or 0)
+        x, y = int(s.window_x), int(s.window_y)
+        try:
+            if w >= _MIN_W and h >= _MIN_H:
+                if x >= 0 and y >= 0:
+                    self.root.geometry(f"{w}x{h}+{x}+{y}")
+                else:
+                    self.root.geometry(f"{w}x{h}")
+                return
+        except (tk.TclError, ValueError, TypeError) as e:
+            _log.debug("Saved window geometry invalid, using default: %s", e)
+        self.root.geometry("1180x760")
 
     def _main_chrome_color(self, tokens: dict) -> str:
         """Solid fill for the main column (must match gradient tokens — CTk cannot show Canvas through)."""
@@ -182,12 +199,13 @@ class CerebroCTKApp:
                         page.apply_theme_tokens(tokens)
                     except Exception as e:
                         _log.warning("Page apply_theme_tokens failed: %s", e)
-            # Nav buttons: keep selection logic but use accent as base.
+            # Nav: active = accent; inactive = sidebar (theme-aware).
+            inactive = sidebar
             for name, btn in self._nav_buttons.items():
                 if name == self._active_page:
-                    btn.configure(fg_color=("#2B6CB0", acc))
+                    btn.configure(fg_color=acc)
                 else:
-                    btn.configure(fg_color=("#234E70", "#1f538d"))
+                    btn.configure(fg_color=inactive)
         except Exception as e:
             _log.warning("Full theme token pass failed: %s", e)
 
@@ -197,11 +215,12 @@ class CerebroCTKApp:
             return
         try:
             acc = str(self._tm.tokens.get("accent_primary", "#3B8ED0"))
+            inactive = str(self._tm.tokens.get("bg_sidebar", "#141924"))
             for name, btn in self._nav_buttons.items():
                 if name == self._active_page:
-                    btn.configure(fg_color=("#2B6CB0", acc))
+                    btn.configure(fg_color=acc)
                 else:
-                    btn.configure(fg_color=("#234E70", "#1f538d"))
+                    btn.configure(fg_color=inactive)
         except Exception as e:
             _log.debug("Nav sync failed: %s", e)
 
@@ -246,9 +265,9 @@ class CerebroCTKApp:
         scan = self._pages.get("Scan")
         if isinstance(scan, ScanPageCTK):
             scan.attach_store(self.store)
-        mission = self._pages.get("Mission")
-        if isinstance(mission, MissionPageCTK):
-            mission.attach_store(self.store)
+        home = self._pages.get("Home")
+        if isinstance(home, MissionPageCTK):
+            home.attach_store(self.store)
         diag = self._pages.get("Diagnostics")
         if isinstance(diag, DiagnosticsPageCTK):
             diag.attach_store(self.store)
@@ -345,27 +364,23 @@ class CerebroCTKApp:
         ctk.CTkLabel(nav, text="CEREBRO", font=ctk.CTkFont(size=22, weight="bold")).grid(
             row=0, column=0, padx=20, pady=(20, 8), sticky="w"
         )
-        ctk.CTkLabel(nav, text="CustomTkinter · hub + store", font=ctk.CTkFont(size=12)).grid(
+        ctk.CTkLabel(nav, text=f"v{self.APP_VERSION}", font=ctk.CTkFont(size=11), text_color=("gray40", "gray60")).grid(
             row=1, column=0, padx=20, pady=(0, 16), sticky="w"
         )
 
         for i, title in enumerate(
-            ["Welcome", "Mission", "Scan", "Review", "History", "Diagnostics", "Themes", "Settings"], start=2
+            ["Home", "Scan", "Review", "History", "Settings"],
+            start=2,
         ):
             btn = ctk.CTkButton(nav, text=title, anchor="w", command=lambda t=title: self._show_page(t))
             btn.grid(row=i, column=0, padx=14, pady=6, sticky="ew")
-            # Store shortcuts separately for help display
             shortcuts = {
-                "Welcome": None,
-                "Mission": "Ctrl+1",
+                "Home": "Ctrl+1",
                 "Scan": "Ctrl+2",
                 "Review": "Ctrl+3",
                 "History": "Ctrl+4",
-                "Diagnostics": "Ctrl+5",
-                "Themes": "Ctrl+7",
-                "Settings": "Ctrl+,"
+                "Settings": "Ctrl+5",
             }
-            # Store shortcut for this button (used in help)
             if shortcuts.get(title):
                 btn.shortcut_hint = shortcuts[title]
             self._nav_buttons[title] = btn
@@ -405,13 +420,13 @@ class CerebroCTKApp:
         except Exception as e:
             _log.warning("Initial gradient bar token sync failed: %s", e)
 
-        self._title_var = ctk.StringVar(value="Welcome")
+        self._title_var = ctk.StringVar(value="Home")
         ctk.CTkLabel(content, textvariable=self._title_var, font=ctk.CTkFont(size=28, weight="bold")).grid(
             row=1, column=0, padx=24, pady=(18, 8), sticky="w"
         )
         ctk.CTkLabel(
             content,
-            text="Live scan state: ProjectionHub → UIStateStore (same pipeline as the ttk shell).",
+            text="Select a page in the sidebar to begin.",
             justify="left",
             text_color=("gray35", "gray65"),
         ).grid(row=2, column=0, padx=24, pady=(0, 16), sticky="w")
@@ -441,21 +456,13 @@ class CerebroCTKApp:
 
         # Page roots: transparent → inherit main column chrome (see cinematic_chrome_color).
         _tp = {"fg_color": "transparent"}
-        self._pages["Welcome"] = WelcomePageCTK(
-            self._content_host,
-            on_scan_photos=lambda: self._start_scan_mode("photos"),
-            on_scan_videos=lambda: self._start_scan_mode("videos"),
-            on_scan_files=lambda: self._start_scan_mode("files"),
-            on_resume_scan=self._resume_scan_latest,
-            on_open_last_review=self._open_last_review,
-            **_tp,
-        )
-        self._pages["Mission"] = MissionPageCTK(
+        self._pages["Home"] = MissionPageCTK(
             self._content_host,
             on_start_scan=lambda: self._start_scan_mode("files"),
             on_resume_scan=self._resume_scan_latest,
             on_open_last_review=self._open_last_review,
             on_quick_scan=self._handle_mission_quick_scan,
+            on_open_scan=self._open_history_scan_in_review,
             **_tp,
         )
         self._pages["Scan"] = ScanPageCTK(
@@ -519,7 +526,7 @@ class CerebroCTKApp:
         self._active_page = title
         self._title_var.set(title)
         self._sync_nav_buttons()
-        if title == "Mission":
+        if title == "Home":
             self._push_mission_store()
         elif title == "History":
             self._push_history_store()
@@ -543,9 +550,7 @@ class CerebroCTKApp:
         if isinstance(page, ScanPageCTK):
             page.set_mode(mode)
             page.apply_decision_defaults(self._default_keep_policy, self._post_scan_route)
-            self._title_var.set(
-                f"Scan ({self._last_scan_mode.title()}) · Keep:{self._default_keep_policy} · After:{self._post_scan_route}"
-            )
+            self._title_var.set("Scan")
 
     def _handle_mission_quick_scan(self, payload: ScanStartPayload) -> None:
         merged: ScanStartPayload = {
@@ -576,7 +581,7 @@ class CerebroCTKApp:
         if path:
             page.set_target_path(path)
         page.apply_decision_defaults(keep_policy, post_scan_route)
-        self._title_var.set(f"Scan ({mode.title()}) · Keep:{self._default_keep_policy} · After:{self._post_scan_route}")
+        self._title_var.set("Scan")
         if not path:
             page.set_status("Idle (no folder selected)")
             return
@@ -591,14 +596,14 @@ class CerebroCTKApp:
                 on_cancel=self._on_scan_cancelled_worker,
             )
             page.set_status(f"Running (scan_id: {self._active_scan_id[:8]}...)")
-            page.set_session(session_id=self._active_scan_id[:8] + "...", phase="starting")
+            page.set_session(phase="starting")
             page.set_scan_busy(True)
         except Exception as ex:
             page.set_status(f"Error starting scan: {ex}")
 
     def _resume_scan_latest(self) -> None:
         self._show_page("Scan")
-        self._title_var.set("Scan (Resume)")
+        self._title_var.set("Scan")
         ids = self._runtime.scan.get_resumable_scan_ids() or []
         page = self._pages.get("Scan")
         if not isinstance(page, ScanPageCTK):
@@ -615,7 +620,7 @@ class CerebroCTKApp:
                 on_cancel=self._on_scan_cancelled_worker,
             )
             page.set_status(f"Running (resumed: {self._active_scan_id[:8]}...)")
-            page.set_session(session_id=self._active_scan_id[:8] + "...", phase="resuming")
+            page.set_session(phase="resuming")
             page.set_scan_busy(True)
         except Exception as ex:
             page.set_status(f"Resume failed: {ex}")
@@ -627,9 +632,9 @@ class CerebroCTKApp:
             self._active_scan_id = ""
             if isinstance(page, ScanPageCTK):
                 page.set_status("Cancelled")
-                page.set_session(session_id="—", phase="cancelled")
+                page.set_session(phase="cancelled")
             return
-        self._show_page("Mission")
+        self._show_page("Home")
 
     def _open_last_review(self) -> None:
         review = self._pages.get("Review")
@@ -672,10 +677,10 @@ class CerebroCTKApp:
         if isinstance(page, ScanPageCTK):
             page.set_scan_busy(False)
             page.set_status(f"Completed: {len(result.duplicate_groups)} groups")
-            page.set_session(session_id=result.scan_id[:8] + "...", phase="complete")
+            page.set_session(phase="complete")
             route = (self._post_scan_route or "review").lower()
             route_label = {
-                "mission": "Go to Mission",
+                "mission": "Go to Home",
                 "scan": "Stay on Scan",
                 "review": "Open Review",
             }.get(route, "Open Review")
@@ -706,12 +711,12 @@ class CerebroCTKApp:
         if isinstance(page, ScanPageCTK):
             page.set_scan_busy(False)
             page.set_status(f"Error: {error[:120]}")
-            page.set_session(session_id="—", phase="error")
+            page.set_session(phase="error")
 
     def _route_after_scan(self) -> None:
         route = (self._post_scan_route or "review").lower()
         if route == "mission":
-            self._show_page("Mission")
+            self._show_page("Home")
             return
         if route == "scan":
             self._show_page("Scan")
@@ -794,12 +799,11 @@ class CerebroCTKApp:
         reg = CTKShortcutRegistry(self.root)
 
         # Navigation shortcuts
-        reg.register("<Control-Key-1>", "Mission Control", lambda e: self._show_page("Mission"))
-        reg.register("<Control-Key-2>", "Live Scan Studio", lambda e: self._show_page("Scan"))
-        reg.register("<Control-Key-3>", "Decision Studio", lambda e: self._show_page("Review"))
+        reg.register("<Control-Key-1>", "Home", lambda e: self._show_page("Home"))
+        reg.register("<Control-Key-2>", "Scan", lambda e: self._show_page("Scan"))
+        reg.register("<Control-Key-3>", "Review", lambda e: self._show_page("Review"))
         reg.register("<Control-Key-4>", "History", lambda e: self._show_page("History"))
-        reg.register("<Control-Key-5>", "Diagnostics", lambda e: self._show_page("Diagnostics"))
-        reg.register("<Control-Key-7>", "Themes", lambda e: self._show_page("Themes"))
+        reg.register("<Control-Key-5>", "Settings", lambda e: self._show_page("Settings"))
         reg.register("<Control-comma>", "Settings", lambda e: self._show_page("Settings"))
 
         # Action shortcuts
@@ -808,8 +812,9 @@ class CerebroCTKApp:
         reg.register("<Control-n>", "New scan", lambda e: self._show_page("Scan"))
         reg.register("<F5>", "Refresh current page", lambda e: self._refresh_current_page())
 
-        # Help shortcut
+        # Help: `?` alone, or Ctrl+Shift+/ (same as Ctrl+? on US QWERTY)
         reg.register("?", "Shortcut help", lambda e: self._show_shortcuts_help())
+        reg.register("<Control-Shift-slash>", "Show this help", lambda e: self._show_shortcuts_help())
 
         self._shortcut_registry = reg
 
@@ -821,37 +826,81 @@ class CerebroCTKApp:
                 page.reload()
 
     def _show_shortcuts_help(self) -> None:
-        """Show keyboard shortcuts help dialog."""
-        from tkinter import messagebox
+        """Show keyboard shortcuts in a themed CTK window (matches app chrome)."""
+        t = self._tm.tokens
+        bg = str(t.get("bg_base", "#0f131c"))
+        panel = str(t.get("bg_panel", "#1C2128"))
+        txt = str(t.get("text_primary", "#F1F5F9"))
+        muted = str(t.get("text_secondary", "#94A3B8"))
+        acc = str(t.get("accent_primary", "#3B8ED0"))
 
-        shortcuts = [
-            "Keyboard Shortcuts:",
-            "",
-            "Navigation:",
-        ] + self._shortcut_registry.describe_lines() + [
-            "",
-            "Page-specific shortcuts:",
-            "  Ctrl+O                Open last review (from any page)",
-            "  Ctrl+R                Resume last scan (from any page)",
-            "  Ctrl+N                Start new scan (from any page)",
-            "  F5                   Refresh current page",
-            "",
-            "Review page:",
-            "  Space                 Keep selected file",
-            "  Delete               Delete selected file",
-            "  Ctrl+A               Select all files",
-            "  Ctrl+D               Deselect all files",
-            "",
-            "Scan page:",
-            "  Ctrl+Enter           Start scan",
-            "  Escape               Cancel scan",
-        ]
+        dlg = ctk.CTkToplevel(self.root)
+        dlg.title("Keyboard shortcuts")
+        dlg.geometry("520x480")
+        dlg.configure(fg_color=bg)
+        dlg.transient(self.root)
+        dlg.grab_set()
 
-        messagebox.showinfo(
-            "Keyboard Shortcuts",
-            "\n".join(shortcuts),
-            parent=self.root
+        hdr = ctk.CTkLabel(
+            dlg,
+            text="Keyboard shortcuts",
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color=txt,
         )
+        hdr.pack(pady=(16, 8))
+
+        scroll = ctk.CTkScrollableFrame(dlg, fg_color=panel, corner_radius=12)
+        scroll.pack(fill="both", expand=True, padx=16, pady=(0, 12))
+
+        lines = [
+            "Navigation",
+            "  Ctrl+1                 Home",
+            "  Ctrl+2                 Scan",
+            "  Ctrl+3                 Review",
+            "  Ctrl+4                 History",
+            "  Ctrl+5                 Settings",
+            "  Ctrl+,                 Settings",
+            "  Ctrl+?                 Show this help",
+            "  ?                      Show this help",
+            "",
+            "Other",
+            "  Ctrl+O                Open last review",
+            "  Ctrl+R                Resume last scan",
+            "  Ctrl+N                Go to Scan",
+            "  F5                    Refresh current page",
+            "",
+            "Review",
+            "  Space                 Keep selected file",
+            "  Delete                Remove selected from compare",
+            "  Ctrl+A                Select all files",
+            "  Ctrl+D                Deselect all files",
+            "",
+            "Scan",
+            "  Ctrl+Enter            Start scan",
+            "  Escape                Cancel scan",
+        ]
+        body = ctk.CTkLabel(
+            scroll,
+            text="\n".join(lines),
+            justify="left",
+            anchor="w",
+            font=ctk.CTkFont(size=13),
+            text_color=muted,
+        )
+        body.pack(fill="both", expand=True, padx=12, pady=12)
+
+        ctk.CTkButton(
+            dlg,
+            text="Close",
+            width=120,
+            fg_color=acc,
+            command=dlg.destroy,
+        ).pack(pady=(0, 16))
+
+        try:
+            dlg.focus_force()
+        except (tk.TclError, RuntimeError):
+            pass
 
     def run(self) -> None:
         self.root.mainloop()

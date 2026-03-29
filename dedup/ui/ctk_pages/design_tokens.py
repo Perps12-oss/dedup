@@ -56,6 +56,9 @@ class ColorPalette:
     success: ColorPair = ("#059669", "#10B981")
     warning: ColorPair = ("#D97706", "#F59E0B")
     error: ColorPair = ("#DC2626", "#EF4444")
+    # Destructive actions (e.g. Move to Trash): solid red + darker red hover — not warning/amber.
+    danger: ColorPair = ("#E53E3E", "#E53E3E")
+    danger_hover: ColorPair = ("#9B2C2C", "#9B2C2C")
     info: ColorPair = ("#2563EB", "#3B82F6")
 
     gradient_start: ColorPair = ("#0891B2", "#22D3EE")
@@ -164,13 +167,20 @@ def get_theme_colors() -> Dict[str, ColorPair]:
             "success": p.success,
             "warning": p.warning,
             "error": p.error,
+            "danger": p.danger,
+            "danger_hover": p.danger_hover,
             "info": p.info,
             "gradient_start": p.gradient_start,
             "gradient_end": p.gradient_end,
             "cinematic_chrome_base": p.cinematic_chrome_base,
             "cinematic_chrome_dark": p.cinematic_chrome_dark,
         }
-    return dict(_THEME_COLORS_CACHE)
+    d = dict(_THEME_COLORS_CACHE)
+    # Backfill if cache was built before danger tokens existed (hot reload / long-lived shells).
+    p = get_palette()
+    d.setdefault("danger", p.danger)
+    d.setdefault("danger_hover", p.danger_hover)
+    return d
 
 
 def ctk_pairs_from_semantic_tokens(theme_tokens: dict) -> Dict[str, ColorPair]:
@@ -224,6 +234,8 @@ def ctk_pairs_from_semantic_tokens(theme_tokens: dict) -> Dict[str, ColorPair]:
         "success": dup("success", p.success),
         "warning": dup("warning", p.warning),
         "error": dup("danger", p.error),
+        "danger": dup("danger", p.danger),
+        "danger_hover": dup("danger_hover", p.danger_hover),
         "info": dup("info", p.info),
         "gradient_start": dup("gradient_start", p.gradient_start),
         "gradient_end": dup("gradient_end", p.gradient_end),

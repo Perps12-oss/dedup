@@ -1,5 +1,5 @@
-# Development / audit tooling (optional)
--r docs/requirements.txt
+# Development: runtime stack (see requirements-ctk.txt) + audit / test tooling
+-r requirements-ctk.txt
 
 ruff>=0.8.0
 mypy>=1.8.0
@@ -7,6 +7,6 @@ pytest>=7.4.0
 vulture>=2.11
 pip-audit>=2.6.0
 pydeps>=1.12.0
-pylint>=3.0.0
 pre-commit>=3.5.0
-ttkbootstrap>=1.0.0
+# Transitive of pip-audit; pin to avoid CVE-2026-25645 (requests <2.33.0)
+requests>=2.33.0
