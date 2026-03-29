@@ -17,7 +17,7 @@ from typing import Callable
 
 import customtkinter as ctk
 
-from .design_tokens import get_theme_colors
+from .design_tokens import get_theme_colors, resolve_border_token
 
 
 class WelcomePageCTK(ctk.CTkFrame):
@@ -61,7 +61,7 @@ class WelcomePageCTK(ctk.CTkFrame):
         acc = str(tokens.get("accent_primary", "#22D3EE"))
         elev = str(tokens.get("bg_elevated", "#161B22"))
         panel = str(tokens.get("bg_panel", "#1C2128"))
-        border = str(tokens.get("border_subtle", "#21262D"))
+        border = resolve_border_token(tokens)
 
         # Card styling with subtle border
         self._card.configure(

@@ -109,6 +109,8 @@ class CerebroCTKApp:
         self._build_content()
         self._wire_pages()
         self._bind_global_shortcuts()
+        # Shell widgets exist now — sync chrome/panels to finalized theme tokens.
+        self._on_theme_tokens(self._tm.tokens)
         self._show_page("Welcome")
         try:
             self.root.after(80, self._paint_cinematic_backdrop)
@@ -172,7 +174,8 @@ class CerebroCTKApp:
             if self._content is not None:
                 self._content.configure(fg_color=chrome)
             if self._content_host is not None:
-                self._content_host.configure(fg_color="transparent")
+                # Solid chrome (not "transparent") avoids CTk repainting the page slot as black for a frame.
+                self._content_host.configure(fg_color=chrome)
             for page in self._pages.values():
                 if hasattr(page, "apply_theme_tokens"):
                     try:
@@ -187,6 +190,34 @@ class CerebroCTKApp:
                     btn.configure(fg_color=("#234E70", "#1f538d"))
         except Exception as e:
             _log.warning("Full theme token pass failed: %s", e)
+
+    def _sync_nav_buttons(self) -> None:
+        """Update nav bar selection colors only (avoids full chrome repaint on tab change)."""
+        if not self._nav_buttons:
+            return
+        try:
+            acc = str(self._tm.tokens.get("accent_primary", "#3B8ED0"))
+            for name, btn in self._nav_buttons.items():
+                if name == self._active_page:
+                    btn.configure(fg_color=("#2B6CB0", acc))
+                else:
+                    btn.configure(fg_color=("#234E70", "#1f538d"))
+        except Exception as e:
+            _log.debug("Nav sync failed: %s", e)
+
+    def _deferred_history_reload(self) -> None:
+        if self._active_page != "History":
+            return
+        hist = self._pages.get("History")
+        if isinstance(hist, HistoryPageCTK):
+            hist.reload()
+
+    def _deferred_diagnostics_reload(self) -> None:
+        if self._active_page != "Diagnostics":
+            return
+        diag = self._pages.get("Diagnostics")
+        if isinstance(diag, DiagnosticsPageCTK):
+            diag.reload()
 
     def _paint_cinematic_backdrop(self, _event: object = None) -> None:
         """Spine 2: full-area Tk Canvas behind an inset CTk shell (multi-stop wash)."""
@@ -397,7 +428,7 @@ class CerebroCTKApp:
         self._degraded_label.pack(padx=16, pady=8, fill="x")
         self._degraded_unsub = self.store.subscribe(self._sync_degraded_banner, fire_immediately=True)
 
-        self._content_host = ctk.CTkFrame(content, fg_color="transparent")
+        self._content_host = ctk.CTkFrame(content, fg_color=chrome)
         self._content_host.grid(row=4, column=0, padx=0, pady=(0, 0), sticky="nsew")
         self._content_host.grid_columnconfigure(0, weight=1)
         self._content_host.grid_rowconfigure(0, weight=1)
@@ -468,24 +499,31 @@ class CerebroCTKApp:
     def _show_page(self, title: str) -> None:
         if self._content_host is None or title not in self._pages:
             return
+        target = self._pages[title]
+        # Match page root to panel fill so any late repaint flashes the same color as cards.
+        panel_bg = str(self._tm.tokens.get("bg_panel", "#1C2128"))
+        try:
+            target.configure(fg_color=panel_bg)
+        except (tk.TclError, RuntimeError, ValueError):
+            pass
+        # Map the new page first and raise it, then unmap others. Doing forget-before-grid
+        # leaves the cell empty for one update cycle and causes a black/transparent flash.
+        target.grid(row=0, column=0, sticky="nsew")
+        try:
+            target.lift()
+        except (tk.TclError, RuntimeError):
+            pass
         for name, page in self._pages.items():
-            if name == title:
-                page.grid(row=0, column=0, sticky="nsew")
-            else:
+            if name != title:
                 page.grid_forget()
         self._active_page = title
         self._title_var.set(title)
-        for name, btn in self._nav_buttons.items():
-            btn.configure(fg_color=("gray75", "gray25") if name == title else ("#3a7ebf", "#1f538d"))
-        # Re-apply token-derived colors after selection changes.
-        self._on_theme_tokens(self._tm.tokens)
+        self._sync_nav_buttons()
         if title == "Mission":
             self._push_mission_store()
         elif title == "History":
             self._push_history_store()
-            hist = self._pages.get("History")
-            if isinstance(hist, HistoryPageCTK):
-                hist.reload()
+            self.root.after(0, self._deferred_history_reload)
         elif title == "Settings":
             st = self._pages.get("Settings")
             if isinstance(st, SettingsPageCTK):
@@ -496,9 +534,7 @@ class CerebroCTKApp:
             if isinstance(th, ThemesPageCTK):
                 th.on_show()
         elif title == "Diagnostics":
-            diag = self._pages.get("Diagnostics")
-            if isinstance(diag, DiagnosticsPageCTK):
-                diag.reload()
+            self.root.after(0, self._deferred_diagnostics_reload)
 
     def _start_scan_mode(self, mode: str) -> None:
         self._last_scan_mode = mode if mode in ("photos", "videos", "files") else "files"
@@ -689,6 +725,10 @@ class CerebroCTKApp:
     def _on_theme_change(self, key: str) -> None:
         """Handle theme selection change - persist theme_key to settings."""
         self.state.settings.theme_key = key
+        # Preset pick must replace any saved custom gradient; otherwise
+        # _apply_theme_from_settings() merges old stops and overrides the
+        # apply_theme() preview (looks like the theme "reverts").
+        self.state.settings.custom_gradient_stops = None
         self.state.save()
         # Apply to running CTK app: tk defaults + observers.
         self._apply_theme_from_settings()

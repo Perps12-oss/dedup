@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, List
 
+from .cinematic_tokens import finalize_cinematic_tokens
 from .theme_tokens import (
     ARCTIC_GLASS,
     AURORA_SLATE,
@@ -53,7 +54,8 @@ def get_theme_names() -> List[str]:
 
 
 def get_theme(key: str) -> ThemeDict:
-    return THEMES.get(key, THEMES[DEFAULT_THEME])
+    raw = THEMES.get(key, THEMES[DEFAULT_THEME])
+    return finalize_cinematic_tokens(dict(raw))
 
 
 def get_display_names() -> List[str]:

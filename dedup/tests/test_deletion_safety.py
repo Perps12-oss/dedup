@@ -84,6 +84,8 @@ def test_execute_plan_never_deletes_keep(temp_dir):
     )
     engine = DeletionEngine(dry_run=True)
     result = engine.execute_plan(plan)
+    assert result.verification is not None
+    assert result.verification_summary is not None
     assert keep_file.exists()
     assert result.success_count <= 1
     # In dry run we don't actually delete; keep_file must not be in failed with "Cannot delete keep"

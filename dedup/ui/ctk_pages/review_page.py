@@ -23,7 +23,7 @@ from ...engine.thumbnails import get_thumbnail_path
 from ..state.store import ReviewIndexState, ReviewPlanState, ReviewPreviewState, ReviewSelectionState
 from ..utils.formatting import fmt_bytes
 from ..utils.review_keep import coerce_keep_selections, default_keep_map_from_result
-from .design_tokens import get_theme_colors
+from .design_tokens import get_theme_colors, resolve_border_token
 
 if TYPE_CHECKING:
     from ..controller.review_controller import ReviewController
@@ -255,7 +255,7 @@ class ReviewPageCTK(ctk.CTkFrame):
         panel = str(tokens.get("bg_panel", "#161b22"))
         elev = str(tokens.get("bg_elevated", "#21262d"))
         acc = str(tokens.get("accent_primary", "#3B8ED0"))
-        br = str(tokens.get("border_subtle", "#21262D"))
+        br = resolve_border_token(tokens)
         surf = str(tokens.get("bg_surface", "#0D1117"))
         txt = str(tokens.get("text_secondary", "#94A3B8"))
         for f in self._themed_sections:

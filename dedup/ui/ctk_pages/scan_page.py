@@ -17,7 +17,7 @@ from ..ctk_action_contracts import KeepPolicy, PostScanRoute, ScanMode, ScanStar
 from ..projections.phase_projection import PHASE_LABELS, canonical_phase
 from ..state.selectors import scan_metrics, scan_session
 from ..utils.formatting import fmt_duration, fmt_int
-from .design_tokens import get_theme_colors
+from .design_tokens import get_theme_colors, resolve_border_token
 from .ui_utils import safe_callback
 
 if TYPE_CHECKING:
@@ -367,7 +367,7 @@ class ScanPageCTK(ctk.CTkFrame):
         panel = str(tokens.get("bg_panel", "#161b22"))
         elev = str(tokens.get("bg_elevated", "#21262d"))
         acc = str(tokens.get("accent_primary", "#3B8ED0"))
-        br = str(tokens.get("border_subtle", "#21262D"))
+        br = resolve_border_token(tokens)
         surf = str(tokens.get("bg_surface", "#0D1117"))
         txt = str(tokens.get("text_secondary", "#94A3B8"))
         for f in self._themed_sections:

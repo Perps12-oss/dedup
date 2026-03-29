@@ -15,6 +15,7 @@ from typing import Any, Callable, List, Optional, Tuple
 from .design_system import font_tuple, get_font_scale
 from .gradients import lerp_color
 from .sv_bridge import set_sun_valley_theme
+from .cinematic_tokens import finalize_cinematic_tokens
 from .theme_registry import DEFAULT_THEME, get_theme
 from .theme_tokens import ThemeDict
 
@@ -46,6 +47,9 @@ def merge_gradient_into_tokens(base: ThemeDict, stops: List[Tuple[float, str]]) 
     """Copy preset tokens and override gradient_* + multi-stop strip data."""
     s = sorted(stops, key=lambda x: x[0])
     t = dict(base)
+    # Force chrome + panels to follow the new gradient, not a stale finalized chrome.
+    t.pop("cinematic_chrome_base", None)
+    t.pop("cinematic_chrome_dark", None)
     t["gradient_start"] = s[0][1]
     t["gradient_end"] = s[-1][1]
     if len(s) >= 3:
@@ -53,7 +57,7 @@ def merge_gradient_into_tokens(base: ThemeDict, stops: List[Tuple[float, str]]) 
     else:
         t["gradient_mid"] = lerp_color(s[0][1], s[-1][1], 0.5)
     t["_multi_gradient_stops"] = s
-    return t
+    return finalize_cinematic_tokens(t)
 
 
 def get_theme_manager() -> "ThemeManager":

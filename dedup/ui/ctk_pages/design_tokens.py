@@ -2,6 +2,10 @@
 CEREBRO design tokens — centralized design system.
 
 Pages use :func:`get_theme_colors` for the ``self._tokens`` dict of (light, dark) pairs.
+
+Cinematic chrome is finalized in ``theme.cinematic_tokens`` (``cinematic_chrome_base`` /
+``cinematic_chrome_dark`` on each preset, with computed fallbacks). Use
+:func:`ctk_pairs_from_semantic_tokens` to mirror a live :class:`ThemeManager` dict in CTk pairs.
 """
 
 from __future__ import annotations
@@ -9,7 +13,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
+from ..theme.cinematic_tokens import adjust_color
+
 ColorPair = Tuple[str, str]
+
+
+def resolve_border_token(tokens: dict, *, fallback: str = "#21262D") -> str:
+    """Prefer ``border_soft`` (theme registry); fall back to ``border_subtle`` (CTk pair keys)."""
+    v = tokens.get("border_soft") or tokens.get("border_subtle", fallback)
+    return str(v)
+
+
+def resolve_border_default_token(tokens: dict, *, fallback: str = "#30363D") -> str:
+    """Prefer ``border_strong`` (theme registry); fall back to ``border_default`` (CTk pair keys)."""
+    v = tokens.get("border_strong") or tokens.get("border_default", fallback)
+    return str(v)
 
 
 @dataclass(frozen=True)
@@ -42,6 +60,9 @@ class ColorPalette:
 
     gradient_start: ColorPair = ("#0891B2", "#22D3EE")
     gradient_end: ColorPair = ("#7C3AED", "#A78BFA")
+    # Duplicated dark value for CTk (light unused when appearance_mode is dark).
+    cinematic_chrome_base: ColorPair = ("#E2E8F0", "#2A2F2C")
+    cinematic_chrome_dark: ColorPair = ("#CBD5E1", "#1E221F")
 
 
 @dataclass(frozen=True)
@@ -135,6 +156,9 @@ def get_theme_colors() -> Dict[str, ColorPair]:
             "text_muted": p.text_muted,
             "text_inverse": p.text_inverse,
             "border_subtle": p.border_subtle,
+            # Alias so static CTk builds match theme registry naming.
+            "border_soft": p.border_subtle,
+            "border_strong": p.border_default,
             "border_default": p.border_default,
             "border_accent": p.border_accent,
             "success": p.success,
@@ -143,8 +167,69 @@ def get_theme_colors() -> Dict[str, ColorPair]:
             "info": p.info,
             "gradient_start": p.gradient_start,
             "gradient_end": p.gradient_end,
+            "cinematic_chrome_base": p.cinematic_chrome_base,
+            "cinematic_chrome_dark": p.cinematic_chrome_dark,
         }
     return dict(_THEME_COLORS_CACHE)
+
+
+def ctk_pairs_from_semantic_tokens(theme_tokens: dict) -> Dict[str, ColorPair]:
+    """Build ``(light, dark)`` pairs from a finalized theme dict (same hex both sides for CTk dark UI)."""
+    p = get_palette()
+
+    def dup(key: str, fallback: ColorPair) -> ColorPair:
+        v = theme_tokens.get(key)
+        if isinstance(v, str) and v.startswith("#") and len(v.strip()) >= 7:
+            h = v.strip()[:7]
+            return (h, h)
+        return fallback
+
+    chrome_b = dup("cinematic_chrome_base", p.cinematic_chrome_base)
+    chrome_d = dup("cinematic_chrome_dark", p.cinematic_chrome_dark)
+    panel_hex = theme_tokens.get("bg_panel")
+    elev_hex = theme_tokens.get("bg_elevated")
+    if isinstance(panel_hex, str) and panel_hex.startswith("#"):
+        ph = panel_hex.strip()[:7]
+        panel: ColorPair = (ph, ph)
+    else:
+        panel = (
+            adjust_color(chrome_b[0], brightness=-5),
+            adjust_color(chrome_b[1], brightness=-5),
+        )
+    if isinstance(elev_hex, str) and elev_hex.startswith("#"):
+        eh = elev_hex.strip()[:7]
+        elevated: ColorPair = (eh, eh)
+    else:
+        elevated = (
+            adjust_color(chrome_b[0], brightness=-2),
+            adjust_color(chrome_b[1], brightness=-2),
+        )
+
+    return {
+        "bg_base": dup("bg_base", p.bg_base),
+        "bg_surface": dup("bg_surface", p.bg_surface),
+        "bg_elevated": elevated,
+        "bg_panel": panel,
+        "bg_overlay": dup("bg_overlay", p.bg_overlay),
+        "accent_primary": dup("accent_primary", p.accent_primary),
+        "accent_secondary": dup("accent_secondary", p.accent_secondary),
+        "accent_muted": dup("accent_muted", p.accent_muted),
+        "text_primary": dup("text_primary", p.text_primary),
+        "text_secondary": dup("text_secondary", p.text_secondary),
+        "text_muted": dup("text_muted", p.text_muted),
+        "text_inverse": dup("text_inverse", p.text_inverse),
+        "border_subtle": dup("border_soft", p.border_subtle),
+        "border_default": dup("border_strong", p.border_default),
+        "border_accent": dup("border_strong", p.border_accent),
+        "success": dup("success", p.success),
+        "warning": dup("warning", p.warning),
+        "error": dup("danger", p.error),
+        "info": dup("info", p.info),
+        "gradient_start": dup("gradient_start", p.gradient_start),
+        "gradient_end": dup("gradient_end", p.gradient_end),
+        "cinematic_chrome_base": chrome_b,
+        "cinematic_chrome_dark": chrome_d,
+    }
 
 
 PALETTE = get_palette()

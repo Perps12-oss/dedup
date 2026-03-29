@@ -21,6 +21,7 @@ from typing import Callable, Optional
 import customtkinter as ctk
 
 from ..utils.ui_state import UIState
+from .design_tokens import resolve_border_token
 from .ui_utils import safe_callback
 
 
@@ -89,7 +90,7 @@ class SettingsPageCTK(ctk.CTkFrame):
         panel = str(tokens.get("bg_panel", "#1C2128"))
         elev = str(tokens.get("bg_elevated", "#161B22"))
         acc = str(tokens.get("accent_primary", "#22D3EE"))
-        border = str(tokens.get("border_subtle", "#21262D"))
+        border = resolve_border_token(tokens)
         bg = str(tokens.get("bg_base", "#0A0E14"))
 
         for f in self._section_frames:

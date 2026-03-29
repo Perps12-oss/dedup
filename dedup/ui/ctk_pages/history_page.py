@@ -28,7 +28,7 @@ from typing import Any, Callable, Optional
 import customtkinter as ctk
 
 from ..utils.formatting import fmt_bytes, fmt_duration, fmt_int
-from .design_tokens import get_theme_colors
+from .design_tokens import get_theme_colors, resolve_border_token
 from .ui_utils import cancel_after
 
 
@@ -79,12 +79,13 @@ class HistoryPageCTK(ctk.CTkFrame):
         panel = str(tokens.get("bg_panel", "#161b22"))
         elev = str(tokens.get("bg_elevated", "#21262d"))
         acc = str(tokens.get("accent_primary", "#3B8ED0"))
+        br = resolve_border_token(tokens)
         for name in ("_summary_frame", "_table_section", "_detail_frame"):
             fr = getattr(self, name, None)
             if fr is not None:
-                fr.configure(fg_color=panel)
+                fr.configure(fg_color=panel, border_color=br)
         for c in getattr(self, "_stat_cards", []):
-            c.configure(fg_color=elev)
+            c.configure(fg_color=elev, border_color=br)
         if hasattr(self, "_load_btn"):
             self._load_btn.configure(fg_color=acc)
         if hasattr(self, "_resume_btn"):

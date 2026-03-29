@@ -21,7 +21,7 @@ import customtkinter as ctk
 
 from ..ctk_action_contracts import ScanStartPayload
 from ..utils.formatting import fmt_bytes, fmt_int
-from .design_tokens import get_theme_colors
+from .design_tokens import get_theme_colors, resolve_border_token
 from .ui_utils import safe_callback
 
 if TYPE_CHECKING:
@@ -142,7 +142,7 @@ class MissionPageCTK(ctk.CTkFrame):
         panel = str(tokens.get("bg_panel", "#1C2128"))
         elev = str(tokens.get("bg_elevated", "#161B22"))
         acc = str(tokens.get("accent_primary", "#22D3EE"))
-        border = str(tokens.get("border_subtle", "#21262D"))
+        border = resolve_border_token(tokens)
 
         for f in self._themed_sections:
             f.configure(fg_color=panel, border_color=border)
@@ -152,8 +152,15 @@ class MissionPageCTK(ctk.CTkFrame):
         self._cta_start.configure(fg_color=acc)
         self._cta_resume.configure(fg_color=acc)
         self._cta_review.configure(fg_color=elev)
-        self._quick_browse_btn.configure(fg_color=elev)
         self._quick_start_btn.configure(fg_color=acc)
+
+        txt_sec = str(tokens.get("text_secondary", "#94A3B8"))
+        if hasattr(self, "_recent_box"):
+            self._recent_box.configure(fg_color=elev, text_color=txt_sec, border_color=border)
+        if hasattr(self, "_quick_path_entry"):
+            self._quick_path_entry.configure(fg_color=elev, border_color=border)
+        if hasattr(self, "_quick_browse_btn"):
+            self._quick_browse_btn.configure(fg_color=elev, border_color=border, text_color=txt_sec)
 
     # ══════════════════════════════════════════════════════════════════════════
     # PRIVATE IMPLEMENTATION - VISUAL REFACTOR
