@@ -108,7 +108,7 @@ def build_deletion_from_plan(
 
 def build_deletion_from_review_vm(vm) -> DeletionReadinessProjection:
     """
-    Build from a ReviewVM that already tracks keep selections.
+    Build from keep selections (e.g. review flow) when projections are not yet materialized.
     Uses vm.delete_count, keep_count, reclaimable_bytes.
     """
     return DeletionReadinessProjection(
