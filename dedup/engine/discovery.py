@@ -10,6 +10,7 @@ Designed for 1M+ file datasets:
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 from dataclasses import dataclass, field
@@ -17,7 +18,8 @@ from pathlib import Path
 from queue import Empty, Queue
 from typing import Callable, Dict, Iterator, List, Optional, Set, Tuple
 
-from ..infrastructure.profiler import measure
+_log = logging.getLogger(__name__)
+
 from .discovery_compat import normalize_discovery_path
 from .models import FileMetadata, FileRecord, ScanConfig
 
@@ -26,7 +28,7 @@ try:
 except ImportError:
     from contextlib import nullcontext as _nc
 
-    def measure(n):
+    def measure(_name: str):
         return _nc()
 
 
@@ -45,7 +47,12 @@ class DiscoveryOptions:
     follow_symlinks: bool = False
     scan_subfolders: bool = True
     allowed_extensions: Optional[Set[str]] = None
+    # Matches directory *names* only (last path segment), not full paths — e.g.
+    # {'Downloads'} excludes every folder named Downloads under the scan roots.
     exclude_dirs: Set[str] = field(default_factory=set)
+    # Absolute or project-root paths; resolved and normalized at discovery start. Skips files
+    # under those paths and does not recurse into excluded directories.
+    exclude_paths: Set[str] = field(default_factory=set)
     max_workers: int = 8
     resolve_paths: bool = False
 
@@ -64,6 +71,7 @@ class DiscoveryOptions:
             scan_subfolders=config.scan_subfolders,
             allowed_extensions=config.allowed_extensions,
             exclude_dirs=config.exclude_dirs,
+            exclude_paths=getattr(config, "exclude_paths", None) or set(),
             max_workers=discovery_workers,
             resolve_paths=getattr(config, "resolve_paths", False),
         )
@@ -105,6 +113,7 @@ class FileDiscovery:
     ):
         self.options = options
         self._cancelled = False
+        self._stats_lock = threading.Lock()
         self._stats = {
             "dirs_scanned": 0,
             "dirs_reused": 0,
@@ -126,10 +135,30 @@ class FileDiscovery:
         self._get_prior_files_under_dir = get_prior_files_under_dir
         self._dir_mtimes_sink = dir_mtimes_sink if dir_mtimes_sink is not None else {}
         self._dir_mtimes_lock = threading.Lock()
+        self._exclude_paths_normalized: Set[str] = set()
+        for raw in self.options.exclude_paths:
+            try:
+                self._exclude_paths_normalized.add(normalize_discovery_path(str(Path(raw).resolve())))
+            except OSError:
+                self._exclude_paths_normalized.add(normalize_discovery_path(str(raw)))
+
+    def _path_excluded(self, path_str: str) -> bool:
+        """True if path matches a configured exclude_paths entry (after resolve + normalize)."""
+        if not self._exclude_paths_normalized:
+            return False
+        try:
+            key = normalize_discovery_path(str(Path(path_str).resolve()))
+        except OSError:
+            key = normalize_discovery_path(path_str)
+        return key in self._exclude_paths_normalized
 
     def cancel(self):
         """Request cancellation of discovery."""
         self._cancelled = True
+
+    def _inc_stat(self, key: str, delta: int = 1) -> None:
+        with self._stats_lock:
+            self._stats[key] += delta
 
     @property
     def is_cancelled(self) -> bool:
@@ -137,7 +166,8 @@ class FileDiscovery:
 
     def get_stats(self) -> Dict[str, int]:
         """Get discovery statistics."""
-        return self._stats.copy()
+        with self._stats_lock:
+            return self._stats.copy()
 
     def discover(self, progress_cb: Optional[Callable[[FileMetadata], None]] = None) -> Iterator[FileMetadata]:
         """
@@ -175,7 +205,7 @@ class FileDiscovery:
                         return
                     self._scan_directory(directory, work_queue, result_queue)
                 except Exception:
-                    self._stats["errors"] += 1
+                    self._inc_stat("errors")
                 finally:
                     work_queue.task_done()
 
@@ -201,7 +231,7 @@ class FileDiscovery:
                 try:
                     metadata = result_queue.get(timeout=0.1)
                     if metadata is not None:
-                        self._stats["files_found"] += 1
+                        self._inc_stat("files_found")
                         if progress_cb:
                             try:
                                 progress_cb(metadata)
@@ -227,6 +257,10 @@ class FileDiscovery:
     ):
         """Scan a single directory and queue results."""
         try:
+            if self._path_excluded(str(directory)):
+                self._inc_stat("dirs_scanned")
+                return
+
             dir_mtime_ns: Optional[int] = None
             try:
                 dir_stat = directory.stat(follow_symlinks=self.options.follow_symlinks)
@@ -252,11 +286,10 @@ class FileDiscovery:
                     for metadata in self._get_prior_files_under_dir(str(directory)):
                         if self._cancelled:
                             return
-                        self._stats["files_reused_from_prior_inventory"] += 1
+                        self._inc_stat("files_reused_from_prior_inventory")
                         result_queue.put(metadata)
-                    self._stats["dirs_reused"] += 1
-                    self._stats["dirs_skipped_via_manifest"] += 1
-                    self._stats["dirs_scanned"] += 1
+                    self._inc_stat("dirs_reused")
+                    self._inc_stat("dirs_skipped_via_manifest")
                     return
 
             # Use str() for Windows/long-path compatibility with os.scandir
@@ -274,7 +307,11 @@ class FileDiscovery:
 
                         # Handle directories (recurse only if scan_subfolders)
                         if entry.is_dir(follow_symlinks=self.options.follow_symlinks):
-                            if self.options.scan_subfolders and name not in self.options.exclude_dirs:
+                            if (
+                                self.options.scan_subfolders
+                                and name not in self.options.exclude_dirs
+                                and not self._path_excluded(entry.path)
+                            ):
                                 work_queue.put(Path(entry.path))
                             continue
 
@@ -283,7 +320,7 @@ class FileDiscovery:
                             continue
 
                         # Get file stats
-                        self._stats["stat_calls"] += 1
+                        self._inc_stat("stat_calls")
                         with measure("discovery.stat"):
                             st = entry.stat(follow_symlinks=self.options.follow_symlinks)
                         size = st.st_size
@@ -303,11 +340,13 @@ class FileDiscovery:
                         # Create metadata; avoid resolve/measure when not needed (hot path).
                         mtime_ns = getattr(st, "st_mtime_ns", int(st.st_mtime * 1_000_000_000))
                         if self.options.resolve_paths:
-                            self._stats["resolve_calls"] += 1
+                            self._inc_stat("resolve_calls")
                             with measure("discovery.resolve"):
                                 path_str = str(Path(entry.path).resolve())
                         else:
                             path_str = entry.path
+                        if self._path_excluded(path_str):
+                            continue
                         metadata = FileMetadata(
                             path=path_str,
                             size=size,
@@ -315,19 +354,19 @@ class FileDiscovery:
                             inode=st.st_ino,
                         )
 
-                        self._stats["files_discovered_fresh"] += 1
+                        self._inc_stat("files_discovered_fresh")
                         result_queue.put(metadata)
 
                     except (OSError, PermissionError):
-                        self._stats["errors"] += 1
+                        self._inc_stat("errors")
                         continue
 
         except (OSError, PermissionError):
-            self._stats["errors"] += 1
+            self._inc_stat("errors")
         except Exception:
-            self._stats["errors"] += 1
-
-        self._stats["dirs_scanned"] += 1
+            self._inc_stat("errors")
+        finally:
+            self._inc_stat("dirs_scanned")
 
     def discover_batch(
         self, batch_size: int = 1000, progress_cb: Optional[Callable[[int], None]] = None
@@ -378,14 +417,28 @@ def quick_discover(
 
 
 class DiscoveryService:
-    """Chunked wrapper over FileDiscovery for persistence-backed pipeline phases."""
+    """
+    Chunked wrapper over FileDiscovery for persistence-backed pipeline phases.
+
+    A single long-lived instance keeps a streaming iterator across ``discover_chunk``
+    calls so each chunk continues where the last left off (linear total work).
+
+    If the service is **recreated** while resuming with ``cursor.files_emitted > 0``,
+    the new instance will re-advance the iterator by skipping that many files from
+    the start of a fresh walk — worst-case O(files_emitted) work per chunk until the
+    cursor catches up. Prefer reusing one ``DiscoveryService`` for a session, or
+    persist enough state to rebuild the same iterator.
+    """
 
     def __init__(self, options: DiscoveryOptions):
         self.options = options
         self.discovery = FileDiscovery(options)
+        # Single streaming iterator across chunk calls — avoids O(n²) re-walk per chunk.
+        self._chunk_iter: Optional[Iterator[FileMetadata]] = None
 
     def cancel(self) -> None:
         self.discovery.cancel()
+        self._chunk_iter = None
 
     def discover_chunk(
         self,
@@ -396,19 +449,32 @@ class DiscoveryService:
         batch: List[FileRecord] = []
         stats = DiscoveryStats()
 
-        iterator = self.discovery.discover()
-        for _ in range(cursor.files_emitted):
-            try:
-                next(iterator)
-            except StopIteration:
-                return [], None, stats
+        if self._chunk_iter is None:
+            if cursor.files_emitted > 0:
+                _log.warning(
+                    "Resuming discovery with files_emitted=%d on a new or reset iterator; "
+                    "skipping that many entries from the start of the walk",
+                    cursor.files_emitted,
+                )
+            self._chunk_iter = self.discovery.discover()
+            for _ in range(cursor.files_emitted):
+                try:
+                    next(self._chunk_iter)
+                except StopIteration:
+                    self._chunk_iter = None
+                    return [], None, stats
 
-        for file in iterator:
+        while len(batch) < max_items:
+            try:
+                file = next(self._chunk_iter)  # type: ignore[arg-type]
+            except StopIteration:
+                self._chunk_iter = None
+                if not batch:
+                    return [], None, stats
+                return batch, None, stats
             batch.append(FileRecord.from_file_metadata(file))
             stats.files_found += 1
             stats.bytes_found += file.size
             cursor.files_emitted += 1
-            if len(batch) >= max_items:
-                return batch, cursor, stats
 
-        return batch, None, stats
+        return batch, cursor, stats

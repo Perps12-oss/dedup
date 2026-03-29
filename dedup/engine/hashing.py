@@ -12,15 +12,20 @@ Partial hash is only for narrowing candidates; confirmation always uses full has
 from __future__ import annotations
 
 import hashlib
+import logging
 import mmap
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from collections import defaultdict
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 from .models import FileMetadata, ScanConfig
+
+_log = logging.getLogger(__name__)
 
 
 class HashStrategy(Enum):
@@ -89,6 +94,15 @@ class HashPolicy:
         )
 
 
+def _default_hash_metrics() -> Dict[str, int]:
+    return {
+        "hash_cache_hits": 0,
+        "hash_cache_misses": 0,
+        "partial_hash_computed": 0,
+        "full_hash_computed": 0,
+    }
+
+
 @dataclass
 class HashEngine:
     """
@@ -108,29 +122,50 @@ class HashEngine:
     cache_setter: Optional[Callable[[FileMetadata], bool]] = None
     policy: Optional[HashPolicy] = None
 
-    # Cache: path -> (mtime_ns, size, hash) to avoid re-hashing
-    _hash_cache: Dict[str, Tuple[int, int, str]] = None
-    _cache_lock: threading.Lock = None
-    _metrics: Dict[str, int] = None
+    # path -> (mtime_ns, size, hash); partial and full kept separate
+    _partial_cache: Dict[str, Tuple[int, int, str]] = field(default_factory=dict, init=False, repr=False)
+    _full_cache: Dict[str, Tuple[int, int, str]] = field(default_factory=dict, init=False, repr=False)
+    _cache_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _metrics: Dict[str, int] = field(default_factory=_default_hash_metrics, init=False, repr=False)
+    # Resolved once: avoid import + branch on every _get_hasher() call (hot path).
+    _hasher_factory: Callable[[], Any] = field(init=False, repr=False)
+    progress_interval_ms: float = 500.0
+    _last_progress_at_ms: float = field(default=0.0, init=False, repr=False)
 
     def __post_init__(self):
-        if self._hash_cache is None:
-            self._hash_cache = {}
-        if self._cache_lock is None:
-            self._cache_lock = threading.Lock()
-        if self._metrics is None:
-            self._metrics = {
-                "hash_cache_hits": 0,
-                "hash_cache_misses": 0,
-                "partial_hash_computed": 0,
-                "full_hash_computed": 0,
-            }
         if self.policy is None:
             self.policy = HashPolicy(
                 algorithm=self.algorithm,
                 partial_spec=PartialHashSpec(bytes_sampled=self.partial_bytes),
                 full_workers=self.workers,
             )
+        self._hasher_factory = self._resolve_hasher_factory()
+
+    def _resolve_hasher_factory(self) -> Callable[[], Any]:
+        """Select hasher constructor once at startup (partial + full hashing)."""
+        algo = self.policy.algorithm if self.policy else self.algorithm
+        if algo == HashStrategy.XXHASH64:
+            try:
+                import xxhash
+
+                _log.debug("Using xxhash64 for hashing")
+                return lambda: xxhash.xxh64()
+            except ImportError:
+                _log.warning("xxhash not available; falling back to MD5 for hashing")
+                return hashlib.md5
+        if algo == HashStrategy.BLAKE3:
+            try:
+                import blake3
+
+                _log.debug("Using blake3 for hashing")
+                return lambda: blake3.blake3()
+            except ImportError:
+                _log.warning("blake3 not available; falling back to MD5 for hashing")
+                return hashlib.md5
+        if algo == HashStrategy.SHA256:
+            return hashlib.sha256
+        # MD5 and any unknown value
+        return hashlib.md5
 
     @classmethod
     def from_config(cls, config: ScanConfig) -> HashEngine:
@@ -148,38 +183,34 @@ class HashEngine:
         return self.policy.partial_spec if self.policy else PartialHashSpec(bytes_sampled=self.partial_bytes)
 
     def _get_hasher(self):
-        """Get a hash object based on the selected algorithm."""
-        if self.algorithm == HashStrategy.XXHASH64:
-            try:
-                import xxhash
+        """Return a fresh hasher instance (factory resolved in __post_init__)."""
+        return self._hasher_factory()
 
-                return xxhash.xxh64()
-            except ImportError:
-                pass
-        elif self.algorithm == HashStrategy.BLAKE3:
-            try:
-                import blake3
-
-                return blake3.blake3()
-            except ImportError:
-                pass
-
-        # Fallback to MD5 (always available)
-        return hashlib.md5()
-
-    def _check_cache(self, path: str, mtime_ns: int, size: int) -> Optional[str]:
-        """Check if we have a cached hash for this file."""
+    def _check_partial_cache(self, path: str, mtime_ns: int, size: int) -> Optional[str]:
+        """In-memory cache for partial hashes only."""
         with self._cache_lock:
-            cached = self._hash_cache.get(path)
+            cached = self._partial_cache.get(path)
             if cached and cached[0] == mtime_ns and cached[1] == size:
                 self._metrics["hash_cache_hits"] += 1
                 return cached[2]
         return None
 
-    def _update_cache(self, path: str, mtime_ns: int, size: int, hash_value: str):
-        """Update the hash cache."""
+    def _update_partial_cache(self, path: str, mtime_ns: int, size: int, hash_value: str) -> None:
         with self._cache_lock:
-            self._hash_cache[path] = (mtime_ns, size, hash_value)
+            self._partial_cache[path] = (mtime_ns, size, hash_value)
+
+    def _check_full_cache(self, path: str, mtime_ns: int, size: int) -> Optional[str]:
+        """In-memory cache for full hashes only."""
+        with self._cache_lock:
+            cached = self._full_cache.get(path)
+            if cached and cached[0] == mtime_ns and cached[1] == size:
+                self._metrics["hash_cache_hits"] += 1
+                return cached[2]
+        return None
+
+    def _update_full_cache(self, path: str, mtime_ns: int, size: int, hash_value: str) -> None:
+        with self._cache_lock:
+            self._full_cache[path] = (mtime_ns, size, hash_value)
 
     def _check_external_partial_cache(self, file: FileMetadata) -> Optional[str]:
         """Check persistence-backed cache for a valid partial hash."""
@@ -222,14 +253,14 @@ class HashEngine:
         Returns None if file cannot be read.
         """
         # Check cache first
-        cached = self._check_cache(file.path, file.mtime_ns, file.size)
+        cached = self._check_partial_cache(file.path, file.mtime_ns, file.size)
         if cached:
             return cached
         cached_external = self._check_external_partial_cache(file)
         if cached_external:
             with self._cache_lock:
                 self._metrics["hash_cache_hits"] += 1
-            self._update_cache(file.path, file.mtime_ns, file.size, cached_external)
+            self._update_partial_cache(file.path, file.mtime_ns, file.size, cached_external)
             return cached_external
         with self._cache_lock:
             self._metrics["hash_cache_misses"] += 1
@@ -265,7 +296,7 @@ class HashEngine:
             hash_value = hasher.hexdigest()
             with self._cache_lock:
                 self._metrics["partial_hash_computed"] += 1
-            self._update_cache(file.path, file.mtime_ns, file.size, hash_value)
+            self._update_partial_cache(file.path, file.mtime_ns, file.size, hash_value)
             if self.cache_setter:
                 try:
                     self.cache_setter(file.with_hash_partial(hash_value))
@@ -287,10 +318,14 @@ class HashEngine:
             path = Path(file.path)
             if not path.exists():
                 return None
+            mem_full = self._check_full_cache(file.path, file.mtime_ns, file.size)
+            if mem_full:
+                return mem_full
             cached_external = self._check_external_full_cache(file)
             if cached_external:
                 with self._cache_lock:
                     self._metrics["hash_cache_hits"] += 1
+                self._update_full_cache(file.path, file.mtime_ns, file.size, cached_external)
                 return cached_external
             with self._cache_lock:
                 self._metrics["hash_cache_misses"] += 1
@@ -322,6 +357,7 @@ class HashEngine:
             hash_value = hasher.hexdigest()
             with self._cache_lock:
                 self._metrics["full_hash_computed"] += 1
+            self._update_full_cache(file.path, file.mtime_ns, file.size, hash_value)
             if self.cache_setter:
                 try:
                     self.cache_setter(file.with_hash_full(hash_value))
@@ -341,6 +377,38 @@ class HashEngine:
             for key in self._metrics:
                 self._metrics[key] = 0
 
+    def _parallel_hash_batch(
+        self,
+        files: List[FileMetadata],
+        progress_cb: Optional[Callable[[int], None]],
+        transform: Callable[[FileMetadata], FileMetadata],
+        pool_exception_message: str,
+    ) -> Iterator[FileMetadata]:
+        """Run per-file transforms in a thread pool; shared by partial and full batch hashers."""
+        completed = 0
+        lock = threading.Lock()
+
+        def work(file: FileMetadata) -> FileMetadata:
+            nonlocal completed
+            result = transform(file)
+            with lock:
+                completed += 1
+                if progress_cb:
+                    now_ms = time.monotonic() * 1000.0
+                    if now_ms - self._last_progress_at_ms >= self.progress_interval_ms:
+                        progress_cb(completed)
+                        self._last_progress_at_ms = now_ms
+            return result
+
+        with ThreadPoolExecutor(max_workers=self.workers) as executor:
+            futures = {executor.submit(work, f): f for f in files}
+            for future in as_completed(futures):
+                try:
+                    yield future.result()
+                except Exception:
+                    file = futures[future]
+                    yield file.with_error(pool_exception_message)
+
     def hash_batch_partial(
         self, files: List[FileMetadata], progress_cb: Optional[Callable[[int], None]] = None
     ) -> Iterator[FileMetadata]:
@@ -348,36 +416,22 @@ class HashEngine:
         Compute partial hashes for a batch of files in parallel.
 
         Yields FileMetadata objects with hash_partial set.
-        """
-        completed = [0]
-        lock = threading.Lock()
 
-        def hash_one(file: FileMetadata) -> FileMetadata:
+        Args:
+            files: Inputs to hash (partial layer).
+            progress_cb: Receives completed count (throttled by ``progress_interval_ms``, default 500ms).
+
+        Note:
+            Tune ``HashEngine.progress_interval_ms`` to change how often the UI or pipeline is notified.
+        """
+
+        def transform(file: FileMetadata) -> FileMetadata:
             hash_value = self.hash_partial(file)
             if hash_value:
-                result = file.with_hash_partial(hash_value)
-            else:
-                result = file.with_error("Failed to compute partial hash")
+                return file.with_hash_partial(hash_value)
+            return file.with_error("Failed to compute partial hash")
 
-            with lock:
-                completed[0] += 1
-                if progress_cb and completed[0] % 10 == 0:
-                    progress_cb(completed[0])
-
-            return result
-
-        # Use thread pool for parallel hashing
-        with ThreadPoolExecutor(max_workers=self.workers) as executor:
-            futures = {executor.submit(hash_one, f): f for f in files}
-
-            for future in as_completed(futures):
-                try:
-                    result = future.result()
-                    yield result
-                except Exception:
-                    # Return original file with error on exception
-                    file = futures[future]
-                    yield file.with_error("Hash computation failed")
+        yield from self._parallel_hash_batch(files, progress_cb, transform, "Hash computation failed")
 
     def hash_batch_full(
         self, files: List[FileMetadata], progress_cb: Optional[Callable[[int], None]] = None
@@ -386,35 +440,19 @@ class HashEngine:
         Compute full hashes for a batch of files in parallel.
 
         Yields FileMetadata objects with hash_full set.
-        """
-        completed = [0]
-        lock = threading.Lock()
 
-        def hash_one(file: FileMetadata) -> FileMetadata:
+        Args:
+            files: Inputs to hash (full layer).
+            progress_cb: Receives completed count (throttled by ``progress_interval_ms``).
+        """
+
+        def transform(file: FileMetadata) -> FileMetadata:
             hash_value = self.hash_full(file)
             if hash_value:
-                result = file.with_hash_full(hash_value)
-            else:
-                result = file.with_error("Failed to compute full hash")
+                return file.with_hash_full(hash_value)
+            return file.with_error("Failed to compute full hash")
 
-            with lock:
-                completed[0] += 1
-                if progress_cb and completed[0] % 10 == 0:
-                    progress_cb(completed[0])
-
-            return result
-
-        # Use thread pool for parallel hashing
-        with ThreadPoolExecutor(max_workers=self.workers) as executor:
-            futures = {executor.submit(hash_one, f): f for f in files}
-
-            for future in as_completed(futures):
-                try:
-                    result = future.result()
-                    yield result
-                except Exception:
-                    file = futures[future]
-                    yield file.with_error("Full hash computation failed")
+        yield from self._parallel_hash_batch(files, progress_cb, transform, "Full hash computation failed")
 
 
 def group_by_partial_hash(
@@ -429,16 +467,11 @@ def group_by_partial_hash(
     # Compute partial hashes
     hashed_files = list(engine.hash_batch_partial(files, progress_cb))
 
-    # Group by partial hash
-    groups: Dict[str, List[FileMetadata]] = {}
+    groups: Dict[str, List[FileMetadata]] = defaultdict(list)
     for file in hashed_files:
         if file.hash_partial:
-            key = file.hash_partial
-            if key not in groups:
-                groups[key] = []
-            groups[key].append(file)
+            groups[file.hash_partial].append(file)
 
-    # Filter to only groups with 2+ files
     return {k: v for k, v in groups.items() if len(v) >= 2}
 
 
@@ -446,6 +479,7 @@ def confirm_duplicates(
     candidate_groups: Dict[str, List[FileMetadata]],
     engine: HashEngine,
     progress_cb: Optional[Callable[[int], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> Dict[str, List[FileMetadata]]:
     """
     Confirm duplicates by computing full hashes.
@@ -459,6 +493,10 @@ def confirm_duplicates(
     all_candidates = []
     for group in candidate_groups.values():
         all_candidates.extend(group)
+
+    if cancel_check and cancel_check():
+        _log.info("Cancellation requested before full-hash confirmation")
+        return {}
 
     # Compute full hashes
     hashed_files = list(engine.hash_batch_full(all_candidates, progress_cb))

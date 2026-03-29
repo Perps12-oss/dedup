@@ -436,6 +436,8 @@ class ScanConfig:
             "System Volume Information",  # Windows system
         }
     )
+    # Full paths (resolved at discovery init) to skip entirely, including files and recursion.
+    exclude_paths: Set[str] = field(default_factory=set)
 
     # Hashing options
     hash_algorithm: str = "xxhash64"  # Fast, non-cryptographic
@@ -477,6 +479,7 @@ class ScanConfig:
             "scan_subfolders": self.scan_subfolders,
             "allowed_extensions": list(self.allowed_extensions) if self.allowed_extensions else None,
             "exclude_dirs": list(self.exclude_dirs),
+            "exclude_paths": list(self.exclude_paths),
             "hash_algorithm": self.hash_algorithm,
             "partial_hash_bytes": self.partial_hash_bytes,
             "full_hash_workers": self.full_hash_workers,
@@ -503,6 +506,7 @@ class ScanConfig:
             scan_subfolders=data.get("scan_subfolders", True),
             allowed_extensions=set(data["allowed_extensions"]) if data.get("allowed_extensions") else None,
             exclude_dirs=set(data.get("exclude_dirs", [])),
+            exclude_paths=set(data.get("exclude_paths", [])),
             hash_algorithm=data.get("hash_algorithm", "xxhash64"),
             partial_hash_bytes=data.get("partial_hash_bytes", 4096),
             full_hash_workers=data.get("full_hash_workers", 4),
@@ -541,6 +545,8 @@ class ScanProgress:
     bytes_total: Optional[int] = None
     groups_found: int = 0
     duplicates_found: int = 0
+    # Total bytes reclaimable if duplicate copies are removed (complete phase only)
+    reclaimable_bytes: Optional[int] = None
 
     # Timing (all in seconds)
     elapsed_seconds: float = 0.0
@@ -739,6 +745,10 @@ class DeletionPlan:
 class DeletionResult:
     """
     Result of executing a deletion plan.
+
+    ``verification`` holds the full post-delete verification when the engine runs it
+    (e.g. ``DeletionEngine.execute_plan``). ``verification_summary`` duplicates the
+    summary dict for code that only needs counts.
     """
 
     scan_id: str
@@ -746,7 +756,10 @@ class DeletionResult:
     deleted_files: List[str] = field(default_factory=list)
     failed_files: List[Dict[str, str]] = field(default_factory=list)
     bytes_reclaimed: int = 0
+    # Summary counts only (e.g. coordinator / persistence); mirrors verification.summary when set.
     verification_summary: Optional[Dict[str, int]] = None
+    # Full structured verification; None if execute_plan path did not attach it (legacy).
+    verification: Optional["DeletionVerificationResult"] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
 
@@ -772,6 +785,7 @@ class DeletionResult:
             "failed_files": self.failed_files,
             "bytes_reclaimed": self.bytes_reclaimed,
             "verification_summary": self.verification_summary,
+            "verification": self.verification.to_dict() if self.verification else None,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
         }

@@ -15,8 +15,9 @@ import logging
 import os
 import platform
 import shutil
+import subprocess
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -36,39 +37,31 @@ from .models import (
 _log = logging.getLogger(__name__)
 
 
-class TrashStrategy:
-    """Deletion strategy that prefers moving files to a recoverable trash."""
-
-    def __init__(self, engine: "DeletionEngine"):
-        self.engine = engine
-
-    def delete(self, path: Path) -> tuple[bool, Optional[str]]:
-        return self.engine._move_to_trash(path)
+def _norm_verification_path(p: str) -> str:
+    """Normalize path for comparison (case on Windows, redundant separators)."""
+    return os.path.normcase(os.path.normpath(p))
 
 
-class PermanentDeleteStrategy:
-    """Deletion strategy for irreversible deletes."""
-
-    def __init__(self, engine: "DeletionEngine"):
-        self.engine = engine
-
-    def delete(self, path: Path) -> tuple[bool, Optional[str]]:
-        return self.engine._delete_permanently(path)
+def _escape_posix_path_for_applescript(path: str) -> str:
+    """Escape a POSIX path for embedding in an AppleScript double-quoted string (Finder delete)."""
+    return path.replace("\\", "\\\\").replace('"', '\\"')
 
 
 @dataclass
 class DeletionVerifier:
     """Revalidate delete targets before destructive operations."""
 
-    def verify_target(self, target: Dict[str, Any]) -> Optional[str]:
+    def verify_target(
+        self, target: Dict[str, Any], *, st: Optional[Any] = None
+    ) -> Optional[str]:
         path = Path(target["path"])
-        if not path.exists():
-            return "File does not exist"
-
-        try:
-            st = path.stat()
-        except (OSError, ValueError) as exc:
-            return str(exc)
+        if st is None:
+            if not path.exists():
+                return "File does not exist"
+            try:
+                st = path.stat()
+            except (OSError, ValueError) as exc:
+                return str(exc)
 
         expected_size = target.get("expected_size")
         if expected_size is not None and st.st_size != expected_size:
@@ -83,56 +76,216 @@ class DeletionVerifier:
 
 
 @dataclass
-class DeletionPlanner:
-    """Build immutable deletion plans from duplicate groups."""
+class DeletionEngine:
+    """
+    Safe file deletion engine.
 
-    engine: "DeletionEngine"
+    Supports:
+    - Trash/recycle bin deletion (default, safer)
+    - Permanent deletion (with explicit confirmation)
+    - Dry-run mode for testing
+    - Audit logging
+    """
 
-    def create_plan_from_groups(
-        self,
-        scan_id: str,
-        groups: List[Any],
-        policy: DeletionPolicy,
-        keep_strategy: str,
-        group_keep_paths: Optional[Dict[str, str]] = None,
-    ) -> DeletionPlan:
-        return self.engine._create_plan_from_groups(
-            scan_id=scan_id,
-            groups=groups,
-            policy=policy,
-            keep_strategy=keep_strategy,
-            group_keep_paths=group_keep_paths,
-        )
+    dry_run: bool = False
+    audit_log_path: Optional[Path] = None
+    persistence: Optional[Any] = None
 
+    def __post_init__(self):
+        if self.audit_log_path:
+            self.audit_log_path = Path(self.audit_log_path)
+            self.audit_log_path.parent.mkdir(parents=True, exist_ok=True)
 
-@dataclass
-class DeletionExecutor:
-    """Execute previously planned deletions after revalidation."""
+    def _log_audit(self, operation: str, path: str, success: bool, error: Optional[str] = None):
+        """Log deletion operation to audit log."""
+        if not self.audit_log_path:
+            return
 
-    engine: "DeletionEngine"
-    verifier: DeletionVerifier = field(default_factory=DeletionVerifier)
+        try:
+            timestamp = datetime.now().isoformat()
+            status = "SUCCESS" if success else "FAILED"
+            error_str = f" | error: {error}" if error else ""
 
-    def execute(
+            with open(self.audit_log_path, "a", encoding="utf-8") as f:
+                f.write(f"[{timestamp}] {status} | {operation} | {path}{error_str}\n")
+        except (OSError, IOError) as e:
+            _log.warning("Audit log write failed: %s", e)
+            try:
+                from ..infrastructure.diagnostics import CATEGORY_AUDIT_LOG, get_diagnostics_recorder
+
+                get_diagnostics_recorder().record(CATEGORY_AUDIT_LOG, "Audit log write failed", str(e))
+            except Exception as rec_err:
+                _log.warning("Diagnostics record for audit failure also failed: %s", rec_err)
+
+    def _move_to_trash_fallback(self, path: Path) -> tuple[bool, Optional[str]]:
+        """Move file to ~/.dedup/trash (always works if we have write access)."""
+        try:
+            path = path.resolve()
+            if not path.exists():
+                return False, "File does not exist"
+            trash_dir = Path.home() / ".dedup" / "trash"
+            trash_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            dest = trash_dir / f"{timestamp}_{path.name}"
+            counter = 1
+            max_collision_attempts = 10_000
+            while dest.exists():
+                if counter > max_collision_attempts:
+                    return False, "Could not find a free trash destination (collision limit)"
+                dest = trash_dir / f"{timestamp}_{counter}_{path.name}"
+                counter += 1
+            shutil.move(str(path), str(dest))
+            return True, None
+        except Exception as e:
+            return False, str(e)
+
+    def _move_to_trash(self, path: Path) -> tuple[bool, Optional[str]]:
+        """
+        Move file to trash/recycle bin.
+        Verifies the file is actually gone after the operation; if not, uses fallback.
+        """
+        path = path.resolve()
+        if not path.exists():
+            return False, "File does not exist"
+
+        def _verified() -> bool:
+            """Return True only if the file no longer exists at the original path."""
+            try:
+                return not path.exists()
+            except OSError:
+                return False
+
+        try:
+            # Try send2trash library (cross-platform)
+            try:
+                import send2trash
+
+                send2trash.send2trash(str(path))
+                if _verified():
+                    return True, None
+                # Reported success but file still there - try fallback
+                return self._move_to_trash_fallback(path)
+            except ImportError:
+                pass
+            except Exception as e:
+                # send2trash failed - try fallback
+                ok, _ = self._move_to_trash_fallback(path)
+                if ok:
+                    return True, None
+                return False, str(e)
+
+            # Platform-specific trash
+            system = platform.system()
+
+            if system == "Darwin":  # macOS
+                safe = _escape_posix_path_for_applescript(str(path))
+                script = f'tell application "Finder" to delete POSIX file "{safe}"'
+                result = subprocess.run(
+                    ["osascript", "-e", script],
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode == 0 and _verified():
+                    return True, None
+                return self._move_to_trash_fallback(path)
+
+            elif system == "Linux":
+                for cmd in [["gio", "trash", str(path)], ["xdg-trash", str(path)]]:
+                    try:
+                        result = subprocess.run(cmd, capture_output=True)
+                        if result.returncode == 0 and _verified():
+                            return True, None
+                    except FileNotFoundError:
+                        continue
+                return self._move_to_trash_fallback(path)
+
+            elif system == "Windows":
+                try:
+                    import winshell
+
+                    winshell.delete_file(str(path))
+                    if _verified():
+                        return True, None
+                except ImportError:
+                    _log.debug("winshell not available; using fallback trash path")
+                except Exception as e:
+                    _log.warning("Windows recycle delete failed, trying fallback: %s", e)
+                return self._move_to_trash_fallback(path)
+
+            # Fallback: move to ~/.dedup/trash
+            return self._move_to_trash_fallback(path)
+
+        except Exception as e:
+            return False, str(e)
+
+    def _delete_permanently(self, path: Path) -> tuple[bool, Optional[str]]:
+        """Permanently delete a file or directory. Verifies file is gone after."""
+        path = path.resolve()
+        if not path.exists():
+            return False, "File does not exist"
+        try:
+            if path.is_file():
+                os.remove(path)
+            elif path.is_dir():
+                shutil.rmtree(path)
+            if path.exists():
+                return False, "File still exists after delete"
+            return True, None
+        except Exception as e:
+            return False, str(e)
+
+    def delete_file(
+        self, path: Path | str, policy: DeletionPolicy = DeletionPolicy.TRASH
+    ) -> tuple[bool, Optional[str]]:
+        """
+        Delete a single file.
+
+        Returns (success, error_message).
+        """
+        path = Path(path)
+
+        if self.dry_run:
+            self._log_audit(f"DRY_RUN_{policy.value}", str(path), True)
+            return True, None
+
+        if policy == DeletionPolicy.TRASH:
+            success, error = self._move_to_trash(path)
+        elif policy == DeletionPolicy.PERMANENT:
+            success, error = self._delete_permanently(path)
+        else:
+            success, error = False, f"Unsupported deletion policy: {policy!r}"
+
+        self._log_audit(policy.value, str(path), success, error)
+        return success, error
+
+    def execute_plan(
+        self, plan: DeletionPlan, progress_cb: Optional[Callable[[int, int, str], bool]] = None
+    ) -> DeletionResult:
+        result = self._execute_plan(plan, progress_cb=progress_cb, verifier=DeletionVerifier())
+        verification = self._verify_deletion_outcome(plan, result)
+        result.verification = verification
+        result.verification_summary = verification.summary
+        return result
+
+    def verify_plan_result(
         self,
         plan: DeletionPlan,
-        progress_cb: Optional[Callable[[int, int, str], bool]] = None,
-    ) -> DeletionResult:
-        return self.engine._execute_plan(plan, progress_cb=progress_cb, verifier=self.verifier)
+        result: DeletionResult,
+    ) -> DeletionVerificationResult:
+        return self._verify_deletion_outcome(plan, result)
 
-
-@dataclass
-class DeletionOutcomeVerifier:
-    """Verify delete outcomes from the plan, not from a fresh scan."""
-
-    engine: "DeletionEngine"
-
-    def verify(self, plan: DeletionPlan, result: DeletionResult) -> DeletionVerificationResult:
+    def _verify_deletion_outcome(
+        self,
+        plan: DeletionPlan,
+        result: DeletionResult,
+    ) -> DeletionVerificationResult:
+        """Verify delete outcomes from the plan, not from a fresh scan."""
         verification = DeletionVerificationResult(
             scan_id=plan.scan_id,
             plan_id=plan.scan_id,
             started_at=datetime.now(),
         )
-        deleted_paths = set(result.deleted_files)
+        deleted_paths = {_norm_verification_path(p) for p in result.deleted_files}
 
         for group in plan.groups:
             group_id = str(group.get("group_id", ""))
@@ -144,7 +297,7 @@ class DeletionOutcomeVerifier:
                 status = DeletionVerificationTargetStatus.VERIFICATION_FAILED
                 detail = ""
 
-                if path in deleted_paths:
+                if path and _norm_verification_path(path) in deleted_paths:
                     status = DeletionVerificationTargetStatus.DELETED
                 else:
                     file_path = Path(path)
@@ -249,9 +402,9 @@ class DeletionOutcomeVerifier:
         )
         verification.completed_at = datetime.now()
 
-        if self.engine.persistence:
-            if self.engine.persistence.session_repo.get(plan.scan_id) is None:
-                self.engine.persistence.shadow_write_session(
+        if self.persistence:
+            if self.persistence.session_repo.get(plan.scan_id) is None:
+                self.persistence.shadow_write_session(
                     session_id=plan.scan_id,
                     config_json='{"roots":[]}',
                     config_hash="shadow",
@@ -262,7 +415,7 @@ class DeletionOutcomeVerifier:
                 overall_status = "verification_incomplete"
             elif verification.summary["still_present"] or verification.summary["changed_after_plan"]:
                 overall_status = "needs_attention"
-            self.engine.persistence.deletion_verification_repo.upsert(
+            self.persistence.deletion_verification_repo.upsert(
                 plan_id=verification.plan_id,
                 session_id=plan.scan_id,
                 status=overall_status,
@@ -271,200 +424,6 @@ class DeletionOutcomeVerifier:
             )
 
         return verification
-
-
-@dataclass
-class DeletionEngine:
-    """
-    Safe file deletion engine.
-
-    Supports:
-    - Trash/recycle bin deletion (default, safer)
-    - Permanent deletion (with explicit confirmation)
-    - Dry-run mode for testing
-    - Audit logging
-    """
-
-    dry_run: bool = False
-    audit_log_path: Optional[Path] = None
-    persistence: Optional[Any] = None
-
-    def __post_init__(self):
-        if self.audit_log_path:
-            self.audit_log_path = Path(self.audit_log_path)
-            self.audit_log_path.parent.mkdir(parents=True, exist_ok=True)
-        self._strategies = {
-            DeletionPolicy.TRASH: TrashStrategy(self),
-            DeletionPolicy.PERMANENT: PermanentDeleteStrategy(self),
-        }
-
-    def _log_audit(self, operation: str, path: str, success: bool, error: Optional[str] = None):
-        """Log deletion operation to audit log."""
-        if not self.audit_log_path:
-            return
-
-        try:
-            timestamp = datetime.now().isoformat()
-            status = "SUCCESS" if success else "FAILED"
-            error_str = f" | error: {error}" if error else ""
-
-            with open(self.audit_log_path, "a", encoding="utf-8") as f:
-                f.write(f"[{timestamp}] {status} | {operation} | {path}{error_str}\n")
-        except (OSError, IOError) as e:
-            _log.warning("Audit log write failed: %s", e)
-            try:
-                from ..infrastructure.diagnostics import CATEGORY_AUDIT_LOG, get_diagnostics_recorder
-
-                get_diagnostics_recorder().record(CATEGORY_AUDIT_LOG, "Audit log write failed", str(e))
-            except Exception as rec_err:
-                _log.warning("Diagnostics record for audit failure also failed: %s", rec_err)
-
-    def _move_to_trash_fallback(self, path: Path) -> tuple[bool, Optional[str]]:
-        """Move file to ~/.dedup/trash (always works if we have write access)."""
-        try:
-            path = path.resolve()
-            if not path.exists():
-                return False, "File does not exist"
-            trash_dir = Path.home() / ".dedup" / "trash"
-            trash_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            dest = trash_dir / f"{timestamp}_{path.name}"
-            counter = 1
-            while dest.exists():
-                dest = trash_dir / f"{timestamp}_{counter}_{path.name}"
-                counter += 1
-            shutil.move(str(path), str(dest))
-            return True, None
-        except Exception as e:
-            return False, str(e)
-
-    def _move_to_trash(self, path: Path) -> tuple[bool, Optional[str]]:
-        """
-        Move file to trash/recycle bin.
-        Verifies the file is actually gone after the operation; if not, uses fallback.
-        """
-        path = path.resolve()
-        if not path.exists():
-            return False, "File does not exist"
-
-        def _verified() -> bool:
-            """Return True only if the file no longer exists at the original path."""
-            try:
-                return not path.exists()
-            except OSError:
-                return False
-
-        try:
-            # Try send2trash library (cross-platform)
-            try:
-                import send2trash
-
-                send2trash.send2trash(str(path))
-                if _verified():
-                    return True, None
-                # Reported success but file still there - try fallback
-                return self._move_to_trash_fallback(path)
-            except ImportError:
-                pass
-            except Exception as e:
-                # send2trash failed - try fallback
-                ok, _ = self._move_to_trash_fallback(path)
-                if ok:
-                    return True, None
-                return False, str(e)
-
-            # Platform-specific trash
-            system = platform.system()
-
-            if system == "Darwin":  # macOS
-                import subprocess
-
-                result = subprocess.run(
-                    ["osascript", "-e", f'tell application "Finder" to delete POSIX file "{path}"'],
-                    capture_output=True,
-                    text=True,
-                )
-                if result.returncode == 0 and _verified():
-                    return True, None
-                return self._move_to_trash_fallback(path)
-
-            elif system == "Linux":
-                for cmd in [["gio", "trash", str(path)], ["xdg-trash", str(path)]]:
-                    try:
-                        import subprocess
-
-                        result = subprocess.run(cmd, capture_output=True)
-                        if result.returncode == 0 and _verified():
-                            return True, None
-                    except FileNotFoundError:
-                        continue
-                return self._move_to_trash_fallback(path)
-
-            elif system == "Windows":
-                try:
-                    import winshell
-
-                    winshell.delete_file(str(path))
-                    if _verified():
-                        return True, None
-                except ImportError:
-                    _log.debug("winshell not available; using fallback trash path")
-                except Exception as e:
-                    _log.warning("Windows recycle delete failed, trying fallback: %s", e)
-                return self._move_to_trash_fallback(path)
-
-            # Fallback: move to ~/.dedup/trash
-            return self._move_to_trash_fallback(path)
-
-        except Exception as e:
-            return False, str(e)
-
-    def _delete_permanently(self, path: Path) -> tuple[bool, Optional[str]]:
-        """Permanently delete a file or directory. Verifies file is gone after."""
-        path = path.resolve()
-        if not path.exists():
-            return False, "File does not exist"
-        try:
-            if path.is_file():
-                os.remove(path)
-            elif path.is_dir():
-                shutil.rmtree(path)
-            if path.exists():
-                return False, "File still exists after delete"
-            return True, None
-        except Exception as e:
-            return False, str(e)
-
-    def delete_file(
-        self, path: Path | str, policy: DeletionPolicy = DeletionPolicy.TRASH
-    ) -> tuple[bool, Optional[str]]:
-        """
-        Delete a single file.
-
-        Returns (success, error_message).
-        """
-        path = Path(path)
-
-        if self.dry_run:
-            self._log_audit(f"DRY_RUN_{policy.value}", str(path), True)
-            return True, None
-
-        success, error = self._strategies[policy].delete(path)
-
-        self._log_audit(policy.value, str(path), success, error)
-        return success, error
-
-    def execute_plan(
-        self, plan: DeletionPlan, progress_cb: Optional[Callable[[int, int, str], bool]] = None
-    ) -> DeletionResult:
-        return DeletionExecutor(self).execute(plan, progress_cb=progress_cb)
-
-    def verify_plan_result(
-        self,
-        plan: DeletionPlan,
-        result: DeletionResult,
-    ) -> DeletionVerificationResult:
-        return DeletionOutcomeVerifier(self).verify(plan, result)
 
     def _execute_plan(
         self,
@@ -492,8 +451,18 @@ class DeletionEngine:
         total_files = plan.total_files_to_delete
         current = 0
 
+        all_delete_paths: List[str] = []
+        for g in plan.groups:
+            all_delete_paths.extend(g.get("delete", []))
+        path_to_id: Dict[str, int] = {}
+        if self.persistence and all_delete_paths:
+            path_to_id = self.persistence.inventory_repo.get_file_ids_by_paths(
+                plan.scan_id, all_delete_paths
+            )
+
         for group in plan.groups:
             keep_path = group.get("keep", "")
+            keep_resolved = Path(keep_path).resolve() if keep_path else None
             delete_paths = group.get("delete", [])
 
             for file_path in delete_paths:
@@ -510,16 +479,50 @@ class DeletionEngine:
                         _log.warning("Deletion progress callback raised; continuing: %s", exc)
 
                 # Safety check: never delete the keep file
-                if Path(file_path).resolve() == Path(keep_path).resolve():
+                if keep_resolved is not None and Path(file_path).resolve() == keep_resolved:
                     result.failed_files.append({"path": file_path, "error": "Cannot delete the designated keep file"})
                     continue
 
                 target_meta = next(
-                    (item for item in group.get("delete_details", []) if item.get("path") == file_path),
+                    (
+                        item
+                        for item in group.get("delete_details", [])
+                        if item.get("path")
+                        and _norm_verification_path(str(item.get("path", "")))
+                        == _norm_verification_path(file_path)
+                    ),
                     {"path": file_path},
                 )
+                p = Path(file_path)
+                try:
+                    st = p.stat()
+                except FileNotFoundError:
+                    err = "File does not exist"
+                    result.failed_files.append({"path": file_path, "error": err})
+                    if self.persistence:
+                        self.persistence.deletion_audit_repo.log(
+                            plan_id=plan.scan_id,
+                            action=plan.policy.value,
+                            outcome="skipped",
+                            detail={"path": file_path, "error": err},
+                            file_id=path_to_id.get(file_path),
+                        )
+                    continue
+                except (OSError, ValueError) as exc:
+                    err = str(exc)
+                    result.failed_files.append({"path": file_path, "error": err})
+                    if self.persistence:
+                        self.persistence.deletion_audit_repo.log(
+                            plan_id=plan.scan_id,
+                            action=plan.policy.value,
+                            outcome="skipped",
+                            detail={"path": file_path, "error": err},
+                            file_id=path_to_id.get(file_path),
+                        )
+                    continue
+
                 if verifier:
-                    verification_error = verifier.verify_target(target_meta)
+                    verification_error = verifier.verify_target(target_meta, st=st)
                     if verification_error:
                         result.failed_files.append(
                             {
@@ -530,18 +533,14 @@ class DeletionEngine:
                         if self.persistence:
                             self.persistence.deletion_audit_repo.log(
                                 plan_id=plan.scan_id,
-                                file_id=self.persistence.inventory_repo.get_file_id(plan.scan_id, file_path),
                                 action=plan.policy.value,
                                 outcome="skipped",
                                 detail={"path": file_path, "error": verification_error},
+                                file_id=path_to_id.get(file_path),
                             )
                         continue
 
-                # Get file size before deletion for bytes_reclaimed (truthful metric)
-                try:
-                    file_size = Path(file_path).stat().st_size
-                except (OSError, ValueError):
-                    file_size = 0
+                file_size = st.st_size
 
                 # Delete the file
                 success, error = self.delete_file(file_path, plan.policy)
@@ -552,20 +551,20 @@ class DeletionEngine:
                     if self.persistence:
                         self.persistence.deletion_audit_repo.log(
                             plan_id=plan.scan_id,
-                            file_id=self.persistence.inventory_repo.get_file_id(plan.scan_id, file_path),
                             action=plan.policy.value,
                             outcome="success",
                             detail={"path": file_path},
+                            file_id=path_to_id.get(file_path),
                         )
                 else:
                     result.failed_files.append({"path": file_path, "error": error or "Unknown error"})
                     if self.persistence:
                         self.persistence.deletion_audit_repo.log(
                             plan_id=plan.scan_id,
-                            file_id=self.persistence.inventory_repo.get_file_id(plan.scan_id, file_path),
                             action=plan.policy.value,
                             outcome="failed",
                             detail={"path": file_path, "error": error or "Unknown error"},
+                            file_id=path_to_id.get(file_path),
                         )
 
         result.completed_at = datetime.now()
@@ -578,22 +577,6 @@ class DeletionEngine:
         policy: DeletionPolicy = DeletionPolicy.TRASH,
         keep_strategy: str = "first",  # first, oldest, newest, largest, smallest
         group_keep_paths: Optional[Dict[str, str]] = None,  # group_id -> path to keep (overrides strategy)
-    ) -> DeletionPlan:
-        return DeletionPlanner(self).create_plan_from_groups(
-            scan_id=scan_id,
-            groups=groups,
-            policy=policy,
-            keep_strategy=keep_strategy,
-            group_keep_paths=group_keep_paths,
-        )
-
-    def _create_plan_from_groups(
-        self,
-        scan_id: str,
-        groups: List[Any],
-        policy: DeletionPolicy = DeletionPolicy.TRASH,
-        keep_strategy: str = "first",
-        group_keep_paths: Optional[Dict[str, str]] = None,
     ) -> DeletionPlan:
         """
         Create a deletion plan from duplicate groups.
@@ -683,9 +666,19 @@ class DeletionEngine:
                 status="draft",
                 policy=plan.to_dict(),
             )
+            all_paths: List[str] = []
             for group in plan.groups:
                 for item in group.get("delete_details", []):
-                    file_id = self.persistence.inventory_repo.get_file_id(scan_id, item["path"])
+                    p = item.get("path")
+                    if p:
+                        all_paths.append(str(p))
+            path_to_id = self.persistence.inventory_repo.get_file_ids_by_paths(scan_id, all_paths)
+            for group in plan.groups:
+                for item in group.get("delete_details", []):
+                    path = item.get("path")
+                    if not path:
+                        continue
+                    file_id = path_to_id.get(str(path))
                     if file_id is None:
                         continue
                     self.persistence.deletion_plan_repo.add_item(
@@ -707,15 +700,29 @@ def preview_deletion(plan: DeletionPlan) -> Dict[str, Any]:
     """
     total_files = plan.total_files_to_delete
 
-    # Calculate total size
+    # Prefer expected_size from delete_details (no extra stat); stat only when missing.
     total_bytes = 0
     for group in plan.groups:
-        for file_path in group.get("delete", []):
-            try:
-                st = Path(file_path).stat()
-                total_bytes += st.st_size
-            except (OSError, ValueError):
-                pass
+        details = group.get("delete_details") or []
+        delete_paths = group.get("delete", [])
+        if details:
+            for item in details:
+                sz = item.get("expected_size")
+                if sz is not None:
+                    total_bytes += int(sz)
+                else:
+                    fp = item.get("path")
+                    if fp:
+                        try:
+                            total_bytes += Path(str(fp)).stat().st_size
+                        except (OSError, ValueError):
+                            pass
+        else:
+            for file_path in delete_paths:
+                try:
+                    total_bytes += Path(file_path).stat().st_size
+                except (OSError, ValueError):
+                    pass
 
     return {
         "scan_id": plan.scan_id,

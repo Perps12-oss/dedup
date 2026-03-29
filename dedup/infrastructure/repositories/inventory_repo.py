@@ -157,6 +157,27 @@ class InventoryRepository:
         ).fetchone()
         return int(row["file_id"]) if row else None
 
+    def get_file_ids_by_paths(self, session_id: str, paths: List[str]) -> Dict[str, int]:
+        """Map path -> file_id in one or few queries (avoids N round-trips)."""
+        if not paths:
+            return {}
+        out: Dict[str, int] = {}
+        # SQLite limits on bound variables vary; stay well under 999.
+        chunk_size = 400
+        for i in range(0, len(paths), chunk_size):
+            chunk = paths[i : i + chunk_size]
+            placeholders = ",".join("?" * len(chunk))
+            rows = self.conn.execute(
+                f"""
+                SELECT path, file_id FROM inventory_files
+                WHERE session_id = ? AND path IN ({placeholders})
+                """,
+                (session_id, *chunk),
+            ).fetchall()
+            for row in rows:
+                out[str(row["path"])] = int(row["file_id"])
+        return out
+
     def get_metadata_by_id(self, session_id: str, file_id: int) -> Optional[FileMetadata]:
         row = self.conn.execute(
             """

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import datetime
-from typing import TYPE_CHECKING, Dict, Iterable, List, Optional
+from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Tuple
 
 if TYPE_CHECKING:
     from .inventory_repo import InventoryRepository
@@ -76,6 +76,29 @@ class PartialHashRepository:
                 partial_hash,
                 datetime.now().isoformat(),
             ),
+        )
+        self.conn.commit()
+
+    def upsert_batch(
+        self,
+        rows: List[Tuple[str, int, str, str, str, str, str]],
+    ) -> None:
+        """
+        Batch INSERT OR REPLACE into partial_hashes.
+
+        Each row: session_id, file_id, algorithm, strategy_version,
+        sample_spec_json, partial_hash, computed_at (ISO timestamp).
+        """
+        if not rows:
+            return
+        self.conn.executemany(
+            """
+            INSERT OR REPLACE INTO partial_hashes (
+                session_id, file_id, algorithm, strategy_version,
+                sample_spec_json, partial_hash, computed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
         )
         self.conn.commit()
 
