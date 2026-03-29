@@ -13,6 +13,7 @@ REFACTORED: Visual redesign with modern aesthetics while preserving all APIs.
 
 from __future__ import annotations
 
+import platform
 from typing import Callable
 
 import customtkinter as ctk
@@ -71,13 +72,15 @@ class WelcomePageCTK(ctk.CTkFrame):
         )
 
         # Primary action buttons with accent
-        self._btn_photos.configure(fg_color=acc, hover_color=self._adjust_brightness(acc, 0.85))
-        self._btn_videos.configure(fg_color=acc, hover_color=self._adjust_brightness(acc, 0.85))
-        self._btn_files.configure(fg_color=acc, hover_color=self._adjust_brightness(acc, 0.85))
+        acc_h = str(tokens.get("accent_secondary", "#06B6D4"))
+        self._btn_photos.configure(fg_color=acc, hover_color=acc_h)
+        self._btn_videos.configure(fg_color=acc, hover_color=acc_h)
+        self._btn_files.configure(fg_color=acc, hover_color=acc_h)
 
         # Secondary buttons with elevated background
-        self._btn_resume.configure(fg_color=elev, hover_color=self._adjust_brightness(elev, 1.2))
-        self._btn_last_review.configure(fg_color=elev, hover_color=self._adjust_brightness(elev, 1.2))
+        ov = str(tokens.get("bg_overlay", "#21262D"))
+        self._btn_resume.configure(fg_color=elev, hover_color=ov)
+        self._btn_last_review.configure(fg_color=elev, hover_color=ov)
 
         # Decorative elements
         if hasattr(self, "_accent_line"):
@@ -128,7 +131,7 @@ class WelcomePageCTK(ctk.CTkFrame):
         self._title_label = ctk.CTkLabel(
             header_frame,
             text="CEREBRO",
-            font=ctk.CTkFont(family="SF Pro Display", size=52, weight="bold"),
+            font=self._title_font(),
             text_color=self._tokens["text_primary"],
         )
         self._title_label.grid(row=0, column=0, sticky="n")
