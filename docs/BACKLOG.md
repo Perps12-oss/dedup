@@ -19,26 +19,13 @@ Branch name suggestion: `test/ctk-review-page` or fold into `design/store-retent
 
 ---
 
-## Branch 3 — `design/store-retention-and-projection-limits` (scope contract)
+## Branch 3 — `design/store-retention-and-projection-limits`
 
-Design + implementation pass — **only** the items below (avoid vague “memory improvements”):
+**Policy + implementation:** see `docs/STORE_RETENTION_AND_PROJECTION.md` (coordinator `_last_result`, store `reset_live_scan_projection` / `reset_review_state`, hub session start).
 
-**Store retention**
+**Still optional / later:** lightweight `ScanResult` summaries after deletion; extra coordinator tests with a mocked worker.
 
-- When heavy `ScanResult` payloads are retained vs replaced with lightweight summaries.
-- What **history** must preserve vs what **review / live UI** needs.
-
-**Projection lifecycle**
-
-- Cap / reset rules for hub dictionaries and event-fed state.
-- Session boundary cleanup semantics.
-- Repeated scan lifecycle rules.
-
-**Tests**
-
-- Repeated scan memory / state lifecycle.
-- Deletion-complete retention behavior.
-- Session reset / resume / reload behavior.
+**CTK Review tests:** `dedup/tests/test_ctk_review_page.py` — extend as behaviors grow.
 
 ---
 

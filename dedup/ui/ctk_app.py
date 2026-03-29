@@ -587,6 +587,8 @@ class CerebroCTKApp:
             return
         page.set_status("Starting scan...")
         try:
+            self.store.reset_live_scan_projection()
+            self.store.reset_review_state()
             self._active_scan_id = self._scan_controller.handle_start_scan(
                 Path(path),
                 payload.get("options") or {},
@@ -612,6 +614,7 @@ class CerebroCTKApp:
             page.set_status("No resumable scans found")
             return
         try:
+            self.store.reset_live_scan_projection()
             self._active_scan_id = self._scan_controller.handle_start_resume(
                 ids[0],
                 on_progress=self._noop_progress,

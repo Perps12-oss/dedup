@@ -247,6 +247,19 @@ class UIStateStore:
             )
         )
 
+    def reset_live_scan_projection(self) -> None:
+        """
+        Replace the projected scan slice with defaults (new scan session starting).
+
+        ProjectionHub will republish session/metrics; this avoids stale session ids
+        in store selectors between runs.
+        """
+        self._set_state(replace(self._state, scan=ProjectedScanState()))
+
+    def reset_review_state(self) -> None:
+        """Clear all review slices (keep selections, index, plan, preview)."""
+        self._set_state(replace(self._state, review=ReviewState()))
+
     def _set_state(self, new_state: UIAppState) -> None:
         if not self._is_main_thread():
             self.call_on_ui_thread(lambda ns=new_state: self._set_state(ns))

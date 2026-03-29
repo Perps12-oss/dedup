@@ -29,3 +29,20 @@ def temp_dir():
 def sample_roots(temp_dir):
     """Path to a temp dir for scan roots."""
     return temp_dir
+
+
+@pytest.fixture
+def tk_root():
+    """Minimal Tk root for UIStateStore / CTK tests (headless CI may skip)."""
+    import tkinter as tk
+
+    try:
+        root = tk.Tk()
+    except Exception as e:
+        pytest.skip(f"Tk unavailable: {e}")
+    root.withdraw()
+    yield root
+    try:
+        root.destroy()
+    except Exception:
+        pass
