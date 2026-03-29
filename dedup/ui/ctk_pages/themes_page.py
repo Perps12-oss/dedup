@@ -31,7 +31,7 @@ from ..theme.gradients import color_at_gradient_position, draw_horizontal_multi_
 from ..theme.theme_config import ThemeConfig
 from ..theme.theme_manager import get_theme_manager
 from ..theme.theme_registry import DEFAULT_THEME, THEMES, get_theme, get_theme_names
-from .design_tokens import get_theme_colors
+from .design_tokens import get_theme_colors, resolve_border_token
 from .ui_utils import resolve_color, safe_callback
 
 _MAX_STOPS = 8
@@ -87,8 +87,10 @@ class ThemesPageCTK(ctk.CTkFrame):
         """Apply theme tokens to the page. API UNCHANGED."""
         panel = str(tokens.get("bg_panel", "#161b22"))
         bg = str(tokens.get("bg_base", "#0f131c"))
+        br = resolve_border_token(tokens)
+        border_pair = (br, br)
         for f in self._panel_sections:
-            f.configure(fg_color=panel)
+            f.configure(fg_color=panel, border_color=border_pair)
         if hasattr(self, "_scroll"):
             self._scroll.configure(fg_color=bg)
         if hasattr(self, "_grad_canvas"):
@@ -653,9 +655,7 @@ class ThemesPageCTK(ctk.CTkFrame):
             else:
                 btn.configure(border_width=0)
 
-        # Apply theme
-        self._tm.apply_theme(key)
-
+        # Shell persists theme_key, clears custom gradient, and applies once via ThemeManager.apply.
         safe_callback(self._on_theme_change, key, context="on_theme_change")
 
         # Reset gradient to theme defaults
@@ -765,6 +765,7 @@ class ThemesPageCTK(ctk.CTkFrame):
             self._working_stops = list(tc.custom_gradient_stops)
             self._rebuild_stop_rows()
             self._paint_gradient()
+            safe_callback(self._on_preference_changed, context="on_preference_changed (import)")
 
         messagebox.showinfo("Import", f"Applied theme: {THEMES[key].get('name', key)}")
         self._notify_toast("Theme imported")

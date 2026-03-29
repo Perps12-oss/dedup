@@ -3,6 +3,12 @@ CEREBRO UI Theme Tokens
 =======================
 15 multigradient themes built on semantic tokens.
 Each theme defines a fixed token set — no per-widget ad hoc colour logic.
+
+Optional ``cinematic_chrome_base`` / ``cinematic_chrome_dark`` tune the inset CTk column.
+:func:`theme_registry.get_theme` runs :func:`cinematic_tokens.finalize_cinematic_tokens`, which
+fills missing chrome from the gradient heuristic and sets ``bg_panel`` / ``bg_elevated`` from
+chrome (``adjust_color(..., brightness=-5/-2)``). Preset ``bg_panel`` / ``bg_elevated`` literals
+below are kept for reference / non-CTk tooling but are overwritten at runtime for the CTK shell.
 """
 
 from __future__ import annotations
@@ -150,6 +156,9 @@ GRAPHITE_EMBER: ThemeDict = {
 OBSIDIAN_GOLD: ThemeDict = {
     "name": "Obsidian Gold",
     "mode": "dark",
+    # Optional: inset chrome (finalizer still derives bg_panel / bg_elevated from base).
+    "cinematic_chrome_base": "#2A2F2C",
+    "cinematic_chrome_dark": "#1E221F",
     "bg_base": "#0c0b08",
     "bg_panel": "#141208",
     "bg_elevated": "#1e1c0f",

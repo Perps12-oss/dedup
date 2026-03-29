@@ -91,8 +91,16 @@ def draw_horizontal_gradient(
 def cinematic_chrome_color(tokens: dict[str, Any], *, reduced: bool) -> str:
     """
     Single hex approximating the gradient wash for CTk surfaces that cannot show a live Canvas through.
-    Strong blend toward gradient_mid / gradient_end so the main column reads gold, not flat grey-blue.
+    When ``cinematic_chrome_base`` is set (see :mod:`cinematic_tokens`), that value is used so shell
+    chrome matches theme-finalized tokens. Otherwise blend bg_base toward gradient_mid / gradient_end.
     """
+    explicit = tokens.get("cinematic_chrome_base")
+    if explicit and str(explicit).startswith("#") and len(str(explicit).strip()) >= 7:
+        chrome = str(explicit).strip()[:7]
+        if reduced:
+            bg = str(tokens.get("bg_base", chrome))
+            return lerp_color(chrome, bg, 0.12)
+        return chrome
     base = str(tokens.get("bg_base", "#0f131c"))
     gm = str(tokens.get("gradient_mid", tokens.get("accent_primary", base)))
     ge = str(tokens.get("gradient_end", gm))
@@ -156,7 +164,11 @@ def paint_cinematic_backdrop(
         u_wave = uy * 0.72 + 0.14 * math.sin(uy * math.pi)
         u_wave = max(0.0, min(1.0, u_wave))
         sweep = color_at_gradient_position(stops, u_wave)
-        col = lerp_color(base, sweep, 0.84)
+        # Dark themes: strong accent wash in the margin. Light themes: keep margin near bg_base
+        # or the blend pulls toward dark greens and reads as a muddy brown ring.
+        mode_l = str(tokens.get("mode", "dark")).lower()
+        blend = 0.30 if mode_l == "light" else 0.84
+        col = lerp_color(base, sweep, blend)
         canvas.create_rectangle(0, y0, w, y1, fill=col, outline="", tags="backdrop")
 
 

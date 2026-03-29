@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any, Optional
 import customtkinter as ctk
 
 from ...infrastructure.diagnostics import get_diagnostics_recorder
-from .design_tokens import get_theme_colors
+from .design_tokens import get_theme_colors, resolve_border_token
 
 if TYPE_CHECKING:
     from ...application.runtime import ApplicationRuntime
@@ -76,10 +76,11 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
         panel = str(tokens.get("bg_panel", "#161b22"))
         acc = str(tokens.get("accent_primary", "#3B8ED0"))
         elev = str(tokens.get("bg_elevated", "#21262d"))
+        br = resolve_border_token(tokens)
         for name in ("_diag_status_frame", "_diag_overview_frame", "_diag_tab_container"):
             fr = getattr(self, name, None)
             if fr is not None:
-                fr.configure(fg_color=panel)
+                fr.configure(fg_color=panel, border_color=br)
         if hasattr(self, "_refresh_diag_btn"):
             self._refresh_diag_btn.configure(fg_color=acc)
         if hasattr(self, "_export_diag_btn"):

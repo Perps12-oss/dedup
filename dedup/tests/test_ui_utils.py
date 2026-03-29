@@ -37,3 +37,12 @@ def test_get_theme_colors_returns_independent_dicts() -> None:
     assert a is not b
     a["bg_base"] = ("#000000", "#000000")
     assert b["bg_base"] != ("#000000", "#000000")
+
+
+def test_resolve_border_token_prefers_border_soft() -> None:
+    from dedup.ui.ctk_pages.design_tokens import resolve_border_default_token, resolve_border_token
+
+    assert resolve_border_token({"border_soft": "#aaaaaa", "border_subtle": "#bbbbbb"}) == "#aaaaaa"
+    assert resolve_border_token({"border_subtle": "#bbbbbb"}) == "#bbbbbb"
+    assert resolve_border_default_token({"border_strong": "#111111", "border_default": "#222222"}) == "#111111"
+    assert resolve_border_default_token({"border_default": "#222222"}) == "#222222"
