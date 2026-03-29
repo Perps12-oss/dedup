@@ -6,6 +6,42 @@ Small items worth tracking. Not scheduled.
 
 ---
 
+## CTK Review page test coverage (follow-up — not a dead-layer merge blocker)
+
+**Why `test_review_page.py` was removed:** That file exercised **VM-era and ttk-only paths** (`ReviewVM`, `review_workspace`, `SafetyPanel`, gallery/compare widgets). None of that is imported by the active **`dedup.ui.ctk_pages.review_page.ReviewPageCTK`** + `ReviewController` stack.
+
+**Gap:** The live CTK review surface has **no direct automated tests** after removal. Add targeted coverage in a follow-up PR, for example:
+
+- Instantiate `ReviewPageCTK` with a mock `on_execute` / minimal `UIStateStore` (or stub coordinator callbacks).
+- Assert `load_result`, group selection, `_confirm_execute` / cancel paths, and `_show_result_panel` visibility rules.
+
+Branch name suggestion: `test/ctk-review-page` or fold into `design/store-retention-and-projection-limits` only if tests need real store lifecycle fixtures.
+
+---
+
+## Branch 3 — `design/store-retention-and-projection-limits` (scope contract)
+
+Design + implementation pass — **only** the items below (avoid vague “memory improvements”):
+
+**Store retention**
+
+- When heavy `ScanResult` payloads are retained vs replaced with lightweight summaries.
+- What **history** must preserve vs what **review / live UI** needs.
+
+**Projection lifecycle**
+
+- Cap / reset rules for hub dictionaries and event-fed state.
+- Session boundary cleanup semantics.
+- Repeated scan lifecycle rules.
+
+**Tests**
+
+- Repeated scan memory / state lifecycle.
+- Deletion-complete retention behavior.
+- Session reset / resume / reload behavior.
+
+---
+
 ## ~~Clear Keep UI control~~ ✅ Implemented
 
 - **Context:** `ReviewVM.clear_keep(group_id)` exists but is not wired to any UI control.
