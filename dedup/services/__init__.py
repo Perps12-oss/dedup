@@ -1,1 +1,1 @@
-"""Service interfaces and adapters for MVVM layer."""
+"""Reserved for application-level service facades (MVVM adapters removed)."""

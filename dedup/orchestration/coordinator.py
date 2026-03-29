@@ -128,6 +128,11 @@ class ScanCoordinator:
 
         get_diagnostics_recorder().clear()
 
+        # New scan (not resume): drop in-memory last result so UI cannot show stale groups
+        # while a new run is active. Resume continues the same logical session.
+        if not resume_scan_id:
+            self._last_result = None
+
         if resume_scan_id:
             scan_config = ScanConfig(roots=[Path(".")])  # Replaced by checkpoint config
         else:

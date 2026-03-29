@@ -12,15 +12,28 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Any, Callable, List, Optional, Tuple
 
+from .cinematic_tokens import finalize_cinematic_tokens
 from .design_system import font_tuple, get_font_scale
 from .gradients import lerp_color
-from .sv_bridge import set_sun_valley_theme
-from .cinematic_tokens import finalize_cinematic_tokens
 from .theme_registry import DEFAULT_THEME, get_theme
 from .theme_tokens import ThemeDict
 
 _INSTANCE: Optional["ThemeManager"] = None
 _log = logging.getLogger(__name__)
+
+
+def _try_set_sun_valley_theme(root: tk.Tk, dark: bool) -> bool:
+    """
+    Apply optional sv-ttk Fluent-style base (install: pip install sv-ttk, extra modern-ui).
+    Returns True if applied; False on missing package or error — caller falls back to clam.
+    """
+    try:
+        import sv_ttk  # type: ignore[import-untyped]
+
+        sv_ttk.set_theme("dark" if dark else "light")
+        return True
+    except Exception:
+        return False
 
 
 def parse_gradient_stops_from_raw(raw: Any) -> Optional[List[Tuple[float, str]]]:
@@ -122,7 +135,7 @@ class ThemeManager:
         t = self._tokens
         style = ttk.Style(root)
         if self._sun_valley_enabled:
-            if not set_sun_valley_theme(root, self._sun_valley_dark):
+            if not _try_set_sun_valley_theme(root, self._sun_valley_dark):
                 style.theme_use("clam")
         else:
             style.theme_use("clam")

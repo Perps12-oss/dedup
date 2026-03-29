@@ -70,9 +70,9 @@ plan = pipeline.create_deletion_plan(result)
 
 - **dedup/engine/** — Core duplicate detection (no UI deps).
 - **dedup/orchestration/** — Scan lifecycle, coordinator, worker.
-- **dedup/infrastructure/** — Config, persistence, trash, logging.
+- **dedup/infrastructure/** — Config, persistence, logging.
 - **dedup/application/** — Application facades (`ApplicationRuntime`, scan/review/history services) — UI uses these via controllers.
-- **dedup/ui/** — CEREBRO shell: CustomTkinter (`ctk_app`, `ctk_pages/`), store, controllers, projections, theme; MVVM experiments under `dedup/core/`, `dedup/models/`, `dedup/services/`, `dedup/ui/viewmodels/`.
+- **dedup/ui/** — CEREBRO shell: CustomTkinter (`ctk_app`, `ctk_pages/`), store, controllers, projections, theme; shared models under `dedup/models/`.
   - **Authority**: `docs/UI_AUTHORITY.md`. Hub → store → selectors; commands via ScanController/ReviewController + application services.
   - **Pages**: Mission, Scan, Review, History, Diagnostics, Themes, Settings (NavRail).
 
