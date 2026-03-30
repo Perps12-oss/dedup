@@ -78,6 +78,9 @@ class HistoryPageCTK(ctk.CTkFrame):
         """Apply theme tokens to the page. API UNCHANGED."""
         panel = str(tokens.get("bg_panel", "#161b22"))
         elev = str(tokens.get("bg_elevated", "#21262d"))
+        self.configure(fg_color=panel)
+        if hasattr(self, "_scroll"):
+            self._scroll.configure(fg_color="transparent", label_fg_color="transparent")
         acc = str(tokens.get("accent_primary", "#3B8ED0"))
         br = resolve_border_token(tokens)
         for name in ("_summary_frame", "_table_section", "_detail_frame"):
@@ -92,6 +95,41 @@ class HistoryPageCTK(ctk.CTkFrame):
             self._resume_btn.configure(fg_color=acc)
         if hasattr(self, "_export_btn"):
             self._export_btn.configure(fg_color=elev)
+        # Update detail container elements
+        if hasattr(self, "_detail_container"):
+            self._detail_container.configure(fg_color="transparent")
+
+        # Update all text labels with live token colors
+        self._update_label_colors(self, tokens)
+
+    def _update_label_colors(self, widget, tokens: dict) -> None:
+        """Recursively update all label text colors in widget tree with live tokens."""
+        txt_primary = str(tokens.get("text_primary", "#F1F5F9"))
+        txt_secondary = str(tokens.get("text_secondary", "#94A3B8"))
+        txt_muted = str(tokens.get("text_muted", "#6B7280"))
+        acc = str(tokens.get("accent_primary", "#3B8ED0"))
+
+        try:
+            for child in widget.winfo_children():
+                if child.__class__.__name__ == "CTkLabel":
+                    try:
+                        current_color = child.cget("text_color")
+                        if current_color and isinstance(current_color, tuple) and len(current_color) == 2:
+                            child.configure(text_color=(txt_primary, "#0A0E14"))
+                        elif "accent" in str(current_color).lower():
+                            child.configure(text_color=acc)
+                        elif "muted" in str(current_color).lower():
+                            child.configure(text_color=txt_muted)
+                        elif "secondary" in str(current_color).lower():
+                            child.configure(text_color=txt_secondary)
+                        elif current_color:
+                            child.configure(text_color=txt_primary)
+                    except Exception:
+                        pass
+                elif child.__class__.__name__ in ("CTkFrame", "CTkScrollableFrame"):
+                    self._update_label_colors(child, tokens)
+        except Exception:
+            pass
 
     def reload(self) -> None:
         """Reload history data and refresh UI. API UNCHANGED."""
@@ -105,7 +143,7 @@ class HistoryPageCTK(ctk.CTkFrame):
 
     def _build(self) -> None:
         # Configure base styling
-        self.configure(fg_color=self._tokens["bg_base"])
+        self.configure(fg_color=self._tokens["bg_panel"])
 
         # Header
         self._build_header()
@@ -191,26 +229,18 @@ class HistoryPageCTK(ctk.CTkFrame):
         cards.grid_columnconfigure(2, weight=1)
 
         # Total scans card
-        total_card = self._create_stat_card(
-            cards, 0, "📊", "Total Scans", "0"
-        )
+        total_card = self._create_stat_card(cards, 0, "📊", "Total Scans", "0")
         self._total_label = total_card["value_label"]
 
         # Avg duration card
-        dur_card = self._create_stat_card(
-            cards, 1, "⏱️", "Avg Duration", "—"
-        )
+        dur_card = self._create_stat_card(cards, 1, "⏱️", "Avg Duration", "—")
         self._duration_label = dur_card["value_label"]
 
         # Avg reclaimable card
-        rec_card = self._create_stat_card(
-            cards, 2, "💾", "Avg Reclaimable", "—"
-        )
+        rec_card = self._create_stat_card(cards, 2, "💾", "Avg Reclaimable", "—")
         self._reclaim_label = rec_card["value_label"]
 
-    def _create_stat_card(
-        self, parent: ctk.CTkFrame, col: int, icon: str, label: str, value: str
-    ) -> dict:
+    def _create_stat_card(self, parent: ctk.CTkFrame, col: int, icon: str, label: str, value: str) -> dict:
         """Create a statistics card with icon, label, and value."""
         card = ctk.CTkFrame(
             parent,
@@ -269,7 +299,7 @@ class HistoryPageCTK(ctk.CTkFrame):
         # Scrollable table
         self._scroll = ctk.CTkScrollableFrame(
             table_section,
-            fg_color=self._tokens["bg_surface"],
+            fg_color="transparent",
             corner_radius=12,
         )
         self._scroll.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 12))
@@ -509,11 +539,13 @@ class HistoryPageCTK(ctk.CTkFrame):
 
             # Search filter
             if search:
-                searchable = " ".join([
-                    str(row.get("scan_id", "")),
-                    str(row.get("status", "")),
-                    " ".join(row.get("roots", [])),
-                ]).lower()
+                searchable = " ".join(
+                    [
+                        str(row.get("scan_id", "")),
+                        str(row.get("status", "")),
+                        " ".join(row.get("roots", [])),
+                    ]
+                ).lower()
                 if search not in searchable:
                     continue
 

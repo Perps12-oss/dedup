@@ -16,11 +16,11 @@ import logging
 import mmap
 import threading
 import time
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from collections import defaultdict
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 from .models import FileMetadata, ScanConfig

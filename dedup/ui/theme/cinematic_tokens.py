@@ -57,5 +57,8 @@ def finalize_cinematic_tokens(t: ThemeDict) -> ThemeDict:
 
     out["bg_panel"] = adjust_color(base, brightness=-5)
     out["bg_elevated"] = adjust_color(base, brightness=-2)
+    # Surface token for scrollables and contained elements (between base and panel)
+    if "bg_surface" not in out or not _is_hex_color(out.get("bg_surface")):
+        out["bg_surface"] = adjust_color(base, brightness=-3)
 
     return out

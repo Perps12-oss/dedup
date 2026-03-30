@@ -45,10 +45,7 @@ def test_partial_hash_upsert_batch_inserts_rows(tmp_path):
         """
     )
     repo = PartialHashRepository(conn)
-    rows = [
-        ("s1", i, "md5", "v1", "{}", f"h{i}", "2020-01-01T00:00:00")
-        for i in range(50)
-    ]
+    rows = [("s1", i, "md5", "v1", "{}", f"h{i}", "2020-01-01T00:00:00") for i in range(50)]
     repo.upsert_batch(rows)
     n = conn.execute("SELECT COUNT(*) AS c FROM partial_hashes").fetchone()["c"]
     assert n == 50

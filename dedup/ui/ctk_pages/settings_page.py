@@ -77,19 +77,51 @@ class SettingsPageCTK(ctk.CTkFrame):
         """Apply theme tokens to styled components. API UNCHANGED."""
         panel = str(tokens.get("bg_panel", "#1C2128"))
         elev = str(tokens.get("bg_elevated", "#161B22"))
+        self.configure(fg_color=panel)
+        if hasattr(self, "_scroll"):
+            self._scroll.configure(fg_color="transparent", label_fg_color="transparent")
         acc = str(tokens.get("accent_primary", "#22D3EE"))
         border = resolve_border_token(tokens)
-        bg = str(tokens.get("bg_base", "#0A0E14"))
 
         for f in self._section_frames:
-            f.configure(fg_color=panel, border_color=border)
+            f.configure(fg_color=elev, border_color=border)
 
-        if hasattr(self, "_scroll"):
-            self._scroll.configure(fg_color=("#F8FAFC", bg))
         if hasattr(self, "_themes_btn"):
             self._themes_btn.configure(fg_color=acc)
         if hasattr(self, "_diag_btn"):
             self._diag_btn.configure(fg_color=elev, border_color=border)
+
+        # Update all text labels with live token colors
+        self._update_label_colors(self, tokens)
+
+    def _update_label_colors(self, widget, tokens: dict) -> None:
+        """Recursively update all label text colors in widget tree with live tokens."""
+        txt_primary = str(tokens.get("text_primary", "#F1F5F9"))
+        txt_secondary = str(tokens.get("text_secondary", "#94A3B8"))
+        txt_muted = str(tokens.get("text_muted", "#6B7280"))
+        acc = str(tokens.get("accent_primary", "#22D3EE"))
+
+        try:
+            for child in widget.winfo_children():
+                if child.__class__.__name__ == "CTkLabel":
+                    try:
+                        current_color = child.cget("text_color")
+                        if current_color and isinstance(current_color, tuple) and len(current_color) == 2:
+                            child.configure(text_color=(txt_primary, "#0A0E14"))
+                        elif "accent" in str(current_color).lower():
+                            child.configure(text_color=acc)
+                        elif "muted" in str(current_color).lower():
+                            child.configure(text_color=txt_muted)
+                        elif "secondary" in str(current_color).lower():
+                            child.configure(text_color=txt_secondary)
+                        elif current_color:
+                            child.configure(text_color=txt_primary)
+                    except Exception:
+                        pass
+                elif child.__class__.__name__ in ("CTkFrame", "CTkScrollableFrame"):
+                    self._update_label_colors(child, tokens)
+        except Exception:
+            pass
 
     def on_show(self) -> None:
         """Called when page becomes visible - refresh from state. API UNCHANGED."""
@@ -132,7 +164,7 @@ class SettingsPageCTK(ctk.CTkFrame):
         # Scrollable container
         self._scroll = ctk.CTkScrollableFrame(
             self,
-            fg_color=self._tokens["bg_base"],
+            fg_color="transparent",
             corner_radius=0,
         )
         self._scroll.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
@@ -242,7 +274,7 @@ class SettingsPageCTK(ctk.CTkFrame):
         section = ctk.CTkFrame(
             parent,
             corner_radius=16,
-            fg_color=self._tokens["bg_panel"],
+            fg_color=self._tokens["bg_elevated"],
             border_width=1,
             border_color=self._tokens["border_subtle"],
         )
@@ -304,7 +336,7 @@ class SettingsPageCTK(ctk.CTkFrame):
         section = ctk.CTkFrame(
             parent,
             corner_radius=16,
-            fg_color=self._tokens["bg_panel"],
+            fg_color=self._tokens["bg_elevated"],
             border_width=1,
             border_color=self._tokens["border_subtle"],
         )
@@ -350,7 +382,7 @@ class SettingsPageCTK(ctk.CTkFrame):
         section = ctk.CTkFrame(
             parent,
             corner_radius=16,
-            fg_color=self._tokens["bg_panel"],
+            fg_color=self._tokens["bg_elevated"],
             border_width=1,
             border_color=self._tokens["border_subtle"],
         )
@@ -389,7 +421,7 @@ class SettingsPageCTK(ctk.CTkFrame):
         section = ctk.CTkFrame(
             parent,
             corner_radius=16,
-            fg_color=self._tokens["bg_panel"],
+            fg_color=self._tokens["bg_elevated"],
             border_width=1,
             border_color=self._tokens["border_subtle"],
         )
@@ -494,7 +526,7 @@ class SettingsPageCTK(ctk.CTkFrame):
         section = ctk.CTkFrame(
             parent,
             corner_radius=16,
-            fg_color=self._tokens["bg_panel"],
+            fg_color=self._tokens["bg_elevated"],
             border_width=1,
             border_color=self._tokens["border_subtle"],
         )

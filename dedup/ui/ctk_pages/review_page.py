@@ -309,9 +309,13 @@ class ReviewPageCTK(ctk.CTkFrame):
 
     def apply_theme_tokens(self, tokens: dict) -> None:
         panel = str(tokens.get("bg_panel", "#161b22"))
+        base = str(tokens.get("bg_base", "#0f131c"))
+        surf = str(tokens.get("bg_surface", str(tokens.get("bg_elevated", "#21262d"))))
+        self.configure(fg_color=panel)
+        if hasattr(self, "_scroll"):
+            self._scroll.configure(fg_color=surf, label_fg_color=base)
         elev = str(tokens.get("bg_elevated", "#21262d"))
         br = resolve_border_token(tokens)
-        surf = str(tokens.get("bg_surface", "#0D1117"))
         txt = str(tokens.get("text_secondary", "#94A3B8"))
         for f in self._themed_sections:
             f.configure(fg_color=panel, border_color=br)
@@ -329,6 +333,38 @@ class ReviewPageCTK(ctk.CTkFrame):
         cur = self._group_var.get()
         if cur and self._group_row_frames:
             self._highlight_group_row(cur)
+
+        # Update all text labels with live token colors
+        self._update_label_colors(self, tokens)
+
+    def _update_label_colors(self, widget, tokens: dict) -> None:
+        """Recursively update all label text colors in widget tree with live tokens."""
+        txt_primary = str(tokens.get("text_primary", "#F1F5F9"))
+        txt_secondary = str(tokens.get("text_secondary", "#94A3B8"))
+        txt_muted = str(tokens.get("text_muted", "#6B7280"))
+        acc = str(tokens.get("accent_primary", "#E53E3E"))
+
+        try:
+            for child in widget.winfo_children():
+                if child.__class__.__name__ == "CTkLabel":
+                    try:
+                        current_color = child.cget("text_color")
+                        if current_color and isinstance(current_color, tuple) and len(current_color) == 2:
+                            child.configure(text_color=(txt_primary, "#0A0E14"))
+                        elif "accent" in str(current_color).lower():
+                            child.configure(text_color=acc)
+                        elif "muted" in str(current_color).lower():
+                            child.configure(text_color=txt_muted)
+                        elif "secondary" in str(current_color).lower():
+                            child.configure(text_color=txt_secondary)
+                        elif current_color:
+                            child.configure(text_color=txt_primary)
+                    except Exception:
+                        pass
+                elif child.__class__.__name__ in ("CTkFrame", "CTkScrollableFrame"):
+                    self._update_label_colors(child, tokens)
+        except Exception:
+            pass
 
     def set_refresh_callback(self, callback: Callable[[], ScanResult | None]) -> None:
         self._refresh_callback = lambda: self.load_result(callback())
@@ -500,7 +536,6 @@ class ReviewPageCTK(ctk.CTkFrame):
             return None
         return self._compare_label_to_path.get(menu_value, menu_value)
 
-
     def _on_hero_viewport_configure(self, event: tkinter.Event) -> None:
         if event.widget != self._hero_viewport:
             return
@@ -547,7 +582,9 @@ class ReviewPageCTK(ctk.CTkFrame):
             if hasattr(self, "_preview_title"):
                 self._preview_title.configure(text="File preview")
             return
-        self._group_map = {str(g.group_id): g for g in result.duplicate_groups if len(getattr(g, "files", []) or []) >= 2}
+        self._group_map = {
+            str(g.group_id): g for g in result.duplicate_groups if len(getattr(g, "files", []) or []) >= 2
+        }
         if not self._group_map:
             self._layout_review_empty(False)
             reclaim = int(getattr(result, "total_reclaimable_bytes", 0) or 0)
@@ -621,8 +658,7 @@ class ReviewPageCTK(ctk.CTkFrame):
         empty.pack(fill="both", expand=True)
         ctk.CTkLabel(
             empty,
-            text="🎉 No duplicates found!\n\n"
-            "Your files are well-organized.",
+            text="🎉 No duplicates found!\n\nYour files are well-organized.",
             justify="center",
             wraplength=200,
             text_color=self._tokens["text_secondary"],
@@ -634,9 +670,7 @@ class ReviewPageCTK(ctk.CTkFrame):
         """User-facing title/sub for a duplicate group (ordinal + extensions + size, not raw UUIDs)."""
         files = list(getattr(group, "files", []) or [])
         n = len(files)
-        exts = sorted(
-            {Path(getattr(f, "path", "") or "").suffix.lower() for f in files if getattr(f, "path", "")}
-        )
+        exts = sorted({Path(getattr(f, "path", "") or "").suffix.lower() for f in files if getattr(f, "path", "")})
         exts = [e for e in exts if e]
         if not exts:
             ext_label = "files"
@@ -660,7 +694,11 @@ class ReviewPageCTK(ctk.CTkFrame):
             inner = ctk.CTkFrame(self._group_scroll, corner_radius=8, fg_color=self._group_row_normal)
             inner.pack(fill="x", pady=4)
             title_lbl = ctk.CTkLabel(
-                inner, text=title_txt, font=ctk.CTkFont(weight="bold"), text_color=self._tokens["text_primary"], anchor="w"
+                inner,
+                text=title_txt,
+                font=ctk.CTkFont(weight="bold"),
+                text_color=self._tokens["text_primary"],
+                anchor="w",
             )
             title_lbl.pack(anchor="w", padx=10, pady=(8, 0))
             sub = ctk.CTkLabel(inner, text=sub_txt, text_color=self._tokens["text_secondary"], anchor="w")

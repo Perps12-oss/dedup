@@ -13,11 +13,11 @@ from typing import TYPE_CHECKING, Callable, Optional
 
 import customtkinter as ctk
 
+from ..components.ctk_tooltip import CTkToolTip
 from ..ctk_action_contracts import KeepPolicy, PostScanRoute, ScanMode, ScanStartPayload
 from ..projections.phase_projection import PHASE_LABELS, canonical_phase
 from ..state.selectors import scan_metrics, scan_session
 from ..utils.formatting import fmt_duration, fmt_int
-from ..components.ctk_tooltip import CTkToolTip
 from .design_tokens import get_theme_colors, resolve_border_token
 from .ui_utils import safe_callback
 
@@ -125,6 +125,7 @@ class ScanPageCTK(ctk.CTkFrame):
         scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
         scroll.grid(row=0, column=0, sticky="nsew")
         scroll.grid_columnconfigure(0, weight=1)
+        self._scroll = scroll
 
         header = ctk.CTkFrame(
             scroll,
@@ -171,7 +172,9 @@ class ScanPageCTK(ctk.CTkFrame):
         meta_row = ctk.CTkFrame(header, fg_color="transparent")
         meta_row.grid(row=4, column=0, sticky="w", padx=16, pady=(0, 12))
         ctk.CTkLabel(meta_row, text="Stage:", text_color=tk["text_muted"]).pack(side="left")
-        ctk.CTkLabel(meta_row, textvariable=self._phase_var, text_color=tk["text_primary"]).pack(side="left", padx=(6, 16))
+        ctk.CTkLabel(meta_row, textvariable=self._phase_var, text_color=tk["text_primary"]).pack(
+            side="left", padx=(6, 16)
+        )
         ctk.CTkLabel(meta_row, text="Progress:", text_color=tk["text_muted"]).pack(side="left")
         self._header_pct_label = ctk.CTkLabel(
             meta_row,
@@ -190,9 +193,9 @@ class ScanPageCTK(ctk.CTkFrame):
         )
         target.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 12))
         target.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(target, text="📂  Target Folder", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]).grid(
-            row=0, column=0, sticky="w", padx=16, pady=(12, 8)
-        )
+        ctk.CTkLabel(
+            target, text="📂  Target Folder", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(12, 8))
         self._path_var = ctk.StringVar(value="")
         self._path_var.trace_add("write", lambda *_: self._sync_folder_display())
         ctk.CTkEntry(
@@ -229,9 +232,12 @@ class ScanPageCTK(ctk.CTkFrame):
         )
         routing.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 12))
         routing.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(routing, text="Deletion preferences", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]).grid(
-            row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 10)
-        )
+        ctk.CTkLabel(
+            routing,
+            text="Deletion preferences",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=tk["text_primary"],
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 10))
         keep_lbl = ctk.CTkFrame(routing, fg_color="transparent")
         keep_lbl.grid(row=1, column=0, sticky="w", padx=16, pady=(0, 8))
         ctk.CTkLabel(keep_lbl, text="Which copy to keep", text_color=tk["text_secondary"]).pack(side="left")
@@ -294,9 +300,9 @@ class ScanPageCTK(ctk.CTkFrame):
             border_color=tk["border_subtle"],
         )
         actions.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 12))
-        ctk.CTkLabel(actions, text="Actions", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]).pack(
-            anchor="w", padx=16, pady=(12, 8)
-        )
+        ctk.CTkLabel(
+            actions, text="Actions", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]
+        ).pack(anchor="w", padx=16, pady=(12, 8))
         row = ctk.CTkFrame(actions, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=(0, 14))
         self._start_btn = ctk.CTkButton(
@@ -350,9 +356,9 @@ class ScanPageCTK(ctk.CTkFrame):
         )
         self._ready.grid(row=4, column=0, sticky="ew", padx=20, pady=(0, 12))
         self._ready.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(self._ready, text="Results", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]).grid(
-            row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 6)
-        )
+        ctk.CTkLabel(
+            self._ready, text="Results", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 6))
         ctk.CTkLabel(self._ready, text="Groups found", text_color=tk["text_secondary"]).grid(
             row=1, column=0, sticky="w", padx=16, pady=(0, 4)
         )
@@ -388,9 +394,9 @@ class ScanPageCTK(ctk.CTkFrame):
         metrics.grid(row=5, column=0, sticky="ew", padx=20, pady=(0, 12))
         metrics.grid_columnconfigure(0, minsize=180)
         metrics.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(metrics, text="Live Metrics", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]).grid(
-            row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 8)
-        )
+        ctk.CTkLabel(
+            metrics, text="Live Metrics", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 8))
         ctk.CTkLabel(metrics, text="Files scanned", text_color=tk["text_secondary"]).grid(
             row=1, column=0, sticky="w", padx=16, pady=(0, 4)
         )
@@ -425,9 +431,9 @@ class ScanPageCTK(ctk.CTkFrame):
         )
         prog.grid(row=6, column=0, sticky="ew", padx=20, pady=(0, 12))
         prog.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(prog, text="Progress", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]).grid(
-            row=0, column=0, sticky="w", padx=16, pady=(12, 8)
-        )
+        ctk.CTkLabel(
+            prog, text="Progress", font=ctk.CTkFont(size=18, weight="bold"), text_color=tk["text_primary"]
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(12, 8))
         self._bar = ctk.CTkProgressBar(prog, progress_color=tk["accent_primary"], fg_color=tk["bg_elevated"])
         self._bar.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
         self._bar.set(0.0)
@@ -464,10 +470,13 @@ class ScanPageCTK(ctk.CTkFrame):
     def apply_theme_tokens(self, tokens: dict) -> None:
         """Sync panel surfaces with CEREBRO semantic tokens (CTk defaults do not follow ThemeManager)."""
         panel = str(tokens.get("bg_panel", "#161b22"))
+        self.configure(fg_color=panel)
+        if hasattr(self, "_scroll"):
+            self._scroll.configure(fg_color="transparent", label_fg_color="transparent")
         elev = str(tokens.get("bg_elevated", "#21262d"))
+        surf = str(tokens.get("bg_surface", elev))
         acc = str(tokens.get("accent_primary", "#3B8ED0"))
         br = resolve_border_token(tokens)
-        surf = str(tokens.get("bg_surface", "#0D1117"))
         txt = str(tokens.get("text_secondary", "#94A3B8"))
         for f in self._themed_sections:
             f.configure(fg_color=panel, border_color=br)
@@ -485,6 +494,38 @@ class ScanPageCTK(ctk.CTkFrame):
         self._route_btn.configure(fg_color=acc)
         self._bar.configure(progress_color=acc, fg_color=elev)
         self._info.configure(fg_color=surf, text_color=txt, border_color=br)
+
+        # Update all text labels with live token colors
+        self._update_label_colors(self, tokens)
+
+    def _update_label_colors(self, widget, tokens: dict) -> None:
+        """Recursively update all label text colors in widget tree with live tokens."""
+        txt_primary = str(tokens.get("text_primary", "#F1F5F9"))
+        txt_secondary = str(tokens.get("text_secondary", "#94A3B8"))
+        txt_muted = str(tokens.get("text_muted", "#6B7280"))
+        acc = str(tokens.get("accent_primary", "#3B8ED0"))
+
+        try:
+            for child in widget.winfo_children():
+                if child.__class__.__name__ == "CTkLabel":
+                    try:
+                        current_color = child.cget("text_color")
+                        if current_color and isinstance(current_color, tuple) and len(current_color) == 2:
+                            child.configure(text_color=(txt_primary, "#0A0E14"))
+                        elif "accent" in str(current_color).lower():
+                            child.configure(text_color=acc)
+                        elif "muted" in str(current_color).lower():
+                            child.configure(text_color=txt_muted)
+                        elif "secondary" in str(current_color).lower():
+                            child.configure(text_color=txt_secondary)
+                        elif current_color:
+                            child.configure(text_color=txt_primary)
+                    except Exception:
+                        pass
+                elif child.__class__.__name__ in ("CTkFrame", "CTkScrollableFrame"):
+                    self._update_label_colors(child, tokens)
+        except Exception:
+            pass
 
     def set_scan_busy(self, busy: bool) -> None:
         """Disable start/resume while a scan worker is active (shell syncs via coordinator)."""

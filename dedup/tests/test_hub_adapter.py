@@ -4,11 +4,10 @@ Integration tests for ProjectionHubStoreAdapter: hub callbacks update UIStateSto
 
 from __future__ import annotations
 
+import tkinter as tk
 from collections import defaultdict
 from dataclasses import replace
 from typing import Callable
-
-import tkinter as tk
 
 import pytest
 

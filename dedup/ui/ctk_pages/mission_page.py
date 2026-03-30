@@ -235,6 +235,9 @@ class MissionPageCTK(ctk.CTkFrame):
     def apply_theme_tokens(self, tokens: dict) -> None:
         """Apply theme tokens to styled components. API UNCHANGED."""
         panel = str(tokens.get("bg_panel", "#1C2128"))
+        if hasattr(self, "_scroll"):
+            self._scroll.configure(fg_color="transparent")
+        self.configure(fg_color=panel)
         elev = str(tokens.get("bg_elevated", "#161B22"))
         acc = str(tokens.get("accent_primary", "#22D3EE"))
         border = resolve_border_token(tokens)
@@ -257,9 +260,46 @@ class MissionPageCTK(ctk.CTkFrame):
         if hasattr(self, "_quick_browse_btn"):
             self._quick_browse_btn.configure(fg_color=elev, border_color=border, text_color=txt_sec)
 
+        # Update all text labels throughout the page with live token colors
+        self._update_label_colors(self, tokens)
+
     # ══════════════════════════════════════════════════════════════════════════
     # PRIVATE IMPLEMENTATION - VISUAL REFACTOR
     # ══════════════════════════════════════════════════════════════════════════
+
+    def _update_label_colors(self, widget, tokens: dict) -> None:
+        """Recursively update all label text colors in widget tree with live tokens."""
+        txt_primary = str(tokens.get("text_primary", "#F1F5F9"))
+        txt_secondary = str(tokens.get("text_secondary", "#94A3B8"))
+        txt_muted = str(tokens.get("text_muted", "#6B7280"))
+        acc = str(tokens.get("accent_primary", "#22D3EE"))
+
+        try:
+            for child in widget.winfo_children():
+                # Update CTkLabel text colors based on current color or best guess
+                if child.__class__.__name__ == "CTkLabel":
+                    try:
+                        # Try to detect what color category this label should use
+                        current_color = child.cget("text_color")
+                        if current_color and isinstance(current_color, tuple) and len(current_color) == 2:
+                            # Tuple = (light_mode_color, dark_mode_color) - update both
+                            child.configure(text_color=(txt_primary, "#0A0E14"))
+                        elif "accent" in str(current_color).lower():
+                            child.configure(text_color=acc)
+                        elif "muted" in str(current_color).lower():
+                            child.configure(text_color=txt_muted)
+                        elif "secondary" in str(current_color).lower():
+                            child.configure(text_color=txt_secondary)
+                        elif current_color:
+                            # Default to primary for unknown colors
+                            child.configure(text_color=txt_primary)
+                    except Exception:
+                        pass
+                # Recurse into frames
+                elif child.__class__.__name__ in ("CTkFrame", "CTkScrollableFrame"):
+                    self._update_label_colors(child, tokens)
+        except Exception:
+            pass
 
     def _build(self) -> None:
         """Build Mission page with enhanced visuals."""
@@ -273,6 +313,7 @@ class MissionPageCTK(ctk.CTkFrame):
         )
         scroll.grid(row=0, column=0, rowspan=4, sticky="nsew", padx=0, pady=0)
         scroll.grid_columnconfigure(0, weight=1)
+        self._scroll = scroll
 
         # ── Hero Section ────────────────────────────────────────────────────
         hero = ctk.CTkFrame(

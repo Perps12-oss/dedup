@@ -61,7 +61,7 @@ class CerebroCTKApp:
         self.root.minsize(760, 480)
 
         # Accessibility improvements
-        self.root.option_add('*tearOff', False)  # Disable tear-off menus
+        self.root.option_add("*tearOff", False)  # Disable tear-off menus
         self.root.focus_set()  # Set initial focus
 
         self.state = UIState()
@@ -77,6 +77,7 @@ class CerebroCTKApp:
 
         # Theme manager for CTK themes
         from .theme.theme_manager import get_theme_manager
+
         self._tm = get_theme_manager()
         self._tm.subscribe(self._on_theme_tokens)
 
@@ -160,7 +161,8 @@ class CerebroCTKApp:
         """Apply token changes to CTK surfaces (nav/content)."""
         try:
             bg = str(tokens.get("bg_base", "#0f131c"))
-            sidebar = str(tokens.get("bg_sidebar", "#141924"))
+            sidebar = str(tokens.get("bg_base", "#141924"))
+            panel_bg = str(tokens.get("bg_panel", "#1C2128"))
             acc = str(tokens.get("accent_primary", "#3B8ED0"))
             chrome = self._main_chrome_color(tokens)
             if hasattr(self, "_top_gradient") and self._top_gradient is not None:
@@ -194,6 +196,10 @@ class CerebroCTKApp:
                 # Solid chrome (not "transparent") avoids CTk repainting the page slot as black for a frame.
                 self._content_host.configure(fg_color=chrome)
             for page in self._pages.values():
+                try:
+                    page.configure(fg_color=panel_bg)
+                except Exception:
+                    pass
                 if hasattr(page, "apply_theme_tokens"):
                     try:
                         page.apply_theme_tokens(tokens)
@@ -203,9 +209,9 @@ class CerebroCTKApp:
             inactive = sidebar
             for name, btn in self._nav_buttons.items():
                 if name == self._active_page:
-                    btn.configure(fg_color=acc)
+                    btn.configure(fg_color=acc, text_color=str(tokens.get("text_primary", "#ffffff")))
                 else:
-                    btn.configure(fg_color=inactive)
+                    btn.configure(fg_color=inactive, text_color=str(tokens.get("text_secondary", "#b3b3b3")))
         except Exception as e:
             _log.warning("Full theme token pass failed: %s", e)
 
@@ -215,7 +221,7 @@ class CerebroCTKApp:
             return
         try:
             acc = str(self._tm.tokens.get("accent_primary", "#3B8ED0"))
-            inactive = str(self._tm.tokens.get("bg_sidebar", "#141924"))
+            inactive = str(self._tm.tokens.get("bg_base", "#141924"))
             for name, btn in self._nav_buttons.items():
                 if name == self._active_page:
                     btn.configure(fg_color=acc)
@@ -341,9 +347,7 @@ class CerebroCTKApp:
         """Show a visible banner when UiDegradedFlags indicate shell/theme degradation."""
         d = st.ui_degraded
         if d.theme_apply_failed:
-            msg = (
-                "Theme styling is degraded — some gradients or colors may not match the selected theme."
-            )
+            msg = "Theme styling is degraded — some gradients or colors may not match the selected theme."
             if d.theme_last_error:
                 msg = f"{msg}\n{d.theme_last_error}"
             self._degraded_label.configure(text=msg)
@@ -354,7 +358,7 @@ class CerebroCTKApp:
     def _build_nav(self) -> None:
         # Give nav a real background so child widgets never "flash" white.
         t = self._tm.tokens
-        sidebar = str(t.get("bg_sidebar", "#141924"))
+        sidebar = str(t.get("bg_base", "#141924"))
         nav = ctk.CTkFrame(self.root, corner_radius=0, width=220, fg_color=sidebar)
         nav.grid(row=0, column=0, sticky="nsew")
         nav.grid_rowconfigure(99, weight=1)
@@ -454,8 +458,12 @@ class CerebroCTKApp:
         except (tk.TclError, RuntimeError) as e:
             _log.debug("Top gradient z-order: %s", e)
 
-        # Page roots: transparent → inherit main column chrome (see cinematic_chrome_color).
-        _tp = {"fg_color": "transparent"}
+        # Page roots: non-transparent so there's no black flash or orphan layers.
+        panel_bg = str(t.get("bg_panel", "#1C2128"))
+        _tp = {"fg_color": panel_bg}
+        self._content_host.configure(fg_color=panel_bg)
+        self._content.configure(fg_color=chrome)
+        self._main_stack.configure(bg=str(t.get("bg_base", "#0f131c")))
         self._pages["Home"] = MissionPageCTK(
             self._content_host,
             on_start_scan=lambda: self._start_scan_mode("files"),
@@ -503,6 +511,7 @@ class CerebroCTKApp:
             on_toast=self._toast_notify,
             **_tp,
         )
+
     def _show_page(self, title: str) -> None:
         if self._content_host is None or title not in self._pages:
             return
@@ -513,16 +522,14 @@ class CerebroCTKApp:
             target.configure(fg_color=panel_bg)
         except (tk.TclError, RuntimeError, ValueError):
             pass
-        # Map the new page first and raise it, then unmap others. Doing forget-before-grid
-        # leaves the cell empty for one update cycle and causes a black/transparent flash.
-        target.grid(row=0, column=0, sticky="nsew")
+        # Place all pages at the same position and raise the active one to avoid flicker.
+        # Using place + raise ensures smooth transitions without layout recalculations.
+        for name, page in self._pages.items():
+            page.place(relx=0, rely=0, relwidth=1, relheight=1)
         try:
             target.lift()
         except (tk.TclError, RuntimeError):
             pass
-        for name, page in self._pages.items():
-            if name != title:
-                page.grid_forget()
         self._active_page = title
         self._title_var.set(title)
         self._sync_nav_buttons()
@@ -823,9 +830,9 @@ class CerebroCTKApp:
 
     def _refresh_current_page(self) -> None:
         """Refresh the current page if it supports reloading."""
-        if hasattr(self, '_active_page'):
+        if hasattr(self, "_active_page"):
             page = self._pages.get(self._active_page)
-            if hasattr(page, 'reload'):
+            if hasattr(page, "reload"):
                 page.reload()
 
     def _show_shortcuts_help(self) -> None:

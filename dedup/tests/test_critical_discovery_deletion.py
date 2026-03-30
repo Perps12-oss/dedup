@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
-
-import pytest
 
 from dedup.engine.deletion import _escape_posix_path_for_applescript
 from dedup.engine.discovery import DiscoveryCursor, DiscoveryOptions, DiscoveryService, FileDiscovery
 
 
 def test_escape_posix_path_for_applescript_quotes() -> None:
-    assert _escape_posix_path_for_applescript('/tmp/foo"bar') == r'/tmp/foo\"bar'
+    assert _escape_posix_path_for_applescript('/tmp/foo"bar') == r"/tmp/foo\"bar"
     assert _escape_posix_path_for_applescript(r"a\b") == r"a\\b"
 
 

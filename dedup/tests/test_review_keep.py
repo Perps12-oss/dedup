@@ -9,9 +9,7 @@ from dedup.ui.utils.review_keep import coerce_keep_selections, default_keep_map_
 
 
 def _group(gid: str, paths: list[str]) -> DuplicateGroup:
-    files = [
-        FileMetadata(path=p, size=10, mtime_ns=i, inode=i + 1) for i, p in enumerate(paths)
-    ]
+    files = [FileMetadata(path=p, size=10, mtime_ns=i, inode=i + 1) for i, p in enumerate(paths)]
     return DuplicateGroup(group_id=gid, group_hash="h", files=files)
 
 

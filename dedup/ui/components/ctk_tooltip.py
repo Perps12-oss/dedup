@@ -6,6 +6,7 @@ this provides the same API pattern (attach to any widget, show on hover).
 from __future__ import annotations
 
 import tkinter as tk
+
 import customtkinter as ctk
 
 

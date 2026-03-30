@@ -425,14 +425,17 @@ class ProjectionHub:
                 or self._metrics.files_discovered_total
                 or 0
             ),
-            files_discovered_fresh=int(benchmark.get("files_discovered_fresh", self._metrics.files_discovered_fresh) or 0),
+            files_discovered_fresh=int(
+                benchmark.get("files_discovered_fresh", self._metrics.files_discovered_fresh) or 0
+            ),
             files_reused_from_prior_inventory=int(
-                benchmark.get("files_reused_from_prior_inventory", self._metrics.files_reused_from_prior_inventory)
-                or 0
+                benchmark.get("files_reused_from_prior_inventory", self._metrics.files_reused_from_prior_inventory) or 0
             ),
             dirs_scanned=int(benchmark.get("dirs_scanned", self._metrics.dirs_scanned) or 0),
             dirs_reused=int(benchmark.get("dirs_reused", self._metrics.dirs_reused) or 0),
-            duplicate_groups_live=int(len(result.get("duplicate_groups", [])) or self._metrics.duplicate_groups_live or 0),
+            duplicate_groups_live=int(
+                len(result.get("duplicate_groups", [])) or self._metrics.duplicate_groups_live or 0
+            ),
             result_duplicate_files=int(result.get("total_duplicates", 0) or 0),
             result_duplicate_groups=int(len(result.get("duplicate_groups", [])) or 0),
             result_rows_assembled=int(result.get("total_duplicates", 0) or 0),
@@ -444,7 +447,9 @@ class ProjectionHub:
             discovery_reuse_mode=str(benchmark.get("discovery_reuse_mode", "none")),
             dirs_skipped_via_manifest=int(benchmark.get("dirs_skipped_via_manifest", 0) or 0),
             prior_session_compatible=bool(benchmark.get("prior_session_compatible", False)),
-            prior_session_rejected_reason=str(benchmark.get("prior_session_rejected_reason", compat.get("reason", "none"))),
+            prior_session_rejected_reason=str(
+                benchmark.get("prior_session_rejected_reason", compat.get("reason", "none"))
+            ),
             time_saved_estimate=float(benchmark.get("time_saved_estimate_s", 0.0) or 0.0),
             hash_cache_hits=int(benchmark.get("hash_cache_hits", 0) or 0),
             hash_cache_misses=int(benchmark.get("hash_cache_misses", 0) or 0),

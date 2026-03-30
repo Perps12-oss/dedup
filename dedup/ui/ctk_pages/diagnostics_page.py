@@ -74,6 +74,9 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
     def apply_theme_tokens(self, tokens: dict) -> None:
         """Apply theme tokens to the page. API UNCHANGED."""
         panel = str(tokens.get("bg_panel", "#161b22"))
+        self.configure(fg_color=panel)
+        if hasattr(self, "_scroll"):
+            self._scroll.configure(fg_color="transparent")
         acc = str(tokens.get("accent_primary", "#3B8ED0"))
         elev = str(tokens.get("bg_elevated", "#21262d"))
         br = resolve_border_token(tokens)
@@ -85,6 +88,38 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             self._refresh_diag_btn.configure(fg_color=acc)
         if hasattr(self, "_export_diag_btn"):
             self._export_diag_btn.configure(fg_color=elev)
+
+        # Update all text labels with live token colors
+        self._update_label_colors(self, tokens)
+
+    def _update_label_colors(self, widget, tokens: dict) -> None:
+        """Recursively update all label text colors in widget tree with live tokens."""
+        txt_primary = str(tokens.get("text_primary", "#F1F5F9"))
+        txt_secondary = str(tokens.get("text_secondary", "#94A3B8"))
+        txt_muted = str(tokens.get("text_muted", "#6B7280"))
+        acc = str(tokens.get("accent_primary", "#3B8ED0"))
+
+        try:
+            for child in widget.winfo_children():
+                if child.__class__.__name__ == "CTkLabel":
+                    try:
+                        current_color = child.cget("text_color")
+                        if current_color and isinstance(current_color, tuple) and len(current_color) == 2:
+                            child.configure(text_color=(txt_primary, "#0A0E14"))
+                        elif "accent" in str(current_color).lower():
+                            child.configure(text_color=acc)
+                        elif "muted" in str(current_color).lower():
+                            child.configure(text_color=txt_muted)
+                        elif "secondary" in str(current_color).lower():
+                            child.configure(text_color=txt_secondary)
+                        elif current_color:
+                            child.configure(text_color=txt_primary)
+                    except Exception:
+                        pass
+                elif child.__class__.__name__ in ("CTkFrame", "CTkScrollableFrame"):
+                    self._update_label_colors(child, tokens)
+        except Exception:
+            pass
 
     def reload(self) -> None:
         """Reload all diagnostics data. API UNCHANGED."""
@@ -110,9 +145,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             active_id = self._coordinator.get_active_scan_id()
         except (AttributeError, TypeError):
             active_id = None
-        self._active_id_var.set(
-            (active_id[:16] + "…") if active_id and len(active_id) > 16 else (active_id or "—")
-        )
+        self._active_id_var.set((active_id[:16] + "…") if active_id and len(active_id) > 16 else (active_id or "—"))
 
         persistence = getattr(self._coordinator, "persistence", None)
         db_path = getattr(persistence, "db_path", None) if persistence else None
@@ -120,9 +153,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
         try:
             self._history_cache = self._coordinator.get_history(limit=50) or []
-            self._history_lookup = {
-                h.get("scan_id", ""): h for h in self._history_cache if h.get("scan_id")
-            }
+            self._history_lookup = {h.get("scan_id", ""): h for h in self._history_cache if h.get("scan_id")}
             session_ids = list(self._history_lookup.keys())
             self._session_combo.configure(values=session_ids)
 
@@ -143,7 +174,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
     def _build(self) -> None:
         # Configure base styling
-        self.configure(fg_color=self._tokens["bg_base"])
+        self.configure(fg_color=self._tokens["bg_panel"])
 
         # Header
         self._build_header()
@@ -532,7 +563,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
         self._phases_scroll = ctk.CTkScrollableFrame(
             self._tab_content,
-            fg_color=self._tokens["bg_surface"],
+            fg_color="transparent",
             corner_radius=12,
         )
         self._phases_scroll.grid(row=1, column=0, sticky="nsew")
@@ -584,7 +615,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
         self._artifacts_scroll = ctk.CTkScrollableFrame(
             self._tab_content,
-            fg_color=self._tokens["bg_surface"],
+            fg_color="transparent",
             corner_radius=12,
         )
         self._artifacts_scroll.grid(row=1, column=0, sticky="nsew")
@@ -601,7 +632,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
         self._compat_scroll = ctk.CTkScrollableFrame(
             self._tab_content,
-            fg_color=self._tokens["bg_surface"],
+            fg_color="transparent",
             corner_radius=12,
         )
         self._compat_scroll.grid(row=1, column=0, sticky="nsew")
@@ -624,7 +655,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
     def _populate_phases(self) -> None:
         """Populate the phases table."""
-        if not hasattr(self, '_phases_scroll') or self._phases_scroll is None:
+        if not hasattr(self, "_phases_scroll") or self._phases_scroll is None:
             for widget in self._tab_content.winfo_children():
                 widget.destroy()
             self._build_phases_content()
@@ -651,7 +682,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             self._show_empty_state(
                 self._phases_scroll,
                 "No phase checkpoints in the database for this session. "
-                "Completed scans often only persist final results."
+                "Completed scans often only persist final results.",
             )
             return
 
@@ -682,7 +713,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
     def _populate_events(self) -> None:
         """Populate the events log."""
-        if not hasattr(self, '_events_scroll') or self._events_scroll is None:
+        if not hasattr(self, "_events_scroll") or self._events_scroll is None:
             for widget in self._tab_content.winfo_children():
                 widget.destroy()
             self._build_events_content()
@@ -709,7 +740,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
     def _populate_artifacts(self) -> None:
         """Populate the artifacts listing."""
-        if not hasattr(self, '_artifacts_scroll') or self._artifacts_scroll is None:
+        if not hasattr(self, "_artifacts_scroll") or self._artifacts_scroll is None:
             for widget in self._tab_content.winfo_children():
                 widget.destroy()
             self._build_artifacts_content()
@@ -732,8 +763,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
         if not files:
             self._show_empty_state(
-                self._artifacts_scroll,
-                "No checkpoint files on disk. Checkpoints may live only in SQLite."
+                self._artifacts_scroll, "No checkpoint files on disk. Checkpoints may live only in SQLite."
             )
             return
 
@@ -761,7 +791,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
     def _populate_compatibility(self) -> None:
         """Populate the compatibility checks."""
-        if not hasattr(self, '_compat_scroll') or self._compat_scroll is None:
+        if not hasattr(self, "_compat_scroll") or self._compat_scroll is None:
             for widget in self._tab_content.winfo_children():
                 widget.destroy()
             self._build_compatibility_content()
@@ -779,8 +809,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
         if not dv and not bm:
             self._show_empty_state(
-                self._compat_scroll,
-                "No deletion-verification or benchmark snapshot stored for this session."
+                self._compat_scroll, "No deletion-verification or benchmark snapshot stored for this session."
             )
             return
 
@@ -881,7 +910,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             "Clear Diagnostics Buffer",
             "Clear all in-memory recorder events and category counts?\n\n"
             "Scan history on disk is not affected. A new scan also clears this buffer.",
-            icon="warning"
+            icon="warning",
         ):
             return
         get_diagnostics_recorder().clear()
@@ -899,13 +928,15 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
         events = []
         for event in get_diagnostics_recorder().get_recent(100):
-            events.append({
-                "category": event.category,
-                "message": event.message,
-                "detail": event.detail,
-                "timestamp": event.timestamp,
-                "wall_time": event.wall_time,
-            })
+            events.append(
+                {
+                    "category": event.category,
+                    "message": event.message,
+                    "detail": event.detail,
+                    "timestamp": event.timestamp,
+                    "wall_time": event.wall_time,
+                }
+            )
 
         payload = {
             "export_format": "cerebro_diagnostics_v1",

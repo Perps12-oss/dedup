@@ -6,9 +6,10 @@ Provides global shortcuts for navigation and common actions.
 
 from __future__ import annotations
 
-import customtkinter as ctk
 from tkinter import Event
 from typing import Callable, List, Tuple
+
+import customtkinter as ctk
 
 Handler = Callable[[Event], object]
 
@@ -17,7 +18,7 @@ Entry = Tuple[str, str, Handler]
 
 class CTKShortcutRegistry:
     """Registry for global keyboard shortcuts in CTK app."""
-    
+
     def __init__(self, root: ctk.CTk) -> None:
         self._root = root
         self._entries: List[Tuple[str, str]] = []
@@ -36,6 +37,6 @@ class CTKShortcutRegistry:
             friendly_key = friendly_key.replace("<Key-", "")
             friendly_key = friendly_key.replace(">", "")
             friendly_key = friendly_key.replace("comma", ",")
-            
+
             lines.append(f"  {friendly_key:<22} {desc}")
         return lines

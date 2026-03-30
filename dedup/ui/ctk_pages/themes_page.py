@@ -64,6 +64,14 @@ class ThemesPageCTK(ctk.CTkFrame):
 
         self._tokens = get_theme_colors()
 
+        # Store themed widget references for live theme updates
+        self._panel_sections: list[ctk.CTkFrame] = []
+        self._gradient_buttons: list[ctk.CTkButton] = []
+        self._import_export_buttons: list[ctk.CTkButton] = []
+        self._mode_selector: Optional[ctk.CTkSegmentedButton] = None
+        self._grad_canvas: Optional[tk.Canvas] = None
+        self._contrast_lbl: Optional[ctk.CTkLabel] = None
+
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
@@ -86,17 +94,47 @@ class ThemesPageCTK(ctk.CTkFrame):
     def apply_theme_tokens(self, tokens: dict) -> None:
         """Apply theme tokens to the page. API UNCHANGED."""
         panel = str(tokens.get("bg_panel", "#161b22"))
-        bg = str(tokens.get("bg_base", "#0f131c"))
+        self.configure(fg_color=panel)
+        if hasattr(self, "_scroll"):
+            self._scroll.configure(fg_color="transparent")
         br = resolve_border_token(tokens)
         border_pair = (br, br)
         for f in self._panel_sections:
             f.configure(fg_color=panel, border_color=border_pair)
-        if hasattr(self, "_scroll"):
-            self._scroll.configure(fg_color=bg)
         if hasattr(self, "_grad_canvas"):
-            canvas_bg = resolve_color(self._tokens["bg_panel"])
+            canvas_bg = resolve_color(tokens.get("bg_panel", "#161b22"))
             self._grad_canvas.configure(bg=canvas_bg)
             self._paint_gradient()
+
+        # Update gradient editor buttons
+        elev = str(tokens.get("bg_elevated", "#21262d"))
+        overlay = str(tokens.get("bg_overlay", "#21262d"))
+        acc = str(tokens.get("accent_primary", "#3B8ED0"))
+        acc_sec = str(tokens.get("accent_secondary", "#0EA5E9"))
+        txt_primary = str(tokens.get("text_primary", "#F1F5F9"))
+        txt_secondary = str(tokens.get("text_secondary", "#94A3B8"))
+
+        for btn in self._gradient_buttons:
+            if "Apply" in btn.cget("text"):
+                btn.configure(fg_color=acc, hover_color=acc_sec)
+            else:
+                btn.configure(
+                    fg_color=elev,
+                    hover_color=overlay,
+                    text_color=txt_primary if "Add" in btn.cget("text") else txt_secondary,
+                )
+
+        # Update import/export buttons
+        for btn in self._import_export_buttons:
+            btn.configure(fg_color=elev, hover_color=overlay, text_color=txt_primary)
+
+        # Update mode selector
+        if self._mode_selector:
+            self._mode_selector.configure(fg_color=elev, selected_color=acc)
+
+        # Update contrast label
+        if self._contrast_lbl:
+            self._contrast_lbl.configure(text_color=txt_secondary)
 
     def on_show(self) -> None:
         """Called when page becomes visible. API UNCHANGED."""
@@ -115,7 +153,7 @@ class ThemesPageCTK(ctk.CTkFrame):
         # Main scrollable container with modern styling
         self._scroll = ctk.CTkScrollableFrame(
             self,
-            fg_color=self._tokens["bg_base"],
+            fg_color="transparent",
             corner_radius=0,
         )
         self._scroll.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
@@ -285,7 +323,7 @@ class ThemesPageCTK(ctk.CTkFrame):
             text_color=self._tokens["text_secondary"],
         ).pack(side="left")
 
-        mode = ctk.CTkSegmentedButton(
+        self._mode_selector = ctk.CTkSegmentedButton(
             mode_frame,
             values=["Dark", "Light", "System"],
             command=self._on_mode,
@@ -294,10 +332,10 @@ class ThemesPageCTK(ctk.CTkFrame):
             corner_radius=8,
             font=ctk.CTkFont(size=12),
         )
-        mode.pack(side="right")
+        self._mode_selector.pack(side="right")
         cur_raw = str(ctk.get_appearance_mode() or "dark")
         cur_map = {"dark": "Dark", "light": "Light", "system": "System"}
-        mode.set(cur_map.get(cur_raw.lower(), "Dark"))
+        self._mode_selector.set(cur_map.get(cur_raw.lower(), "Dark"))
 
     def _on_mode(self, value: str) -> None:
         """Handle appearance mode change."""
@@ -360,7 +398,7 @@ class ThemesPageCTK(ctk.CTkFrame):
         btn_frame = ctk.CTkFrame(section, fg_color="transparent")
         btn_frame.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 14))
 
-        ctk.CTkButton(
+        add_btn = ctk.CTkButton(
             btn_frame,
             text="+ Add Stop",
             width=100,
@@ -371,9 +409,11 @@ class ThemesPageCTK(ctk.CTkFrame):
             text_color=self._tokens["text_primary"],
             font=ctk.CTkFont(size=12),
             command=self._add_gradient_stop,
-        ).pack(side="left", padx=(0, 8))
+        )
+        add_btn.pack(side="left", padx=(0, 8))
+        self._gradient_buttons.append(add_btn)
 
-        ctk.CTkButton(
+        apply_btn = ctk.CTkButton(
             btn_frame,
             text="Apply",
             width=80,
@@ -383,9 +423,11 @@ class ThemesPageCTK(ctk.CTkFrame):
             hover_color=self._tokens["accent_secondary"],
             font=ctk.CTkFont(size=12, weight="bold"),
             command=self._apply_gradient,
-        ).pack(side="left", padx=(0, 8))
+        )
+        apply_btn.pack(side="left", padx=(0, 8))
+        self._gradient_buttons.append(apply_btn)
 
-        ctk.CTkButton(
+        reset_btn = ctk.CTkButton(
             btn_frame,
             text="Reset",
             width=80,
@@ -396,7 +438,9 @@ class ThemesPageCTK(ctk.CTkFrame):
             text_color=self._tokens["text_secondary"],
             font=ctk.CTkFont(size=12),
             command=self._reset_gradient,
-        ).pack(side="left")
+        )
+        reset_btn.pack(side="left")
+        self._gradient_buttons.append(reset_btn)
 
         self._working_stops = self._load_editor_stops()
         self._rebuild_stop_rows()
@@ -453,7 +497,7 @@ class ThemesPageCTK(ctk.CTkFrame):
         btn_frame = ctk.CTkFrame(section, fg_color="transparent")
         btn_frame.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
 
-        ctk.CTkButton(
+        export_btn = ctk.CTkButton(
             btn_frame,
             text="📤 Export JSON",
             width=120,
@@ -464,9 +508,11 @@ class ThemesPageCTK(ctk.CTkFrame):
             text_color=self._tokens["text_primary"],
             font=ctk.CTkFont(size=12),
             command=self._export_theme_json,
-        ).pack(side="left", padx=(0, 8))
+        )
+        export_btn.pack(side="left", padx=(0, 8))
+        self._import_export_buttons.append(export_btn)
 
-        ctk.CTkButton(
+        import_btn = ctk.CTkButton(
             btn_frame,
             text="📥 Import JSON",
             width=120,
@@ -477,7 +523,9 @@ class ThemesPageCTK(ctk.CTkFrame):
             text_color=self._tokens["text_primary"],
             font=ctk.CTkFont(size=12),
             command=self._import_theme_json,
-        ).pack(side="left")
+        )
+        import_btn.pack(side="left")
+        self._import_export_buttons.append(import_btn)
 
         ctk.CTkLabel(
             section,

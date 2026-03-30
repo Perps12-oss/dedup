@@ -161,7 +161,9 @@ class ReviewController:
         keep_paths = coerce_keep_selections(result, raw)
         if keep_paths != raw:
             selected_id = getattr(sel, "selected_group_id", None)
-            self._store.set_review_selection(ReviewSelectionState(keep_selections=keep_paths, selected_group_id=selected_id))
+            self._store.set_review_selection(
+                ReviewSelectionState(keep_selections=keep_paths, selected_group_id=selected_id)
+            )
             self._cb.refresh_review_ui()
         if not result:
             self._cb.set_preview_result("No scan result.")
@@ -193,7 +195,9 @@ class ReviewController:
         keep_paths = coerce_keep_selections(result, raw)
         if keep_paths != raw:
             selected_id = getattr(sel, "selected_group_id", None)
-            self._store.set_review_selection(ReviewSelectionState(keep_selections=keep_paths, selected_group_id=selected_id))
+            self._store.set_review_selection(
+                ReviewSelectionState(keep_selections=keep_paths, selected_group_id=selected_id)
+            )
             self._cb.refresh_review_ui()
         if not result:
             messagebox.showinfo("Delete", "No scan result.")

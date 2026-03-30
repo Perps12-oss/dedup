@@ -51,9 +51,7 @@ def _escape_posix_path_for_applescript(path: str) -> str:
 class DeletionVerifier:
     """Revalidate delete targets before destructive operations."""
 
-    def verify_target(
-        self, target: Dict[str, Any], *, st: Optional[Any] = None
-    ) -> Optional[str]:
+    def verify_target(self, target: Dict[str, Any], *, st: Optional[Any] = None) -> Optional[str]:
         path = Path(target["path"])
         if st is None:
             if not path.exists():
@@ -456,9 +454,7 @@ class DeletionEngine:
             all_delete_paths.extend(g.get("delete", []))
         path_to_id: Dict[str, int] = {}
         if self.persistence and all_delete_paths:
-            path_to_id = self.persistence.inventory_repo.get_file_ids_by_paths(
-                plan.scan_id, all_delete_paths
-            )
+            path_to_id = self.persistence.inventory_repo.get_file_ids_by_paths(plan.scan_id, all_delete_paths)
 
         for group in plan.groups:
             keep_path = group.get("keep", "")
@@ -488,8 +484,7 @@ class DeletionEngine:
                         item
                         for item in group.get("delete_details", [])
                         if item.get("path")
-                        and _norm_verification_path(str(item.get("path", "")))
-                        == _norm_verification_path(file_path)
+                        and _norm_verification_path(str(item.get("path", ""))) == _norm_verification_path(file_path)
                     ),
                     {"path": file_path},
                 )

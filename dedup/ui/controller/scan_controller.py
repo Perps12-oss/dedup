@@ -39,7 +39,9 @@ class ScanController:
         on_cancel: Optional[Callable[[], None]] = None,
     ) -> str:
         """Start a new scan; set intent accepted then delegate to coordinator; on complete/error set lifecycle."""
-        self._post_to_ui(lambda: self._store.set_intent_lifecycle(IntentLifecycle(status="accepted", intent_type="scan")))
+        self._post_to_ui(
+            lambda: self._store.set_intent_lifecycle(IntentLifecycle(status="accepted", intent_type="scan"))
+        )
 
         def _on_complete(result):
             self._post_to_ui(
@@ -74,7 +76,9 @@ class ScanController:
         on_cancel: Optional[Callable[[], None]] = None,
     ) -> str:
         """Resume a scan; set intent accepted then delegate to coordinator."""
-        self._post_to_ui(lambda: self._store.set_intent_lifecycle(IntentLifecycle(status="accepted", intent_type="resume")))
+        self._post_to_ui(
+            lambda: self._store.set_intent_lifecycle(IntentLifecycle(status="accepted", intent_type="resume"))
+        )
 
         def _on_complete(result):
             self._post_to_ui(

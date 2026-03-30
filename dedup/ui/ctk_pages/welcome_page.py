@@ -58,6 +58,7 @@ class WelcomePageCTK(ctk.CTkFrame):
 
     def apply_theme_tokens(self, tokens: dict) -> None:
         """Apply theme tokens to styled components. API UNCHANGED."""
+        panel = str(tokens.get("bg_panel", "#1C2128"))
         acc = str(tokens.get("accent_primary", "#22D3EE"))
         elev = str(tokens.get("bg_elevated", "#161B22"))
         panel = str(tokens.get("bg_panel", "#1C2128"))
@@ -84,6 +85,38 @@ class WelcomePageCTK(ctk.CTkFrame):
         # Decorative elements
         if hasattr(self, "_accent_line"):
             self._accent_line.configure(fg_color=acc)
+
+        # Update all text labels with live token colors
+        self._update_label_colors(self, tokens)
+
+    def _update_label_colors(self, widget, tokens: dict) -> None:
+        """Recursively update all label text colors in widget tree with live tokens."""
+        txt_primary = str(tokens.get("text_primary", "#F1F5F9"))
+        txt_secondary = str(tokens.get("text_secondary", "#94A3B8"))
+        txt_muted = str(tokens.get("text_muted", "#6B7280"))
+        acc = str(tokens.get("accent_primary", "#22D3EE"))
+
+        try:
+            for child in widget.winfo_children():
+                if child.__class__.__name__ == "CTkLabel":
+                    try:
+                        current_color = child.cget("text_color")
+                        if current_color and isinstance(current_color, tuple) and len(current_color) == 2:
+                            child.configure(text_color=(txt_primary, "#0A0E14"))
+                        elif "accent" in str(current_color).lower():
+                            child.configure(text_color=acc)
+                        elif "muted" in str(current_color).lower():
+                            child.configure(text_color=txt_muted)
+                        elif "secondary" in str(current_color).lower():
+                            child.configure(text_color=txt_secondary)
+                        elif current_color:
+                            child.configure(text_color=txt_primary)
+                    except Exception:
+                        pass
+                elif child.__class__.__name__ in ("CTkFrame", "CTkScrollableFrame"):
+                    self._update_label_colors(child, tokens)
+        except Exception:
+            pass
 
     # ══════════════════════════════════════════════════════════════════════════
     # PRIVATE IMPLEMENTATION - VISUAL REFACTOR
