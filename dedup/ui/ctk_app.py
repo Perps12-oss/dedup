@@ -128,7 +128,7 @@ class CerebroCTKApp:
         stops = parse_gradient_stops_from_raw(self.state.settings.custom_gradient_stops)
         try:
             # This applies tk defaults via option_add (Canvas/Listbox/etc) which CTk relies on internally.
-            self._tm.apply(key, self.root, gradient_stops=stops, sun_valley=False)
+            self._tm.apply(key, self.root, gradient_stops=stops)
             self.store.clear_theme_degraded()
         except Exception as e:
             _log.warning("Theme apply failed (degraded styling): %s", e)

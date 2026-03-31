@@ -726,11 +726,25 @@ class DeletionPlan:
     def total_bytes_to_reclaim(self) -> int:
         total = 0
         for group in self.groups:
-            for file_path in group.get("delete", []):
-                try:
-                    total += Path(file_path).stat().st_size
-                except (OSError, ValueError):
-                    pass
+            details = group.get("delete_details") or []
+            if details:
+                for item in details:
+                    sz = item.get("expected_size")
+                    if sz is not None:
+                        total += int(sz)
+                    else:
+                        fp = item.get("path")
+                        if fp:
+                            try:
+                                total += Path(str(fp)).stat().st_size
+                            except (OSError, ValueError):
+                                pass
+            else:
+                for file_path in group.get("delete", []):
+                    try:
+                        total += Path(file_path).stat().st_size
+                    except (OSError, ValueError):
+                        pass
         return total
 
     def to_dict(self) -> Dict[str, Any]:

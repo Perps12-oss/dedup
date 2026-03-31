@@ -80,7 +80,7 @@ class ResumeResolver:
 
         current_config_hash = _config_hash(config)
         current_root = _root_fingerprint(config)
-        _hash_strategy_fingerprint(config)
+        _hash_strategy_fingerprint(config)  # result unused: hash strategy is captured in config_hash above
         session_config_hash = session.get("config_hash") or ""
         session_root = session.get("root_fingerprint") or ""
 

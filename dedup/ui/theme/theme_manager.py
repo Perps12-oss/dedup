@@ -22,20 +22,6 @@ _INSTANCE: Optional["ThemeManager"] = None
 _log = logging.getLogger(__name__)
 
 
-def _try_set_sun_valley_theme(root: tk.Tk, dark: bool) -> bool:
-    """
-    Apply optional sv-ttk Fluent-style base (install: pip install sv-ttk, extra modern-ui).
-    Returns True if applied; False on missing package or error — caller falls back to clam.
-    """
-    try:
-        import sv_ttk  # type: ignore[import-untyped]
-
-        sv_ttk.set_theme("dark" if dark else "light")
-        return True
-    except Exception:
-        return False
-
-
 def parse_gradient_stops_from_raw(raw: Any) -> Optional[List[Tuple[float, str]]]:
     """Normalize AppSettings.custom_gradient_stops (JSON lists) into sorted stops."""
     if not raw:
@@ -90,8 +76,6 @@ class ThemeManager:
         self._current_key: str = DEFAULT_THEME
         self._tokens: ThemeDict = get_theme(DEFAULT_THEME)
         self._observers: List[Callable[[ThemeDict], None]] = []
-        self._sun_valley_enabled: bool = True
-        self._sun_valley_dark: bool = True
 
     @property
     def tokens(self) -> ThemeDict:
@@ -113,7 +97,6 @@ class ThemeManager:
         root: tk.Tk,
         *,
         gradient_stops: Optional[List[Tuple[float, str]]] = None,
-        sun_valley: bool = True,
     ) -> None:
         self._current_key = theme_key
         base = get_theme(theme_key)
@@ -121,8 +104,6 @@ class ThemeManager:
             self._tokens = merge_gradient_into_tokens(base, gradient_stops)
         else:
             self._tokens = dict(base)
-        self._sun_valley_enabled = bool(sun_valley)
-        self._sun_valley_dark = str(base.get("mode", "dark")).lower() != "light"
         self._configure_styles(root)
         self._apply_tk_defaults(root)
         for cb in self._observers:
@@ -134,11 +115,7 @@ class ThemeManager:
     def _configure_styles(self, root: tk.Tk) -> None:
         t = self._tokens
         style = ttk.Style(root)
-        if self._sun_valley_enabled:
-            if not _try_set_sun_valley_theme(root, self._sun_valley_dark):
-                style.theme_use("clam")
-        else:
-            style.theme_use("clam")
+        style.theme_use("clam")
 
         bg = t["bg_base"]
         panel = t["bg_panel"]
@@ -365,7 +342,7 @@ class ThemeManager:
 
     def set_appearance_mode(self, mode: str) -> None:
         """Set the appearance mode (light/dark)."""
-        self._sun_valley_dark = mode.lower() != "light"
+        pass
 
     def get_custom_gradient_stops(self) -> Optional[List[Tuple[float, str]]]:
         """Get custom gradient stops if set."""

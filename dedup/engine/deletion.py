@@ -22,6 +22,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from dedup.infrastructure.utils import format_bytes as _format_bytes
+
 from .models import (
     DeletionPlan,
     DeletionPolicy,
@@ -727,21 +729,3 @@ def preview_deletion(plan: DeletionPlan) -> Dict[str, Any]:
         "total_bytes": total_bytes,
         "human_readable_size": _format_bytes(total_bytes),
     }
-
-
-def _format_bytes(size_bytes: int) -> str:
-    """Format bytes as human-readable string."""
-    if size_bytes == 0:
-        return "0 B"
-
-    units = ["B", "KB", "MB", "GB", "TB", "PB"]
-    size = float(size_bytes)
-    unit_index = 0
-
-    while size >= 1024 and unit_index < len(units) - 1:
-        size /= 1024
-        unit_index += 1
-
-    if unit_index == 0:
-        return f"{int(size)} {units[unit_index]}"
-    return f"{size:.2f} {units[unit_index]}"

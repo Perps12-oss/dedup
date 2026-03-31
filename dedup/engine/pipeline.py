@@ -606,7 +606,6 @@ class ScanPipeline:
         self._start_time = time.time()
         self.grouping.progress_cb = progress_cb
         self._init_benchmark()
-        self._init_benchmark()
 
         first_runnable_phase = ScanPhase.DISCOVERY
         session_exists = False
@@ -898,7 +897,7 @@ class ScanPipeline:
 
             if self.persistence and len(batch) >= self.config.batch_size:
                 try:
-                    from ...infrastructure.profiler import measure
+                    from ..infrastructure.profiler import measure
 
                     with measure("pipeline.inventory_write"):
                         self.persistence.shadow_write_inventory(self.scan_id, batch)
@@ -914,7 +913,7 @@ class ScanPipeline:
                 time_due = (time.monotonic() - last_checkpoint_ts) >= checkpoint_interval_s
                 if files_due or time_due:
                     try:
-                        from ...infrastructure.profiler import measure
+                        from ..infrastructure.profiler import measure
 
                         with measure("pipeline.checkpoint_write"):
                             self._update_phase_checkpoint(
@@ -952,7 +951,7 @@ class ScanPipeline:
 
         if self.persistence and batch:
             try:
-                from ...infrastructure.profiler import measure
+                from ..infrastructure.profiler import measure
 
                 with measure("pipeline.inventory_write"):
                     self.persistence.shadow_write_inventory(self.scan_id, batch)
@@ -999,7 +998,7 @@ class ScanPipeline:
                 self._benchmark.discovery_reuse_mode = "none"
 
         try:
-            from ...infrastructure.profiler import get_stats
+            from ..infrastructure.profiler import get_stats
 
             stats = get_stats()
             if stats:

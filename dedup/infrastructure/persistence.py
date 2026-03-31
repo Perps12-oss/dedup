@@ -9,6 +9,7 @@ Provides SQLite-based storage for:
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import sqlite3
@@ -180,55 +181,55 @@ class Persistence:
             self._schema_version = max(self._schema_version, get_schema_version(conn))
             return self._schema_version
 
-    @property
+    @functools.cached_property
     def session_repo(self) -> SessionRepository:
         return SessionRepository(self._get_connection())
 
-    @property
+    @functools.cached_property
     def checkpoint_repo(self) -> CheckpointRepository:
         return CheckpointRepository(self._get_connection())
 
-    @property
+    @functools.cached_property
     def inventory_repo(self) -> InventoryRepository:
         return InventoryRepository(self._get_connection())
 
-    @property
+    @functools.cached_property
     def size_candidate_repo(self) -> SizeCandidateRepository:
         return SizeCandidateRepository(self._get_connection())
 
-    @property
+    @functools.cached_property
     def partial_hash_repo(self) -> PartialHashRepository:
         return PartialHashRepository(self._get_connection())
 
-    @property
+    @functools.cached_property
     def partial_candidate_repo(self) -> PartialCandidateRepository:
         return PartialCandidateRepository(self._get_connection())
 
-    @property
+    @functools.cached_property
     def full_hash_repo(self) -> FullHashRepository:
         return FullHashRepository(self._get_connection())
 
-    @property
+    @functools.cached_property
     def duplicate_group_repo(self) -> DuplicateGroupRepository:
         return DuplicateGroupRepository(self._get_connection())
 
-    @property
+    @functools.cached_property
     def hash_cache_repo(self) -> HashCacheRepository:
         return HashCacheRepository(self._get_connection())
 
-    @property
+    @functools.cached_property
     def deletion_plan_repo(self) -> DeletionPlanRepository:
         return DeletionPlanRepository(self._get_connection())
 
-    @property
+    @functools.cached_property
     def deletion_audit_repo(self) -> DeletionAuditRepository:
         return DeletionAuditRepository(self._get_connection())
 
-    @property
+    @functools.cached_property
     def discovery_dir_repo(self) -> DiscoveryDirectoryRepository:
         return DiscoveryDirectoryRepository(self._get_connection())
 
-    @property
+    @functools.cached_property
     def deletion_verification_repo(self) -> DeletionVerificationRepository:
         return DeletionVerificationRepository(self._get_connection())
 

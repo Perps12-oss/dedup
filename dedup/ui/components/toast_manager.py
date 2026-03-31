@@ -16,7 +16,6 @@ steal keyboard focus.
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk
 from typing import Optional
 
 from ..utils.animations import animate_scalar
@@ -45,9 +44,9 @@ class ToastManager:
         tw = tk.Toplevel(self._root)
         tw.overrideredirect(True)
         tw.attributes("-topmost", True)
-        f = ttk.Frame(tw, padding=(12, 8))
+        f = tk.Frame(tw, padx=12, pady=8)
         f.pack()
-        ttk.Label(f, text=message, wraplength=280).pack()
+        tk.Label(f, text=message, wraplength=280).pack()
         tw.update_idletasks()
         x = self._root.winfo_rootx() + self._root.winfo_width() - tw.winfo_width() - 24
         final_y = self._root.winfo_rooty() + self._root.winfo_height() - tw.winfo_height() - 48
