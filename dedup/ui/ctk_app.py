@@ -23,6 +23,7 @@ from ..orchestration.coordinator import ScanCoordinator
 from .components.toast_manager import ToastManager
 from .controller.review_controller import ReviewController
 from .controller.scan_controller import ScanController
+from .controller.theme_controller import ThemeController
 from .ctk_action_contracts import KeepPolicy, PostScanRoute, ScanMode, ScanStartPayload
 from .ctk_pages.diagnostics_page import DiagnosticsPageCTK
 from .ctk_pages.history_page import HistoryPageCTK
@@ -35,15 +36,13 @@ from .ctk_shortcuts import CTKShortcutRegistry
 from .projections.history_projection import build_history_from_coordinator
 from .projections.hub import ProjectionHub
 from .state.hub_adapter import ProjectionHubStoreAdapter
-from .state.store import LastScanSummaryState, MissionState, UIAppState, UiDegradedFlags, UIStateStore
-from .theme.gradients import GradientBar, cinematic_chrome_color, paint_cinematic_backdrop
-from .theme.theme_manager import parse_gradient_stops_from_raw
+from .state.store import LastScanSummaryState, MissionState, UIAppState, UIStateStore
+from .theme.gradients import GradientBar
 from .utils.formatting import fmt_bytes
+from .utils.geometry_manager import WindowGeometryManager
 from .utils.ui_state import UIState
 
 _log = logging.getLogger(__name__)
-
-_MIN_W, _MIN_H = 760, 480
 
 
 class CerebroCTKApp:
@@ -65,7 +64,8 @@ class CerebroCTKApp:
         self.root.focus_set()  # Set initial focus
 
         self.state = UIState()
-        self._apply_saved_window_geometry()
+        self._geom = WindowGeometryManager(self.root, self.state.settings)
+        self._geom.restore()
         self._coordinator = ScanCoordinator()
         self._runtime = ApplicationRuntime(self._coordinator)
         self.state.attach_settings_service(self._runtime.settings)
@@ -79,7 +79,14 @@ class CerebroCTKApp:
         from .theme.theme_manager import get_theme_manager
 
         self._tm = get_theme_manager()
-        self._tm.subscribe(self._on_theme_tokens)
+        self._theme_ctrl = ThemeController(
+            self._tm,
+            self.state,
+            self.store,
+            toast_fn=self._toast_notify,
+            root=self.root,
+        )
+        self._tm.subscribe(self._theme_ctrl.on_tokens)
 
         self._toast = ToastManager(self.root)
         self._last_scan_toast_id: str | None = None
@@ -105,115 +112,32 @@ class CerebroCTKApp:
 
         # Apply persisted theme early so CTk's internal Tk widgets (Canvas in scrollables)
         # inherit correct defaults and don't "flash white" on repaint.
-        self._apply_theme_from_settings()
+        self._theme_ctrl.apply_from_settings()
 
         self._build_nav()
         self._build_content()
+        self._theme_ctrl.wire(
+            top_gradient=self._top_gradient,
+            nav=self._nav,
+            main_stack=self._main_stack,
+            content=self._content,
+            content_host=self._content_host,
+            pages=self._pages,
+            nav_buttons=self._nav_buttons,
+            active_page_getter=lambda: self._active_page,
+            cinematic_canvas=self._cinematic_canvas,
+        )
         self._wire_pages()
         self._bind_global_shortcuts()
         # Shell widgets exist now — sync chrome/panels to finalized theme tokens.
-        self._on_theme_tokens(self._tm.tokens)
+        self._theme_ctrl.on_tokens(self._tm.tokens)
         self._show_page("Home")
         try:
-            self.root.after(80, self._paint_cinematic_backdrop)
-            self.root.after(300, self._paint_cinematic_backdrop)
+            self.root.after(80, self._theme_ctrl.paint_backdrop)
+            self.root.after(300, self._theme_ctrl.paint_backdrop)
         except (tk.TclError, RuntimeError) as e:
             _log.warning("Could not schedule cinematic backdrop paint: %s", e)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
-
-    def _apply_theme_from_settings(self) -> None:
-        from .theme.theme_registry import DEFAULT_THEME
-
-        key = (self.state.settings.theme_key or "").strip() or DEFAULT_THEME
-        stops = parse_gradient_stops_from_raw(self.state.settings.custom_gradient_stops)
-        try:
-            # This applies tk defaults via option_add (Canvas/Listbox/etc) which CTk relies on internally.
-            self._tm.apply(key, self.root, gradient_stops=stops)
-            self.store.clear_theme_degraded()
-        except Exception as e:
-            _log.warning("Theme apply failed (degraded styling): %s", e)
-            self.store.set_ui_degraded(UiDegradedFlags(theme_apply_failed=True, theme_last_error=str(e)[:400]))
-
-    def _apply_saved_window_geometry(self) -> None:
-        """Restore width/height/position from ui_settings when valid; else use defaults."""
-        s = self.state.settings
-        w, h = int(s.window_width or 0), int(s.window_height or 0)
-        x, y = int(s.window_x), int(s.window_y)
-        try:
-            if w >= _MIN_W and h >= _MIN_H:
-                if x >= 0 and y >= 0:
-                    self.root.geometry(f"{w}x{h}+{x}+{y}")
-                else:
-                    self.root.geometry(f"{w}x{h}")
-                return
-        except (tk.TclError, ValueError, TypeError) as e:
-            _log.debug("Saved window geometry invalid, using default: %s", e)
-        self.root.geometry("1180x760")
-
-    def _main_chrome_color(self, tokens: dict) -> str:
-        """Solid fill for the main column (must match gradient tokens — CTk cannot show Canvas through)."""
-        return cinematic_chrome_color(
-            tokens,
-            reduced=bool(getattr(self.state.settings, "reduced_gradients", False)),
-        )
-
-    def _on_theme_tokens(self, tokens: dict) -> None:
-        """Apply token changes to CTK surfaces (nav/content)."""
-        try:
-            bg = str(tokens.get("bg_base", "#0f131c"))
-            sidebar = str(tokens.get("bg_base", "#141924"))
-            panel_bg = str(tokens.get("bg_panel", "#1C2128"))
-            acc = str(tokens.get("accent_primary", "#3B8ED0"))
-            chrome = self._main_chrome_color(tokens)
-            if hasattr(self, "_top_gradient") and self._top_gradient is not None:
-                try:
-                    self._top_gradient.configure(bg=bg)
-                    # Multi-stop aware (uses tokens["_multi_gradient_stops"] when present)
-                    self._top_gradient.update_from_tokens(tokens)
-                except Exception as e:
-                    _log.warning("Top gradient update failed: %s", e)
-            # Root background (CTk + underlying Tk)
-            try:
-                self.root.configure(fg_color=bg)
-            except Exception as e:
-                _log.debug("Root fg_color configure: %s", e)
-            try:
-                self.root.configure(background=bg)
-            except Exception as e:
-                _log.debug("Root background configure: %s", e)
-            if self._nav is not None:
-                self._nav.configure(fg_color=sidebar)
-            if self._main_stack is not None:
-                try:
-                    self._main_stack.configure(bg=bg)
-                except Exception as e:
-                    _log.warning("Main stack bg update failed: %s", e)
-            self._paint_cinematic_backdrop()
-            # Inset CTk column: solid chrome on top of cinematic margin (not full-bleed CTk over canvas).
-            if self._content is not None:
-                self._content.configure(fg_color=chrome)
-            if self._content_host is not None:
-                # Solid chrome (not "transparent") avoids CTk repainting the page slot as black for a frame.
-                self._content_host.configure(fg_color=chrome)
-            for page in self._pages.values():
-                try:
-                    page.configure(fg_color=panel_bg)
-                except Exception:
-                    pass
-                if hasattr(page, "apply_theme_tokens"):
-                    try:
-                        page.apply_theme_tokens(tokens)
-                    except Exception as e:
-                        _log.warning("Page apply_theme_tokens failed: %s", e)
-            # Nav: active = accent; inactive = sidebar (theme-aware).
-            inactive = sidebar
-            for name, btn in self._nav_buttons.items():
-                if name == self._active_page:
-                    btn.configure(fg_color=acc, text_color=str(tokens.get("text_primary", "#ffffff")))
-                else:
-                    btn.configure(fg_color=inactive, text_color=str(tokens.get("text_secondary", "#b3b3b3")))
-        except Exception as e:
-            _log.warning("Full theme token pass failed: %s", e)
 
     def _sync_nav_buttons(self) -> None:
         """Update nav bar selection colors only (avoids full chrome repaint on tab change)."""
@@ -243,26 +167,6 @@ class CerebroCTKApp:
         diag = self._pages.get("Diagnostics")
         if isinstance(diag, DiagnosticsPageCTK):
             diag.reload()
-
-    def _paint_cinematic_backdrop(self, _event: object = None) -> None:
-        """Spine 2: full-area Tk Canvas behind an inset CTk shell (multi-stop wash)."""
-        c = self._cinematic_canvas
-        if c is None:
-            return
-        try:
-            w = max(2, int(c.winfo_width() or 0))
-            h = max(2, int(c.winfo_height() or 0))
-            if w < 8 or h < 8:
-                return
-            paint_cinematic_backdrop(
-                c,
-                w,
-                h,
-                self._tm.tokens,
-                reduced=bool(getattr(self.state.settings, "reduced_gradients", False)),
-            )
-        except Exception as e:
-            _log.warning("Cinematic backdrop paint failed: %s", e)
 
     def _toast_notify(self, msg: str, ms: int = 3200) -> None:
         self._toast.show(msg, ms=ms, reduced_motion=bool(self.state.settings.reduced_motion))
@@ -392,7 +296,7 @@ class CerebroCTKApp:
     def _build_content(self) -> None:
         t = self._tm.tokens
         bg = str(t.get("bg_base", "#0f131c"))
-        chrome = self._main_chrome_color(t)
+        chrome = self._theme_ctrl.main_chrome_color(t)
         # Spine 2: tk.Canvas cinematic fill; CTk sits inset so the gradient shows as a real border.
         rel_inset = 0.058
         main_stack = tk.Frame(self.root, bg=bg, highlightthickness=0, bd=0)
@@ -401,7 +305,7 @@ class CerebroCTKApp:
 
         cnv = tk.Canvas(main_stack, highlightthickness=0, borderwidth=0, bd=0, background=bg)
         cnv.place(x=0, y=0, relwidth=1.0, relheight=1.0)
-        cnv.bind("<Configure>", self._paint_cinematic_backdrop)
+        cnv.bind("<Configure>", self._theme_ctrl.paint_backdrop)
         self._cinematic_canvas = cnv
 
         content = ctk.CTkFrame(main_stack, corner_radius=0, fg_color=chrome)
@@ -494,8 +398,8 @@ class CerebroCTKApp:
         self._pages["Diagnostics"] = DiagnosticsPageCTK(self._content_host, runtime=self._runtime, **_tp)
         self._pages["Themes"] = ThemesPageCTK(
             self._content_host,
-            on_theme_change=self._on_theme_change,
-            on_preference_changed=self._on_theme_preference_changed,
+            on_theme_change=self._theme_ctrl.on_theme_change,
+            on_preference_changed=self._theme_ctrl.on_theme_preference_changed,
             on_toast=self._toast_notify,
             **_tp,
         )
@@ -507,7 +411,7 @@ class CerebroCTKApp:
             ui_settings_json_path=str(get_ui_settings_path()),
             on_open_themes=lambda: self._show_page("Themes"),
             on_open_diagnostics=lambda: self._show_page("Diagnostics"),
-            on_settings_changed=self._on_settings_changed,
+            on_settings_changed=self._theme_ctrl.on_settings_changed,
             on_toast=self._toast_notify,
             **_tp,
         )
@@ -737,37 +641,6 @@ class CerebroCTKApp:
             review.apply_default_policy(self._default_keep_policy)
         self._show_page("Review")
 
-    def _on_theme_change(self, key: str) -> None:
-        """Handle theme selection change - persist theme_key to settings."""
-        self.state.settings.theme_key = key
-        # Preset pick must replace any saved custom gradient; otherwise
-        # _apply_theme_from_settings() merges old stops and overrides the
-        # apply_theme() preview (looks like the theme "reverts").
-        self.state.settings.custom_gradient_stops = None
-        self.state.save()
-        # Apply to running CTK app: tk defaults + observers.
-        self._apply_theme_from_settings()
-        self._toast_notify(f"Theme: {key}")
-
-    def _on_theme_preference_changed(self) -> None:
-        """Handle theme preference changes from Themes page - persist custom gradients."""
-        # Save custom gradient stops to settings if they exist
-        custom_stops = self._tm.get_custom_gradient_stops()
-        if custom_stops:
-            self.state.settings.custom_gradient_stops = [[float(pos), str(col)] for pos, col in custom_stops]
-        else:
-            self.state.settings.custom_gradient_stops = None
-        self.state.save()
-
-    def _on_settings_changed(self) -> None:
-        """Handle settings changes from Settings page."""
-        # Settings are already saved; refresh any UI that depends on them
-        self.store.set_ui_mode("advanced" if self.state.settings.advanced_mode else "simple")
-        try:
-            self._on_theme_tokens(self._tm.tokens)
-        except Exception as e:
-            _log.warning("Settings-changed theme refresh failed: %s", e)
-
     def _on_close(self) -> None:
         if self._runtime.scan.is_scanning:
             if not messagebox.askyesno("Scan in progress", "A scan is active. Cancel and exit?", parent=self.root):
@@ -787,21 +660,8 @@ class CerebroCTKApp:
             except Exception as e:
                 _log.debug("Degraded banner unsubscribe: %s", e)
             self._degraded_unsub = None
-        try:
-            st = str(self.root.state() or "")
-            if st.lower() == "zoomed":
-                self.state.settings.window_width = 0
-                self.state.settings.window_height = 0
-                self.state.settings.window_x = -1
-                self.state.settings.window_y = -1
-            else:
-                self.state.settings.window_width = self.root.winfo_width()
-                self.state.settings.window_height = self.root.winfo_height()
-                self.state.settings.window_x = self.root.winfo_x()
-                self.state.settings.window_y = self.root.winfo_y()
-            self.state.save()
-        except Exception as e:
-            _log.warning("Persist window geometry on exit failed: %s", e)
+        self._geom.persist()
+        self.state.save()
         self.root.destroy()
 
     def _bind_global_shortcuts(self) -> None:

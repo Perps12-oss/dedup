@@ -16,10 +16,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
-_log = logging.getLogger(__name__)
-
 from .hashing import HashEngine, confirm_duplicates, group_by_partial_hash
 from .models import DuplicateGroup, FileMetadata, ScanProgress
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -387,8 +387,11 @@ class FullHashReducer:
         partial_hash_groups: Dict[str, List[FileMetadata]],
         scan_id: str,
         persistence: Any,
+        cancel_check: Optional[Callable[[], bool]] = None,
     ) -> List[DuplicateGroup]:
-        confirmed_groups = confirm_duplicates(partial_hash_groups, self.hash_engine, progress_cb=None)
+        confirmed_groups = confirm_duplicates(
+            partial_hash_groups, self.hash_engine, progress_cb=None, cancel_check=cancel_check
+        )
         duplicate_groups: List[DuplicateGroup] = []
         persistence.duplicate_group_repo.clear_session(scan_id)
 
@@ -415,6 +418,13 @@ class FullHashReducer:
             members = []
             keeper_path = files[0].path if files else None
             keeper_file_id = path_to_id.get(keeper_path) if keeper_path else None
+            if keeper_file_id is None:
+                _log.warning(
+                    "Keeper file %s missing from inventory for hash %s — skipping group",
+                    keeper_path,
+                    hash_value,
+                )
+                continue
             for file in files:
                 file_id = path_to_id.get(file.path)
                 if file_id is None:

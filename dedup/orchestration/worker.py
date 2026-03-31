@@ -7,6 +7,7 @@ Provides progress callbacks and cancellation support.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from dataclasses import dataclass
@@ -15,6 +16,8 @@ from typing import Any, Callable, Dict, Optional
 from ..engine.models import ScanConfig, ScanProgress, ScanResult
 from ..engine.pipeline import ResumableScanPipeline, ScanPipeline
 from .events import EventBus, ScanEvent, ScanEventType, get_event_bus
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -197,15 +200,8 @@ class ScanWorker:
                         try:
                             self.callbacks.on_progress(progress)
                         except Exception as e:
-                            import logging
-
-                            logging.getLogger(__name__).warning("Progress callback failed: %s", e)
-                            try:
-                                from ..infrastructure.diagnostics import CATEGORY_CALLBACK, get_diagnostics_recorder
-
-                                get_diagnostics_recorder().record(CATEGORY_CALLBACK, "Progress callback failed", str(e))
-                            except Exception:
-                                pass
+                            _log.warning("Progress callback failed: %s", e)
+                            self._record_diagnostic("Progress callback failed", str(e))
 
                     # Publish event
                     self.event_bus.publish(
@@ -236,99 +232,72 @@ class ScanWorker:
                 event_bus=self.event_bus,
             )
 
-            # Check if cancelled
             if self._cancelled:
-                if self.callbacks.on_cancel:
-                    try:
-                        self.callbacks.on_cancel()
-                    except Exception as e:
-                        import logging
-
-                        logging.getLogger(__name__).warning("Cancel callback failed: %s", e)
-                        try:
-                            from ..infrastructure.diagnostics import CATEGORY_CALLBACK, get_diagnostics_recorder
-
-                            get_diagnostics_recorder().record(CATEGORY_CALLBACK, "Cancel callback failed", str(e))
-                        except Exception:
-                            pass
-
-                self.event_bus.publish(
-                    ScanEvent(
-                        event_type=ScanEventType.SESSION_CANCELLED,
-                        scan_id=self._pipeline.scan_id,
-                    )
-                )
-
-                self.event_bus.publish(
-                    ScanEvent(
-                        event_type=ScanEventType.SCAN_CANCELLED,
-                        scan_id=self._pipeline.scan_id,
-                    )
-                )
+                self._handle_cancelled()
             else:
-                # Success
-                if self.callbacks.on_complete:
-                    try:
-                        self.callbacks.on_complete(self._result)
-                    except Exception as e:
-                        import logging
-
-                        logging.getLogger(__name__).warning("Complete callback failed: %s", e)
-                        try:
-                            from ..infrastructure.diagnostics import CATEGORY_CALLBACK, get_diagnostics_recorder
-
-                            get_diagnostics_recorder().record(CATEGORY_CALLBACK, "Complete callback failed", str(e))
-                        except Exception:
-                            pass
-
-                self.event_bus.publish(
-                    ScanEvent(
-                        event_type=ScanEventType.SESSION_COMPLETED,
-                        scan_id=self._pipeline.scan_id,
-                        payload={"result": self._result.to_dict()},
-                    )
-                )
-
-                self.event_bus.publish(
-                    ScanEvent(
-                        event_type=ScanEventType.SCAN_COMPLETED,
-                        scan_id=self._pipeline.scan_id,
-                        payload={"result": self._result.to_dict()},
-                    )
-                )
+                self._handle_pipeline_result(self._result)
 
         except Exception as e:
-            self._error = str(e)
+            self._handle_pipeline_error(e)
 
-            if self.callbacks.on_error:
-                try:
-                    self.callbacks.on_error(self._error)
-                except Exception as e:
-                    import logging
+    def _handle_pipeline_result(self, result: ScanResult) -> None:
+        """Publish completion events and invoke the on_complete callback."""
+        if self.callbacks.on_complete:
+            try:
+                self.callbacks.on_complete(result)
+            except Exception as e:
+                _log.warning("Complete callback failed: %s", e)
+                self._record_diagnostic("Complete callback failed", str(e))
 
-                    logging.getLogger(__name__).warning("Error callback failed: %s", e)
-                    try:
-                        from ..infrastructure.diagnostics import CATEGORY_CALLBACK, get_diagnostics_recorder
+        scan_id = self._pipeline.scan_id
+        self.event_bus.publish(
+            ScanEvent(event_type=ScanEventType.SESSION_COMPLETED, scan_id=scan_id, payload={"result": result.to_dict()})
+        )
+        self.event_bus.publish(
+            ScanEvent(event_type=ScanEventType.SCAN_COMPLETED, scan_id=scan_id, payload={"result": result.to_dict()})
+        )
 
-                        get_diagnostics_recorder().record(CATEGORY_CALLBACK, "Error callback failed", str(e))
-                    except Exception:
-                        pass
+    def _handle_cancelled(self) -> None:
+        """Invoke the on_cancel callback and publish cancellation events."""
+        if self.callbacks.on_cancel:
+            try:
+                self.callbacks.on_cancel()
+            except Exception as e:
+                _log.warning("Cancel callback failed: %s", e)
+                self._record_diagnostic("Cancel callback failed", str(e))
 
-            self.event_bus.publish(
-                ScanEvent(
-                    event_type=ScanEventType.SESSION_FAILED,
-                    scan_id=self._pipeline.scan_id if self._pipeline else "unknown",
-                    payload={"error": self._error},
-                )
-            )
+        scan_id = self._pipeline.scan_id
+        self.event_bus.publish(ScanEvent(event_type=ScanEventType.SESSION_CANCELLED, scan_id=scan_id))
+        self.event_bus.publish(ScanEvent(event_type=ScanEventType.SCAN_CANCELLED, scan_id=scan_id))
 
-            self.event_bus.publish(
-                ScanEvent(
-                    event_type=ScanEventType.SCAN_ERROR,
-                    scan_id=self._pipeline.scan_id if self._pipeline else "unknown",
-                    payload={"error": self._error},
-                )
-            )
+    def _handle_pipeline_error(self, exc: Exception) -> None:
+        """Record the error, invoke on_error callback, and publish failure events."""
+        self._error = str(exc)
+
+        if self.callbacks.on_error:
+            try:
+                self.callbacks.on_error(self._error)
+            except Exception as e:
+                _log.warning("Error callback failed: %s", e)
+                self._record_diagnostic("Error callback failed", str(e))
+
+        scan_id = self._pipeline.scan_id if self._pipeline else "unknown"
+        self.event_bus.publish(
+            ScanEvent(event_type=ScanEventType.SESSION_FAILED, scan_id=scan_id, payload={"error": self._error})
+        )
+        self.event_bus.publish(
+            ScanEvent(event_type=ScanEventType.SCAN_ERROR, scan_id=scan_id, payload={"error": self._error})
+        )
+
+    @staticmethod
+    def _record_diagnostic(message: str, detail: str) -> None:
+        """Best-effort write to the diagnostics recorder."""
+        try:
+            from ..infrastructure.diagnostics import CATEGORY_CALLBACK, get_diagnostics_recorder
+
+            get_diagnostics_recorder().record(CATEGORY_CALLBACK, message, detail)
+        except Exception:
+            pass
 
     def cancel(self):
         """Request cancellation of the scan."""

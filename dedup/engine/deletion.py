@@ -39,6 +39,62 @@ from .models import (
 _log = logging.getLogger(__name__)
 
 
+@dataclass
+class DeletionTarget:
+    path: str
+    expected_size: Optional[int] = None
+    expected_mtime_ns: Optional[int] = None
+    expected_full_hash: Optional[str] = None
+    action: str = ""
+
+    def __getitem__(self, key: str):
+        return getattr(self, key)
+
+    def get(self, key: str, default=None):
+        return getattr(self, key, default)
+
+
+@dataclass
+class DeletionGroup:
+    group_id: str
+    keep: str
+    delete: List[str]
+    delete_details: List[DeletionTarget]
+
+    def __getitem__(self, key: str):
+        return getattr(self, key)
+
+    def get(self, key: str, default=None):
+        return getattr(self, key, default)
+
+
+def _normalize_group(group: Any) -> "DeletionGroup":
+    """Coerce a raw dict (legacy callers / tests) or DeletionGroup into a DeletionGroup."""
+    if isinstance(group, DeletionGroup):
+        return group
+    details_raw = group.get("delete_details") or []
+    details = [
+        d
+        if isinstance(d, DeletionTarget)
+        else DeletionTarget(path=d)
+        if isinstance(d, str)
+        else DeletionTarget(
+            path=d.get("path", ""),
+            expected_size=d.get("expected_size"),
+            expected_mtime_ns=d.get("expected_mtime_ns"),
+            expected_full_hash=d.get("expected_full_hash"),
+            action=d.get("action", ""),
+        )
+        for d in details_raw
+    ]
+    return DeletionGroup(
+        group_id=group.get("group_id", ""),
+        keep=group.get("keep", ""),
+        delete=list(group.get("delete") or []),
+        delete_details=details,
+    )
+
+
 def _norm_verification_path(p: str) -> str:
     """Normalize path for comparison (case on Windows, redundant separators)."""
     return os.path.normcase(os.path.normpath(p))
@@ -46,7 +102,7 @@ def _norm_verification_path(p: str) -> str:
 
 def _escape_posix_path_for_applescript(path: str) -> str:
     """Escape a POSIX path for embedding in an AppleScript double-quoted string (Finder delete)."""
-    return path.replace("\\", "\\\\").replace('"', '\\"')
+    return path.replace("\\", "\\\\").replace('"', '\\"').replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t")
 
 
 @dataclass
@@ -116,6 +172,31 @@ class DeletionEngine:
                 get_diagnostics_recorder().record(CATEGORY_AUDIT_LOG, "Audit log write failed", str(e))
             except Exception as rec_err:
                 _log.warning("Diagnostics record for audit failure also failed: %s", rec_err)
+
+    def _log_deletion_outcome(
+        self,
+        result: DeletionResult,
+        file_path: str,
+        plan_id: str,
+        path_to_id: Dict[str, int],
+        action: str,
+        outcome: str,
+        error: Optional[str] = None,
+    ) -> None:
+        """Append to failed_files (when error present) and log to deletion_audit_repo."""
+        if error is not None:
+            result.failed_files.append({"path": file_path, "error": error})
+        if self.persistence:
+            detail: Dict[str, Any] = {"path": file_path}
+            if error is not None:
+                detail["error"] = error
+            self.persistence.deletion_audit_repo.log(
+                plan_id=plan_id,
+                action=action,
+                outcome=outcome,
+                detail=detail,
+                file_id=path_to_id.get(file_path),
+            )
 
     def _move_to_trash_fallback(self, path: Path) -> tuple[bool, Optional[str]]:
         """Move file to ~/.dedup/trash (always works if we have write access)."""
@@ -288,12 +369,13 @@ class DeletionEngine:
         deleted_paths = {_norm_verification_path(p) for p in result.deleted_files}
 
         for group in plan.groups:
-            group_id = str(group.get("group_id", ""))
+            group = _normalize_group(group)
+            group_id = str(group.group_id)
             group_statuses: List[DeletionVerificationTargetStatus] = []
-            delete_details = group.get("delete_details") or [{"path": path} for path in group.get("delete", [])]
+            delete_details = group.delete_details or [DeletionTarget(path=p) for p in group.delete]
 
             for target in delete_details:
-                path = str(target.get("path", ""))
+                path = str(target.path)
                 status = DeletionVerificationTargetStatus.VERIFICATION_FAILED
                 detail = ""
 
@@ -304,8 +386,8 @@ class DeletionEngine:
                     try:
                         st = file_path.stat()
                         current_mtime_ns = getattr(st, "st_mtime_ns", int(st.st_mtime * 1_000_000_000))
-                        expected_size = target.get("expected_size")
-                        expected_mtime_ns = target.get("expected_mtime_ns")
+                        expected_size = target.expected_size
+                        expected_mtime_ns = target.expected_mtime_ns
                         if expected_size is None or expected_mtime_ns is None:
                             detail = "Missing expected metadata for verification"
                         elif st.st_size != expected_size or current_mtime_ns != expected_mtime_ns:
@@ -348,7 +430,7 @@ class DeletionEngine:
                 DeletionVerificationGroup(
                     group_id=group_id,
                     status=group_status,
-                    keep_path=str(group.get("keep", "")),
+                    keep_path=str(group.keep),
                     detail=group_detail,
                 )
             )
@@ -453,15 +535,17 @@ class DeletionEngine:
 
         all_delete_paths: List[str] = []
         for g in plan.groups:
-            all_delete_paths.extend(g.get("delete", []))
+            g = _normalize_group(g)
+            all_delete_paths.extend(g.delete)
         path_to_id: Dict[str, int] = {}
         if self.persistence and all_delete_paths:
             path_to_id = self.persistence.inventory_repo.get_file_ids_by_paths(plan.scan_id, all_delete_paths)
 
         for group in plan.groups:
-            keep_path = group.get("keep", "")
+            group = _normalize_group(group)
+            keep_path = group.keep
             keep_resolved = Path(keep_path).resolve() if keep_path else None
-            delete_paths = group.get("delete", [])
+            delete_paths = group.delete
 
             for file_path in delete_paths:
                 current += 1
@@ -481,60 +565,61 @@ class DeletionEngine:
                     result.failed_files.append({"path": file_path, "error": "Cannot delete the designated keep file"})
                     continue
 
-                target_meta = next(
+                _dt = next(
                     (
-                        item
-                        for item in group.get("delete_details", [])
-                        if item.get("path")
-                        and _norm_verification_path(str(item.get("path", ""))) == _norm_verification_path(file_path)
+                        t
+                        for t in group.delete_details
+                        if _norm_verification_path(t.path) == _norm_verification_path(file_path)
                     ),
-                    {"path": file_path},
+                    None,
+                )
+                target_meta: Dict[str, Any] = (
+                    {
+                        "path": _dt.path,
+                        "expected_size": _dt.expected_size,
+                        "expected_mtime_ns": _dt.expected_mtime_ns,
+                    }
+                    if _dt is not None
+                    else {"path": file_path}
                 )
                 p = Path(file_path)
                 try:
                     st = p.stat()
                 except FileNotFoundError:
-                    err = "File does not exist"
-                    result.failed_files.append({"path": file_path, "error": err})
-                    if self.persistence:
-                        self.persistence.deletion_audit_repo.log(
-                            plan_id=plan.scan_id,
-                            action=plan.policy.value,
-                            outcome="skipped",
-                            detail={"path": file_path, "error": err},
-                            file_id=path_to_id.get(file_path),
-                        )
+                    self._log_deletion_outcome(
+                        result,
+                        file_path,
+                        plan.scan_id,
+                        path_to_id,
+                        action=plan.policy.value,
+                        outcome="skipped",
+                        error="File does not exist",
+                    )
                     continue
                 except (OSError, ValueError) as exc:
-                    err = str(exc)
-                    result.failed_files.append({"path": file_path, "error": err})
-                    if self.persistence:
-                        self.persistence.deletion_audit_repo.log(
-                            plan_id=plan.scan_id,
-                            action=plan.policy.value,
-                            outcome="skipped",
-                            detail={"path": file_path, "error": err},
-                            file_id=path_to_id.get(file_path),
-                        )
+                    self._log_deletion_outcome(
+                        result,
+                        file_path,
+                        plan.scan_id,
+                        path_to_id,
+                        action=plan.policy.value,
+                        outcome="skipped",
+                        error=str(exc),
+                    )
                     continue
 
                 if verifier:
                     verification_error = verifier.verify_target(target_meta, st=st)
                     if verification_error:
-                        result.failed_files.append(
-                            {
-                                "path": file_path,
-                                "error": verification_error,
-                            }
+                        self._log_deletion_outcome(
+                            result,
+                            file_path,
+                            plan.scan_id,
+                            path_to_id,
+                            action=plan.policy.value,
+                            outcome="skipped",
+                            error=verification_error,
                         )
-                        if self.persistence:
-                            self.persistence.deletion_audit_repo.log(
-                                plan_id=plan.scan_id,
-                                action=plan.policy.value,
-                                outcome="skipped",
-                                detail={"path": file_path, "error": verification_error},
-                                file_id=path_to_id.get(file_path),
-                            )
                         continue
 
                 file_size = st.st_size
@@ -545,24 +630,24 @@ class DeletionEngine:
                 if success:
                     result.deleted_files.append(file_path)
                     result.bytes_reclaimed += file_size
-                    if self.persistence:
-                        self.persistence.deletion_audit_repo.log(
-                            plan_id=plan.scan_id,
-                            action=plan.policy.value,
-                            outcome="success",
-                            detail={"path": file_path},
-                            file_id=path_to_id.get(file_path),
-                        )
+                    self._log_deletion_outcome(
+                        result,
+                        file_path,
+                        plan.scan_id,
+                        path_to_id,
+                        action=plan.policy.value,
+                        outcome="success",
+                    )
                 else:
-                    result.failed_files.append({"path": file_path, "error": error or "Unknown error"})
-                    if self.persistence:
-                        self.persistence.deletion_audit_repo.log(
-                            plan_id=plan.scan_id,
-                            action=plan.policy.value,
-                            outcome="failed",
-                            detail={"path": file_path, "error": error or "Unknown error"},
-                            file_id=path_to_id.get(file_path),
-                        )
+                    self._log_deletion_outcome(
+                        result,
+                        file_path,
+                        plan.scan_id,
+                        path_to_id,
+                        action=plan.policy.value,
+                        outcome="failed",
+                        error=error or "Unknown error",
+                    )
 
         result.completed_at = datetime.now()
         return result
@@ -633,21 +718,21 @@ class DeletionEngine:
             delete_files = [f for f in file_objects if f.path != keep_file.path]
 
             plan_groups.append(
-                {
-                    "group_id": group_id,
-                    "keep": keep_file.path,
-                    "delete": [f.path for f in delete_files],
-                    "delete_details": [
-                        {
-                            "path": f.path,
-                            "expected_size": f.size,
-                            "expected_mtime_ns": f.mtime_ns,
-                            "expected_full_hash": f.hash_full,
-                            "action": policy.value,
-                        }
+                DeletionGroup(
+                    group_id=group_id,
+                    keep=keep_file.path,
+                    delete=[f.path for f in delete_files],
+                    delete_details=[
+                        DeletionTarget(
+                            path=f.path,
+                            expected_size=f.size,
+                            expected_mtime_ns=f.mtime_ns,
+                            expected_full_hash=f.hash_full,
+                            action=policy.value,
+                        )
                         for f in delete_files
                     ],
-                }
+                )
             )
 
         plan = DeletionPlan(
@@ -665,26 +750,24 @@ class DeletionEngine:
             )
             all_paths: List[str] = []
             for group in plan.groups:
-                for item in group.get("delete_details", []):
-                    p = item.get("path")
-                    if p:
-                        all_paths.append(str(p))
+                for item in group.delete_details:
+                    if item.path:
+                        all_paths.append(item.path)
             path_to_id = self.persistence.inventory_repo.get_file_ids_by_paths(scan_id, all_paths)
             for group in plan.groups:
-                for item in group.get("delete_details", []):
-                    path = item.get("path")
-                    if not path:
+                for item in group.delete_details:
+                    if not item.path:
                         continue
-                    file_id = path_to_id.get(str(path))
+                    file_id = path_to_id.get(item.path)
                     if file_id is None:
                         continue
                     self.persistence.deletion_plan_repo.add_item(
                         plan_id=plan_id,
                         file_id=file_id,
-                        expected_size_bytes=item["expected_size"],
-                        expected_mtime_ns=item["expected_mtime_ns"],
-                        expected_full_hash=item.get("expected_full_hash") or "",
-                        action=item["action"],
+                        expected_size_bytes=item.expected_size,
+                        expected_mtime_ns=item.expected_mtime_ns,
+                        expected_full_hash=item.expected_full_hash or "",
+                        action=item.action,
                     )
         return plan
 
@@ -700,22 +783,19 @@ def preview_deletion(plan: DeletionPlan) -> Dict[str, Any]:
     # Prefer expected_size from delete_details (no extra stat); stat only when missing.
     total_bytes = 0
     for group in plan.groups:
-        details = group.get("delete_details") or []
-        delete_paths = group.get("delete", [])
+        details = group.delete_details
         if details:
             for item in details:
-                sz = item.get("expected_size")
+                sz = item.expected_size
                 if sz is not None:
                     total_bytes += int(sz)
-                else:
-                    fp = item.get("path")
-                    if fp:
-                        try:
-                            total_bytes += Path(str(fp)).stat().st_size
-                        except (OSError, ValueError):
-                            pass
+                elif item.path:
+                    try:
+                        total_bytes += Path(item.path).stat().st_size
+                    except (OSError, ValueError):
+                        pass
         else:
-            for file_path in delete_paths:
+            for file_path in group.delete:
                 try:
                     total_bytes += Path(file_path).stat().st_size
                 except (OSError, ValueError):

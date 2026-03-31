@@ -86,7 +86,13 @@ class Persistence:
         if self._lock is None:
             self._lock = threading.Lock()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        _db_is_new = not self.db_path.exists()
         self._init_db()
+        if _db_is_new and self.db_path.exists():
+            try:
+                self.db_path.chmod(0o600)
+            except Exception:
+                pass
 
     @property
     def checkpoint_dir(self) -> Path:

@@ -41,8 +41,6 @@ class AppSettings:
     window_x: int = -1
     window_y: int = -1
     custom_gradient_stops: Optional[list] = None
-    sun_valley_shell: bool = True
-    win_mica_backdrop: bool = False
 
     def to_dict(self):
         return asdict(self)

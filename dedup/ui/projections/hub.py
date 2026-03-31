@@ -41,7 +41,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 from ...orchestration.events import EventBus, ScanEvent, ScanEventType
 from .compatibility_projection import (
@@ -97,6 +97,7 @@ class ProjectionHub:
         self._root = tk_root
         self._lock = threading.Lock()
         self._alive = True
+        self._poll_after_id: Optional[str] = None
 
         # --- Current projection snapshots ---
         self._session: SessionProjection = EMPTY_SESSION
@@ -194,6 +195,12 @@ class ProjectionHub:
 
     def shutdown(self) -> None:
         self._alive = False
+        if getattr(self, "_poll_after_id", None):
+            try:
+                self._root.after_cancel(self._poll_after_id)
+            except Exception:
+                pass
+            self._poll_after_id = None
 
     # ------------------------------------------------------------------
     # Engine event handler  (called on background threads)
@@ -544,7 +551,7 @@ class ProjectionHub:
         if not self._alive:
             return
         try:
-            self._root.after(POLL_MS, self._poll)
+            self._poll_after_id = self._root.after(POLL_MS, self._poll)
         except Exception as e:
             if self._alive:
                 _log.warning("Hub poll schedule failed (root may be destroyed): %s", e)

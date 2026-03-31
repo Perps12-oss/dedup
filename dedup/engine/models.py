@@ -716,31 +716,37 @@ class DeletionPlan:
 
     scan_id: str
     policy: DeletionPolicy = DeletionPolicy.TRASH
-    groups: List[Dict[str, Any]] = field(default_factory=list)
+    groups: List[Any] = field(default_factory=list)
+
+    @staticmethod
+    def _group_attr(group, key, default=None):
+        """Read an attribute from a DeletionGroup dataclass or legacy dict."""
+        if hasattr(group, key):
+            return getattr(group, key)
+        return group.get(key, default)
 
     @property
     def total_files_to_delete(self) -> int:
-        return sum(len(g.get("delete", [])) for g in self.groups)
+        return sum(len(self._group_attr(g, "delete") or []) for g in self.groups)
 
     @property
     def total_bytes_to_reclaim(self) -> int:
         total = 0
         for group in self.groups:
-            details = group.get("delete_details") or []
+            details = self._group_attr(group, "delete_details") or []
             if details:
                 for item in details:
-                    sz = item.get("expected_size")
+                    sz = item.get("expected_size") if isinstance(item, dict) else getattr(item, "expected_size", None)
+                    path = item.get("path") if isinstance(item, dict) else getattr(item, "path", None)
                     if sz is not None:
                         total += int(sz)
-                    else:
-                        fp = item.get("path")
-                        if fp:
-                            try:
-                                total += Path(str(fp)).stat().st_size
-                            except (OSError, ValueError):
-                                pass
+                    elif path:
+                        try:
+                            total += Path(path).stat().st_size
+                        except (OSError, ValueError):
+                            pass
             else:
-                for file_path in group.get("delete", []):
+                for file_path in group.delete:
                     try:
                         total += Path(file_path).stat().st_size
                     except (OSError, ValueError):
@@ -748,10 +754,17 @@ class DeletionPlan:
         return total
 
     def to_dict(self) -> Dict[str, Any]:
+        import dataclasses
+
+        def _serialize_group(g: Any) -> Any:
+            if dataclasses.is_dataclass(g) and not isinstance(g, type):
+                return dataclasses.asdict(g)
+            return g
+
         return {
             "scan_id": self.scan_id,
             "policy": self.policy.value,
-            "groups": self.groups,
+            "groups": [_serialize_group(g) for g in self.groups],
         }
 
 

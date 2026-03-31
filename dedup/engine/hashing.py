@@ -27,6 +27,9 @@ from .models import FileMetadata, ScanConfig
 
 _log = logging.getLogger(__name__)
 
+_MMAP_THRESHOLD = 1024 * 1024  # 1 MB — use mmap above this size
+_LARGE_FILE_THRESHOLD = 32 * 1024 * 1024  # 32 MB
+
 
 class HashStrategy(Enum):
     """Hash algorithm selection."""
@@ -333,26 +336,30 @@ class HashEngine:
             hasher = self._get_hasher()
             file_size = file.size
 
-            with open(path, "rb") as f:
-                # Use mmap for files larger than 1MB
-                if self.use_mmap and file_size > 1024 * 1024:
-                    try:
-                        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-                            hasher.update(mm)
-                    except (OSError, ValueError):
-                        # Fallback to regular read
+            try:
+                with open(path, "rb") as f:
+                    # Use mmap for files larger than 1MB
+                    if self.use_mmap and file_size > _MMAP_THRESHOLD:
+                        try:
+                            with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                                hasher.update(mm)
+                        except (OSError, ValueError):
+                            # Fallback to regular read
+                            while True:
+                                chunk = f.read(8192)
+                                if not chunk:
+                                    break
+                                hasher.update(chunk)
+                    else:
+                        # Regular chunked read for smaller files
                         while True:
                             chunk = f.read(8192)
                             if not chunk:
                                 break
                             hasher.update(chunk)
-                else:
-                    # Regular chunked read for smaller files
-                    while True:
-                        chunk = f.read(8192)
-                        if not chunk:
-                            break
-                        hasher.update(chunk)
+            except (FileNotFoundError, OSError):
+                # File was deleted between exists() check and open() (TOCTOU)
+                return None
 
             hash_value = hasher.hexdigest()
             with self._cache_lock:

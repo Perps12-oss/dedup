@@ -18,10 +18,10 @@ from pathlib import Path
 from queue import Empty, Queue
 from typing import Callable, Dict, Iterator, List, Optional, Set, Tuple
 
-_log = logging.getLogger(__name__)
-
 from .discovery_compat import normalize_discovery_path
 from .models import FileMetadata, FileRecord, ScanConfig
+
+_log = logging.getLogger(__name__)
 
 try:
     from ..infrastructure.profiler import measure
@@ -235,8 +235,8 @@ class FileDiscovery:
                         if progress_cb:
                             try:
                                 progress_cb(metadata)
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                _log.warning("Progress callback raised an exception: %s", e)
                         yield metadata
                 except Empty:
                     if done_event.is_set() and result_queue.empty():

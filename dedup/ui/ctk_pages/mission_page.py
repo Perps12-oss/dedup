@@ -268,38 +268,9 @@ class MissionPageCTK(ctk.CTkFrame):
     # ══════════════════════════════════════════════════════════════════════════
 
     def _update_label_colors(self, widget, tokens: dict) -> None:
-        """Recursively update all label text colors in widget tree with live tokens."""
-        txt_primary = str(tokens.get("text_primary", "#F1F5F9"))
-        txt_secondary = str(tokens.get("text_secondary", "#94A3B8"))
-        txt_muted = str(tokens.get("text_muted", "#6B7280"))
-        acc = str(tokens.get("accent_primary", "#22D3EE"))
+        from ..utils.theme_utils import apply_label_colors
 
-        try:
-            for child in widget.winfo_children():
-                # Update CTkLabel text colors based on current color or best guess
-                if child.__class__.__name__ == "CTkLabel":
-                    try:
-                        # Try to detect what color category this label should use
-                        current_color = child.cget("text_color")
-                        if current_color and isinstance(current_color, tuple) and len(current_color) == 2:
-                            # Tuple = (light_mode_color, dark_mode_color) - update both
-                            child.configure(text_color=(txt_primary, "#0A0E14"))
-                        elif "accent" in str(current_color).lower():
-                            child.configure(text_color=acc)
-                        elif "muted" in str(current_color).lower():
-                            child.configure(text_color=txt_muted)
-                        elif "secondary" in str(current_color).lower():
-                            child.configure(text_color=txt_secondary)
-                        elif current_color:
-                            # Default to primary for unknown colors
-                            child.configure(text_color=txt_primary)
-                    except Exception:
-                        pass
-                # Recurse into frames
-                elif child.__class__.__name__ in ("CTkFrame", "CTkScrollableFrame"):
-                    self._update_label_colors(child, tokens)
-        except Exception:
-            pass
+        apply_label_colors(widget, tokens)
 
     def _build(self) -> None:
         """Build Mission page with enhanced visuals."""

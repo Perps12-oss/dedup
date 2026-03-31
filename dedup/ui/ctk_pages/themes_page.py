@@ -79,6 +79,10 @@ class ThemesPageCTK(ctk.CTkFrame):
         self._tm.subscribe(self._on_tokens_update)
         self._on_tokens_update(self._tm.tokens)
 
+    def destroy(self) -> None:
+        self._tm.unsubscribe(self._on_tokens_update)
+        super().destroy()
+
     def set_current_theme(self, key: str) -> None:
         """Set the current theme externally. API UNCHANGED."""
         self._current_theme_key = key

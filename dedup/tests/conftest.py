@@ -18,6 +18,15 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 
+@pytest.fixture(autouse=True)
+def reset_di_container():
+    from dedup.core.di import set_container
+
+    set_container(None)
+    yield
+    set_container(None)
+
+
 @pytest.fixture
 def temp_dir():
     """Temporary directory; cleaned up after test."""
