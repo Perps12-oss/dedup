@@ -459,7 +459,6 @@ class ReviewPageCTK(ctk.CTkFrame):
 
     def on_execute_start(self) -> None:
         self._execute_btn.configure(state="disabled", text="Working…")
-        self.update_idletasks()
 
     def on_execute_done(self, result: DeletionResult) -> None:
         self._execute_btn.configure(state="normal", text="🗑️ Move to Trash")

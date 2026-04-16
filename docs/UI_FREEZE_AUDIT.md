@@ -185,7 +185,7 @@ and timer accumulation across all CTk pages and controllers.
 | **Root Cause** | Explicit sync redraw call, likely added to ensure progress indicator appears before deletion starts. |
 | **Fix Strategy** | Remove `update_idletasks()`. If visual feedback is needed before a long operation, use `widget.after(10, start_operation)` to let the event loop flush naturally. |
 | **Risk** | Low — may need minor timing adjustment for progress indicator visibility. |
-| **Status** | OPEN |
+| **Status** | FIXED |
 
 ---
 
