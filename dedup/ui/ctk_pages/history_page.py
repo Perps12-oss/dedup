@@ -67,6 +67,7 @@ class HistoryPageCTK(ctk.CTkFrame):
 
         self._stat_cards: list[ctk.CTkFrame] = []
         self._search_timer_id: str | int | None = None
+        self._row_cache: dict[str, ctk.CTkFrame] = {}
 
         self._tokens = get_theme_colors()
 
@@ -110,6 +111,10 @@ class HistoryPageCTK(ctk.CTkFrame):
     def reload(self) -> None:
         """Reload history data and refresh UI. API UNCHANGED."""
         self._scan_data = self._get_history()
+        # Invalidate row cache — scan data changed
+        for w in self._row_cache.values():
+            w.destroy()
+        self._row_cache.clear()
         self._apply_filters()
         self._update_summary()
 
@@ -531,16 +536,27 @@ class HistoryPageCTK(ctk.CTkFrame):
         self._populate_table()
 
     def _populate_table(self) -> None:
-        """Populate the scrollable table with filtered data."""
+        """Populate the scrollable table with filtered data using cached rows."""
+        # Hide all cached rows
+        for w in self._row_cache.values():
+            w.pack_forget()
+        # Destroy any non-cached children (e.g. empty-state frames)
         for widget in self._scroll.winfo_children():
-            widget.destroy()
+            sid = getattr(widget, "_cache_sid", None)
+            if sid is None:
+                widget.destroy()
 
         if not self._filtered_data:
             self._show_empty_state()
             return
 
         for i, row in enumerate(self._filtered_data):
-            self._create_table_row(i, row)
+            sid = str(row.get("scan_id") or f"_idx_{i}")
+            cached = self._row_cache.get(sid)
+            if cached is not None:
+                cached.pack(fill="x", padx=8, pady=4)
+            else:
+                self._create_table_row(i, row)
 
     def _show_empty_state(self) -> None:
         """Show empty state when no scans match filters."""
@@ -606,6 +622,8 @@ class HistoryPageCTK(ctk.CTkFrame):
         )
         row_frame.pack(fill="x", padx=8, pady=4)
         row_frame.grid_columnconfigure(0, weight=1)
+        row_frame._cache_sid = sid  # type: ignore[attr-defined]
+        self._row_cache[sid] = row_frame
 
         # Make entire row clickable
         def on_click(event=None):

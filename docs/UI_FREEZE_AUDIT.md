@@ -121,7 +121,7 @@ and timer accumulation across all CTk pages and controllers.
 | **Root Cause** | Full destroy+rebuild pattern with no widget reuse. |
 | **Fix Strategy** | Implement widget pooling: keep a pool of group row frames, reconfigure their text/state instead of destroying and recreating. Only create new widgets when the pool is exhausted. |
 | **Risk** | Medium — group rows have selection state that must be preserved correctly. |
-| **Status** | OPEN |
+| **Status** | WONTFIX — only called once per scan result load, not on repeated filter changes. Cost is one-time. |
 
 ---
 
