@@ -554,6 +554,8 @@ class ThemesPageCTK(ctk.CTkFrame):
         for w in self._stops_frame.winfo_children():
             w.destroy()
 
+        self._stop_chip_refs: list[tk.Label] = []
+
         for i, (pos, col) in enumerate(self._working_stops):
             row = ctk.CTkFrame(self._stops_frame, fg_color="transparent")
             row.pack(fill="x", pady=3)
@@ -587,6 +589,7 @@ class ThemesPageCTK(ctk.CTkFrame):
                 borderwidth=0,
             )
             chip.pack(side="left", padx=(10, 10))
+            self._stop_chip_refs.append(chip)
 
             # Color picker button
             ctk.CTkButton(
@@ -636,7 +639,11 @@ class ThemesPageCTK(ctk.CTkFrame):
         rgb, hx = colorchooser.askcolor(color=col, parent=self.winfo_toplevel(), title="Stop Color")
         if hx:
             self._working_stops[index] = (pos, hx)
-            self._rebuild_stop_rows()
+            # Update only the changed chip in-place instead of rebuilding all rows
+            if hasattr(self, "_stop_chip_refs") and index < len(self._stop_chip_refs):
+                self._stop_chip_refs[index].configure(background=hx)
+            else:
+                self._rebuild_stop_rows()
             self._paint_gradient()
 
     def _remove_stop(self, index: int) -> None:
