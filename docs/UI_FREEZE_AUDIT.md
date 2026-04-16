@@ -73,7 +73,7 @@ and timer accumulation across all CTk pages and controllers.
 | **Root Cause** | Missing debounce on the `<Configure>` event handler. |
 | **Fix Strategy** | Add a debounce using `self.after_cancel()` / `self.after(30, self._do_resize)` pattern. Cancel any pending repaint before scheduling a new one. |
 | **Risk** | Low — cosmetic only, gradient repaints slightly delayed during resize. |
-| **Status** | OPEN |
+| **Status** | FIXED |
 
 ---
 

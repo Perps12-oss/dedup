@@ -198,9 +198,16 @@ class GradientBar(tk.Canvas):
         self._c_start = color_start
         self._c_end = color_end
         self._multi_stops: Optional[List[Tuple[float, str]]] = None
+        self._resize_after_id: Optional[str] = None
         self.bind("<Configure>", self._on_resize)
 
     def _on_resize(self, event=None):
+        if self._resize_after_id is not None:
+            self.after_cancel(self._resize_after_id)
+        self._resize_after_id = self.after(30, self._do_repaint)
+
+    def _do_repaint(self) -> None:
+        self._resize_after_id = None
         w = self.winfo_width() or 100
         h = self.winfo_height() or 3
         if self._multi_stops and len(self._multi_stops) >= 2:
