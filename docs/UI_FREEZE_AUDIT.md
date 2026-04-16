@@ -201,7 +201,7 @@ and timer accumulation across all CTk pages and controllers.
 | **Root Cause** | Caller does not debounce calls to this function during resize events. The function itself has no guard against rapid repeated invocation. |
 | **Fix Strategy** | Ensure all callers (ctk_app.py lines 136-137) debounce calls to `paint_cinematic_backdrop()`. Add a timestamp guard inside the function to skip repaints if called within 30ms of the last paint. |
 | **Risk** | Low — cosmetic backdrop, slight delay is imperceptible. |
-| **Status** | OPEN |
+| **Status** | FIXED |
 
 ---
 

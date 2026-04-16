@@ -30,6 +30,7 @@ class ThemeController:
         self._pages: dict = {}
         self._nav_buttons: dict = {}
         self._active_page_getter: Callable[[], str] = lambda: ""
+        self._backdrop_after_id: str | None = None
         self._cinematic_canvas = None
 
     def wire(
@@ -129,7 +130,13 @@ class ThemeController:
             _log.warning("Full theme token pass failed: %s", e)
 
     def paint_backdrop(self, _event: object = None) -> None:
-        """Spine 2: full-area Tk Canvas behind an inset CTk shell (multi-stop wash)."""
+        """Spine 2: full-area Tk Canvas behind an inset CTk shell (multi-stop wash). Debounced 30ms."""
+        if self._backdrop_after_id is not None:
+            self._root.after_cancel(self._backdrop_after_id)
+        self._backdrop_after_id = self._root.after(30, self._do_paint_backdrop)
+
+    def _do_paint_backdrop(self) -> None:
+        self._backdrop_after_id = None
         c = self._cinematic_canvas
         if c is None:
             return
