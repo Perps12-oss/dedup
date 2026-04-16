@@ -511,14 +511,19 @@ class ScanPageCTK(ctk.CTkFrame):
                     try:
                         current_color = child.cget("text_color")
                         if current_color and isinstance(current_color, tuple) and len(current_color) == 2:
-                            child.configure(text_color=(txt_primary, "#0A0E14"))
+                            new_color = (txt_primary, "#0A0E14")
+                            if current_color != new_color:
+                                child.configure(text_color=new_color)
                         elif "accent" in str(current_color).lower():
-                            child.configure(text_color=acc)
+                            if current_color != acc:
+                                child.configure(text_color=acc)
                         elif "muted" in str(current_color).lower():
-                            child.configure(text_color=txt_muted)
+                            if current_color != txt_muted:
+                                child.configure(text_color=txt_muted)
                         elif "secondary" in str(current_color).lower():
-                            child.configure(text_color=txt_secondary)
-                        elif current_color:
+                            if current_color != txt_secondary:
+                                child.configure(text_color=txt_secondary)
+                        elif current_color and current_color != txt_primary:
                             child.configure(text_color=txt_primary)
                     except Exception:
                         pass
