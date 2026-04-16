@@ -11,6 +11,7 @@ Execution summary sits below the three columns (full width).
 from __future__ import annotations
 
 import logging
+import threading
 import tkinter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
@@ -901,6 +902,20 @@ class ReviewPageCTK(ctk.CTkFrame):
         except Exception:
             return None
 
+    def _load_pil_image(self, path: Path, max_size: tuple[int, int]):
+        """Load PIL image from disk (meant to run on a background thread)."""
+        cached = get_thumbnail_path(str(path), size=max_size)
+        if not cached or not cached.exists():
+            return None
+        try:
+            from PIL import Image  # type: ignore
+
+            with Image.open(cached) as im:
+                im = im.copy()
+            return im
+        except Exception:
+            return None
+
     def _hero_size_tuple(self) -> tuple[int, int]:
         s = self._hero_pixel_size
         return (s, s)
@@ -912,20 +927,47 @@ class ReviewPageCTK(ctk.CTkFrame):
         keep = self._keep_map.get(gid, "") if gid else ""
         compare = self._compare_path or ""
         size = self._hero_size_tuple()
+        # Bump generation so stale loads are discarded
+        gen = getattr(self, "_hero_load_gen", 0) + 1
+        self._hero_load_gen = gen
 
-        def set_hero(lbl: ctk.CTkLabel, path: str, fallback: str, cap: ctk.StringVar) -> None:
-            if path and Path(path).exists() and is_image_extension(Path(path).suffix.lower().lstrip(".")):
-                cimg = self._pil_to_ctk(Path(path), size)
-                if cimg:
+        def _load_and_apply(
+            lbl: ctk.CTkLabel, path: str, fallback: str, cap: ctk.StringVar
+        ) -> None:
+            if not path or not Path(path).exists() or not is_image_extension(Path(path).suffix.lower().lstrip(".")):
+                if self._ui_alive():
+                    lbl.configure(image=None, text=fallback)
+                    cap.set(Path(path).name if path else "—")
+                return
+            pil_im = self._load_pil_image(Path(path), size)
+            # Post CTkImage creation + label update back to main thread
+            def _apply(im=pil_im, p=path):
+                if getattr(self, "_hero_load_gen", 0) != gen:
+                    return  # stale load — user switched groups
+                if not self._ui_alive():
+                    return
+                if im is None:
+                    lbl.configure(image=None, text=fallback)
+                    cap.set(Path(p).name if p else "—")
+                    return
+                try:
+                    cimg = ctk.CTkImage(light_image=im, dark_image=im, size=im.size)
+                    self._ctk_image_refs.append(cimg)
+                    if len(self._ctk_image_refs) > 64:
+                        self._ctk_image_refs.pop(0)
                     lbl.configure(image=cimg, text="")
                     lbl.image = cimg  # type: ignore[attr-defined]
-                    cap.set(Path(path).name)
-                    return
-            lbl.configure(image=None, text=fallback)
-            cap.set(Path(path).name if path else "—")
+                    cap.set(Path(p).name)
+                except Exception:
+                    lbl.configure(image=None, text=fallback)
+                    cap.set(Path(p).name if p else "—")
+            self.after(0, _apply)
 
-        set_hero(self._hero_left_label, keep, "No keep preview", self._hero_left_caption)
-        set_hero(self._hero_right_label, compare, "Pick compare file", self._hero_right_caption)
+        def _bg_load():
+            _load_and_apply(self._hero_left_label, keep, "No keep preview", self._hero_left_caption)
+            _load_and_apply(self._hero_right_label, compare, "Pick compare file", self._hero_right_caption)
+
+        threading.Thread(target=_bg_load, daemon=True).start()
 
     def _render_group_details(self, gid: str) -> None:
         group = self._group_map.get(gid)

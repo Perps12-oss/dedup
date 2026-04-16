@@ -57,7 +57,7 @@ and timer accumulation across all CTk pages and controllers.
 | **Root Cause** | PIL decode not offloaded to background thread. |
 | **Fix Strategy** | Load and resize images in a daemon thread. Post the final `CTkImage` creation back to the main thread via `widget.after(0, ...)`. Use a placeholder while loading. |
 | **Risk** | Medium — must handle race conditions if user switches groups before image loads. |
-| **Status** | OPEN |
+| **Status** | FIXED |
 
 ---
 
