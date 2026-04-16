@@ -41,7 +41,7 @@ and timer accumulation across all CTk pages and controllers.
 | **Root Cause** | Filesystem enumeration not offloaded to a background thread. |
 | **Fix Strategy** | Run `Path(cp_dir).iterdir()` in a daemon thread. Collect results into a list, then post widget creation back to main thread via `widget.after(0, ...)`. |
 | **Risk** | Low — isolated to one tab's population logic. |
-| **Status** | OPEN |
+| **Status** | FIXED |
 
 ---
 

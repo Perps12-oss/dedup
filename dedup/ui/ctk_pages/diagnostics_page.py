@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import tkinter as tk
 from datetime import datetime, timezone
 from pathlib import Path
@@ -730,12 +731,35 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
         persist = getattr(self._coordinator, "persistence", None)
         cp_dir = persist.checkpoint_dir if persist else None
-        files: list[Path] = []
-        if cp_dir and Path(cp_dir).exists():
-            sid = self._selected_session_id
-            for p in sorted(Path(cp_dir).iterdir()):
-                if p.is_file() and sid in p.name:
-                    files.append(p)
+        sid = self._selected_session_id
+
+        if not cp_dir or not Path(cp_dir).exists():
+            self._show_empty_state(
+                self._artifacts_scroll, "No checkpoint files on disk. Checkpoints may live only in SQLite."
+            )
+            return
+
+        # Show loading state while scanning filesystem in background
+        self._show_empty_state(self._artifacts_scroll, "Loading artifacts…")
+
+        def _scan_fs():
+            found: list[Path] = []
+            try:
+                for p in sorted(Path(cp_dir).iterdir()):
+                    if p.is_file() and sid in p.name:
+                        found.append(p)
+            except OSError:
+                pass
+            self.after(0, lambda: self._render_artifact_rows(found))
+
+        threading.Thread(target=_scan_fs, daemon=True).start()
+
+    def _render_artifact_rows(self, files: list[Path]) -> None:
+        """Render artifact rows on the main thread after background scan."""
+        if not hasattr(self, "_artifacts_scroll") or self._artifacts_scroll is None:
+            return
+        for widget in self._artifacts_scroll.winfo_children():
+            widget.destroy()
 
         if not files:
             self._show_empty_state(
