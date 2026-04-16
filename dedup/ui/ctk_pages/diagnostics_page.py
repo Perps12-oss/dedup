@@ -492,11 +492,15 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
         self._tab_content.grid_columnconfigure(0, weight=1)
         self._tab_content.grid_rowconfigure(0, weight=1)
 
+        # Tab frame cache: built once, then shown/hidden
+        self._tab_frames: dict[str, ctk.CTkFrame] = {}
+        self._tab_data_version: dict[str, str | None] = {}
+
         # Build initial tab content
         self._build_phases_content()
 
     def _switch_tab(self, tab_id: str) -> None:
-        """Switch between tab views."""
+        """Switch between tab views — reuse cached tab frames."""
         # Reset all button colors
         for tid, btn in self._tab_buttons.items():
             if tid == tab_id:
@@ -514,32 +518,47 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
         self._current_tab = tab_id
 
-        # Clear and rebuild content
-        for widget in self._tab_content.winfo_children():
-            widget.destroy()
+        # Hide all cached tab frames
+        for frame in self._tab_frames.values():
+            frame.grid_remove()
 
-        if tab_id == "phases":
-            self._build_phases_content()
-        elif tab_id == "events":
-            self._build_events_content()
-        elif tab_id == "artifacts":
-            self._build_artifacts_content()
-        elif tab_id == "compatibility":
-            self._build_compatibility_content()
+        # Build tab frame on first visit, then reuse
+        if tab_id not in self._tab_frames:
+            # Clear any non-cached children (initial build artifacts)
+            for widget in self._tab_content.winfo_children():
+                if widget not in self._tab_frames.values():
+                    widget.destroy()
+
+            if tab_id == "phases":
+                self._build_phases_content()
+            elif tab_id == "events":
+                self._build_events_content()
+            elif tab_id == "artifacts":
+                self._build_artifacts_content()
+            elif tab_id == "compatibility":
+                self._build_compatibility_content()
+        else:
+            self._tab_frames[tab_id].grid()
 
         self._refresh_tab_content()
 
     def _build_phases_content(self) -> None:
         """Build the phases table content."""
+        host = ctk.CTkFrame(self._tab_content, fg_color="transparent")
+        host.grid(row=0, column=0, sticky="nsew")
+        host.grid_columnconfigure(0, weight=1)
+        host.grid_rowconfigure(1, weight=1)
+        self._tab_frames["phases"] = host
+
         ctk.CTkLabel(
-            self._tab_content,
+            host,
             text="Scan Phases",
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color=self._tokens["text_primary"],
         ).grid(row=0, column=0, sticky="w", pady=(0, 12))
 
         self._phases_scroll = ctk.CTkScrollableFrame(
-            self._tab_content,
+            host,
             fg_color="transparent",
             corner_radius=12,
         )
@@ -548,7 +567,13 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
     def _build_events_content(self) -> None:
         """Build the events log content."""
-        header = ctk.CTkFrame(self._tab_content, fg_color="transparent")
+        host = ctk.CTkFrame(self._tab_content, fg_color="transparent")
+        host.grid(row=0, column=0, sticky="nsew")
+        host.grid_columnconfigure(0, weight=1)
+        host.grid_rowconfigure(1, weight=1)
+        self._tab_frames["events"] = host
+
+        header = ctk.CTkFrame(host, fg_color="transparent")
         header.grid(row=0, column=0, sticky="ew", pady=(0, 12))
         header.grid_columnconfigure(0, weight=1)
 
@@ -572,7 +597,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
         ).pack(side="right")
 
         self._events_scroll = ctk.CTkTextbox(
-            self._tab_content,
+            host,
             wrap="word",
             fg_color=self._tokens["bg_surface"],
             text_color=self._tokens["text_secondary"],
@@ -583,15 +608,21 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
     def _build_artifacts_content(self) -> None:
         """Build the artifacts listing content."""
+        host = ctk.CTkFrame(self._tab_content, fg_color="transparent")
+        host.grid(row=0, column=0, sticky="nsew")
+        host.grid_columnconfigure(0, weight=1)
+        host.grid_rowconfigure(1, weight=1)
+        self._tab_frames["artifacts"] = host
+
         ctk.CTkLabel(
-            self._tab_content,
+            host,
             text="Scan Artifacts",
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color=self._tokens["text_primary"],
         ).grid(row=0, column=0, sticky="w", pady=(0, 12))
 
         self._artifacts_scroll = ctk.CTkScrollableFrame(
-            self._tab_content,
+            host,
             fg_color="transparent",
             corner_radius=12,
         )
@@ -600,15 +631,21 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
 
     def _build_compatibility_content(self) -> None:
         """Build the compatibility checks content."""
+        host = ctk.CTkFrame(self._tab_content, fg_color="transparent")
+        host.grid(row=0, column=0, sticky="nsew")
+        host.grid_columnconfigure(0, weight=1)
+        host.grid_rowconfigure(1, weight=1)
+        self._tab_frames["compatibility"] = host
+
         ctk.CTkLabel(
-            self._tab_content,
+            host,
             text="Compatibility Checks",
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color=self._tokens["text_primary"],
         ).grid(row=0, column=0, sticky="w", pady=(0, 12))
 
         self._compat_scroll = ctk.CTkScrollableFrame(
-            self._tab_content,
+            host,
             fg_color="transparent",
             corner_radius=12,
         )
@@ -633,20 +670,23 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
     def _populate_phases(self) -> None:
         """Populate the phases table."""
         if not hasattr(self, "_phases_scroll") or self._phases_scroll is None:
-            for widget in self._tab_content.winfo_children():
-                widget.destroy()
-            self._build_phases_content()
+            return
+
+        if self._tab_data_version.get("phases") == self._selected_session_id:
+            return
 
         for widget in self._phases_scroll.winfo_children():
             widget.destroy()
 
         if not self._selected_session_id:
             self._show_empty_state(self._phases_scroll, "Select a session to view phases.")
+            self._tab_data_version["phases"] = self._selected_session_id
             return
 
         persist = getattr(self._coordinator, "persistence", None)
         if persist is None:
             self._show_empty_state(self._phases_scroll, "Persistence not available.")
+            self._tab_data_version["phases"] = self._selected_session_id
             return
 
         try:
@@ -661,6 +701,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
                 "No phase checkpoints in the database for this session. "
                 "Completed scans often only persist final results.",
             )
+            self._tab_data_version["phases"] = self._selected_session_id
             return
 
         for cp in checkpoints:
@@ -688,12 +729,12 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
                 font=ctk.CTkFont(size=11),
             ).pack(anchor="w", padx=12, pady=(0, 10))
 
+        self._tab_data_version["phases"] = self._selected_session_id
+
     def _populate_events(self) -> None:
         """Populate the events log."""
         if not hasattr(self, "_events_scroll") or self._events_scroll is None:
-            for widget in self._tab_content.winfo_children():
-                widget.destroy()
-            self._build_events_content()
+            return
 
         self._events_scroll.delete("1.0", "end")
 
@@ -722,11 +763,15 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
                 widget.destroy()
             self._build_artifacts_content()
 
+        if self._tab_data_version.get("artifacts") == self._selected_session_id:
+            return
+
         for widget in self._artifacts_scroll.winfo_children():
             widget.destroy()
 
         if not self._selected_session_id:
             self._show_empty_state(self._artifacts_scroll, "Select a session to view artifacts.")
+            self._tab_data_version["artifacts"] = self._selected_session_id
             return
 
         persist = getattr(self._coordinator, "persistence", None)
@@ -737,6 +782,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             self._show_empty_state(
                 self._artifacts_scroll, "No checkpoint files on disk. Checkpoints may live only in SQLite."
             )
+            self._tab_data_version["artifacts"] = sid
             return
 
         # Show loading state while scanning filesystem in background
@@ -750,11 +796,11 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
                         found.append(p)
             except OSError:
                 pass
-            self.after(0, lambda: self._render_artifact_rows(found))
+            self.after(0, lambda: self._render_artifact_rows(found, sid))
 
         threading.Thread(target=_scan_fs, daemon=True).start()
 
-    def _render_artifact_rows(self, files: list[Path]) -> None:
+    def _render_artifact_rows(self, files: list[Path], sid: str | None = None) -> None:
         """Render artifact rows on the main thread after background scan."""
         if not hasattr(self, "_artifacts_scroll") or self._artifacts_scroll is None:
             return
@@ -765,6 +811,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             self._show_empty_state(
                 self._artifacts_scroll, "No checkpoint files on disk. Checkpoints may live only in SQLite."
             )
+            self._tab_data_version["artifacts"] = sid
             return
 
         for p in files:
@@ -789,6 +836,8 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
                 text_color=self._tokens["text_muted"],
             ).pack(anchor="w", padx=10, pady=(0, 8))
 
+        self._tab_data_version["artifacts"] = sid
+
     def _populate_compatibility(self) -> None:
         """Populate the compatibility checks."""
         if not hasattr(self, "_compat_scroll") or self._compat_scroll is None:
@@ -796,11 +845,15 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
                 widget.destroy()
             self._build_compatibility_content()
 
+        if self._tab_data_version.get("compatibility") == self._selected_session_id:
+            return
+
         for widget in self._compat_scroll.winfo_children():
             widget.destroy()
 
         if not self._selected_session_id:
             self._show_empty_state(self._compat_scroll, "Select a session to view compatibility.")
+            self._tab_data_version["compatibility"] = self._selected_session_id
             return
 
         session_data = self._history_lookup.get(self._selected_session_id)
@@ -811,6 +864,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             self._show_empty_state(
                 self._compat_scroll, "No deletion-verification or benchmark snapshot stored for this session."
             )
+            self._tab_data_version["compatibility"] = self._selected_session_id
             return
 
         tb = ctk.CTkTextbox(
@@ -832,6 +886,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
             parts.append("\nBenchmark (from metrics)")
             parts.append(json.dumps(bm, indent=2, default=str))
         tb.insert("1.0", "\n".join(parts))
+        self._tab_data_version["compatibility"] = self._selected_session_id
 
     def _show_empty_state(self, parent: ctk.CTkFrame, message: str) -> None:
         """Show an empty state message."""
@@ -880,6 +935,7 @@ class DiagnosticsPageCTK(ctk.CTkFrame):
         """Handle session selection change."""
         session_id = self._session_var.get()
         self._selected_session_id = session_id
+        self._tab_data_version.clear()  # invalidate cached tab content for new session
         self._update_session_overview(session_id)
         self._refresh_tab_content()
 
