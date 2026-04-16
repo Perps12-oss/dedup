@@ -25,7 +25,7 @@ and timer accumulation across all CTk pages and controllers.
 | **Root Cause** | No background thread delegation for the deletion operation. |
 | **Fix Strategy** | Wrap `self._review.execute_deletion(plan)` in `threading.Thread(target=..., daemon=True).start()`. Use `widget.after(0, callback)` to post results back to the UI thread. Show a progress indicator during execution. |
 | **Risk** | Medium — must ensure UI callbacks run on main thread after deletion completes. |
-| **Status** | OPEN |
+| **Status** | FIXED |
 
 ---
 

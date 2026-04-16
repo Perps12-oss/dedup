@@ -8,6 +8,7 @@ and uses application services for plan/execute. UI refresh is via that protocol 
 
 from __future__ import annotations
 
+import threading
 from typing import Any, Callable, Optional, Protocol
 
 from ...application.services import ReviewApplicationService
@@ -243,7 +244,34 @@ class ReviewController:
         if self._toast_notify:
             self._toast_notify(f"Deleting {n_files} files ({size_h})…", 3800)
         self._cb.on_execute_start()
-        result_out = self._review.execute_deletion(plan)
+
+        def _run_deletion() -> None:
+            try:
+                result_out = self._review.execute_deletion(plan)
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).error("execute_deletion failed: %s", exc)
+                # Post error handling back to main thread
+                self._cb.after(0, lambda: self._on_deletion_error(str(exc)))  # type: ignore[attr-defined]
+                return
+            # Post result handling back to main thread
+            self._cb.after(0, lambda: self._on_deletion_complete(result_out))  # type: ignore[attr-defined]
+
+        threading.Thread(target=_run_deletion, daemon=True).start()
+
+    def _on_deletion_error(self, error_msg: str) -> None:
+        from tkinter import messagebox
+
+        self._cb.set_preview_result(f"Deletion failed: {error_msg}")
+        if self._toast_notify:
+            self._toast_notify(f"Deletion failed: {error_msg}", 6500)
+        messagebox.showerror("Deletion Failed", f"An error occurred during deletion:\n\n{error_msg}")
+        self._cb.on_execute_done(None)
+
+    def _on_deletion_complete(self, result_out: Any) -> None:
+        from tkinter import messagebox
+
         deleted_n = len(result_out.deleted_files)
         failed_n = len(result_out.failed_files)
         reclaimed = getattr(result_out, "bytes_reclaimed", 0) or 0
