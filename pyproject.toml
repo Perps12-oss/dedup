@@ -5,6 +5,9 @@
 testpaths = ["dedup/tests"]
 pythonpath = ["."]
 addopts = "-q"
+markers = [
+  "bottleneck_guard: runtime/code guard for validated bottleneck fixes",
+]
 
 [tool.ruff]
 target-version = "py311"
