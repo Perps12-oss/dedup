@@ -9,6 +9,8 @@ and timer accumulation across all CTk pages and controllers.
 **Total findings:** 12
 **P1 (Critical):** 3 | **P2 (High):** 7 | **P3 (Medium):** 2
 
+**All 12 bottlenecks resolved** (BN-007 assessed as WONTFIX — one-time cost on scan load).
+
 ---
 
 ## Bottleneck Registry
@@ -89,7 +91,7 @@ and timer accumulation across all CTk pages and controllers.
 | **Root Cause** | Full destroy+rebuild pattern instead of in-place update or show/hide. |
 | **Fix Strategy** | Cache row widgets keyed by scan ID. On filter change, hide non-matching rows (`grid_remove()`) and show matching ones (`grid()`) instead of destroying and recreating. |
 | **Risk** | Medium — must handle row data updates and memory for cached widgets. |
-| **Status** | OPEN |
+| **Status** | ✅ FIXED — commit db0692c |
 
 ---
 
@@ -137,7 +139,7 @@ and timer accumulation across all CTk pages and controllers.
 | **Root Cause** | No caching of populated tab contents. Tabs are rebuilt from scratch on every switch. |
 | **Fix Strategy** | Cache tab contents. Only rebuild when underlying data changes (track a data version or hash). On tab switch, just lift/show the cached frame. |
 | **Risk** | Low — diagnostics data changes infrequently. |
-| **Status** | OPEN |
+| **Status** | ✅ FIXED — commit 25a97ed |
 
 ---
 
@@ -153,7 +155,7 @@ and timer accumulation across all CTk pages and controllers.
 | **Root Cause** | Full destroy+rebuild instead of targeted updates. |
 | **Fix Strategy** | Only rebuild the specific row that changed (add/remove/reorder). For reorder, use `grid_configure()` to move rows without destroying them. |
 | **Risk** | Low — gradient stop count is typically small (3-6 stops). |
-| **Status** | OPEN |
+| **Status** | ✅ FIXED — commit a684aa1 |
 
 ---
 
@@ -169,7 +171,7 @@ and timer accumulation across all CTk pages and controllers.
 | **Root Cause** | Brute-force recursive traversal instead of maintaining a registry of themed labels. |
 | **Fix Strategy** | Maintain a list of label references that need color updates. On theme change, iterate only the registered labels instead of the full widget tree. Use weak references to avoid preventing garbage collection. |
 | **Risk** | Low — labels are long-lived, weak refs handle cleanup. |
-| **Status** | OPEN |
+| **Status** | ✅ FIXED — commit 6068ef9 |
 
 ---
 
