@@ -105,7 +105,7 @@ and timer accumulation across all CTk pages and controllers.
 | **Root Cause** | Full destroy+rebuild instead of diffing or in-place update. |
 | **Fix Strategy** | Compare incoming session list with current displayed sessions. Only rebuild cards whose data changed. Skip rebuild entirely if data is identical. |
 | **Risk** | Low — session list is small (max 8 cards). |
-| **Status** | OPEN |
+| **Status** | FIXED |
 
 ---
 

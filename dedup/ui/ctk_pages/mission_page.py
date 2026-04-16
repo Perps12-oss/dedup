@@ -81,6 +81,7 @@ class MissionPageCTK(ctk.CTkFrame):
         self._last_reclaim_var = ctk.StringVar(value="—")
         self._resume_status_var = ctk.StringVar(value="—")
         self._recent_var = ctk.StringVar(value="No recent sessions yet.")
+        self._recent_fingerprint: str = ""
         self._unsub_store: Optional[Callable[[], None]] = None
 
         # Layout
@@ -142,6 +143,11 @@ class MissionPageCTK(ctk.CTkFrame):
         """Fill recent sessions with clickable rows."""
         if not hasattr(self, "_recent_list_host"):
             return
+        # Skip rebuild when session data is identical (store fires frequently)
+        fp = repr([(d.get("scan_id"), d.get("started_at"), d.get("files_scanned"), d.get("duplicates_found")) for d in sessions[:8]])
+        if fp == self._recent_fingerprint:
+            return
+        self._recent_fingerprint = fp
         for w in self._recent_list_host.winfo_children():
             w.destroy()
         tk = self._tokens
