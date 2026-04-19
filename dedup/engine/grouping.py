@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
@@ -235,18 +236,43 @@ class GroupingEngine:
             cancel_check=cancel_check,
         )
 
-        # Convert to DuplicateGroup objects
+        # Convert to DuplicateGroup objects.
+        # Hard guard: drop any group that collapses to a single unique canonical path
+        # (catches self-duplicates that survived size/hash phases due to path aliasing).
         duplicate_groups = []
+        _self_dup_groups_removed = 0
         for hash_value, files in confirmed_groups.items():
             if cancel_check and cancel_check():
                 break
 
+            # Deduplicate files within this group by canonical path
+            _seen: dict[str, bool] = {}
+            _unique: list[FileMetadata] = []
+            for _f in files:
+                try:
+                    _c = os.path.normcase(os.path.realpath(_f.path))
+                except OSError:
+                    _c = os.path.normcase(_f.path)
+                if _c not in _seen:
+                    _seen[_c] = True
+                    _unique.append(_f)
+            if len(_unique) < 2:
+                _self_dup_groups_removed += 1
+                continue
+
             group = DuplicateGroup(
                 group_id="",
                 group_hash=hash_value,
-                files=files,
+                files=_unique,
             )
             duplicate_groups.append(group)
+
+        if _self_dup_groups_removed:
+            _log.warning(
+                "Diagnostics: groups removed as self-duplicates = %d "
+                "(single canonical path masquerading as duplicates)",
+                _self_dup_groups_removed,
+            )
 
         if self.progress_cb:
             total_reclaimable = sum(g.reclaimable_size for g in duplicate_groups)
@@ -412,7 +438,23 @@ class FullHashReducer:
         if full_rows:
             persistence.full_hash_repo.upsert_batch(full_rows)
 
+        _self_dup_removed_full = 0
         for hash_value, files in confirmed_groups.items():
+            # Hard guard: collapse group to unique canonical paths before persisting
+            _seen_c: dict[str, bool] = {}
+            _unique_f: list[FileMetadata] = []
+            for _f in files:
+                try:
+                    _ck = os.path.normcase(os.path.realpath(_f.path))
+                except OSError:
+                    _ck = os.path.normcase(_f.path)
+                if _ck not in _seen_c:
+                    _seen_c[_ck] = True
+                    _unique_f.append(_f)
+            if len(_unique_f) < 2:
+                _self_dup_removed_full += 1
+                continue
+            files = _unique_f
             group = DuplicateGroup(group_id="", group_hash=hash_value, files=files)
             duplicate_groups.append(group)
             members = []
@@ -441,6 +483,11 @@ class FullHashReducer:
                     members=members,
                 )
 
+        if _self_dup_removed_full:
+            _log.warning(
+                "Diagnostics: groups removed as self-duplicates (FullHashReducer) = %d",
+                _self_dup_removed_full,
+            )
         return duplicate_groups
 
 

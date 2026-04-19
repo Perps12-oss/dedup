@@ -151,6 +151,14 @@ def get_theme_colors() -> Dict[str, ColorPair]:
             "bg_elevated": p.bg_elevated,
             "bg_panel": p.bg_panel,
             "bg_overlay": p.bg_overlay,
+            # Tinted status-pill foreground tokens (derived at runtime via cinematic_tokens).
+            # Static fallbacks here; live values come from theme manager via apply_theme_tokens().
+            "tag_safe_fg": p.success,
+            "tag_warn_fg": p.warning,
+            "tag_danger_fg": p.error,
+            "tag_safe": ("#DCFCE7", "#0D2A16"),
+            "tag_warn": ("#FEF3C7", "#2A1E00"),
+            "tag_danger": ("#FEE2E2", "#2A0D0D"),
             "accent_primary": p.accent_primary,
             "accent_secondary": p.accent_secondary,
             "accent_muted": p.accent_muted,
@@ -241,6 +249,13 @@ def ctk_pairs_from_semantic_tokens(theme_tokens: dict) -> Dict[str, ColorPair]:
         "gradient_end": dup("gradient_end", p.gradient_end),
         "cinematic_chrome_base": chrome_b,
         "cinematic_chrome_dark": chrome_d,
+        # Tinted status-pill tokens — foreground uses saturated accent, background is tinted.
+        "tag_safe_fg": dup("tag_safe_fg", p.success),
+        "tag_warn_fg": dup("tag_warn_fg", p.warning),
+        "tag_danger_fg": dup("tag_danger_fg", p.error),
+        "tag_safe": dup("tag_safe", ("#DCFCE7", "#0D2A16")),
+        "tag_warn": dup("tag_warn", ("#FEF3C7", "#2A1E00")),
+        "tag_danger": dup("tag_danger", ("#FEE2E2", "#2A0D0D")),
     }
 
 

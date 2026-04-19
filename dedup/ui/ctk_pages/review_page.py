@@ -184,20 +184,34 @@ class ReviewPageCTK(ctk.CTkFrame):
         center.grid_columnconfigure(1, weight=1)
         center.grid_rowconfigure(1, weight=1)
 
-        self._preview_title = ctk.CTkLabel(
+        # Per-pane labels replace the old single centered "File preview" title.
+        self._pane_label_a = ctk.CTkLabel(
             center,
-            text="File preview",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            text_color=tk["text_primary"],
+            text="A — ORIGINAL",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=tk["text_secondary"],
+            anchor="center",
         )
-        self._preview_title.grid(row=0, column=0, columnspan=2, pady=(14, 10))
+        self._pane_label_a.grid(row=0, column=0, padx=16, pady=(12, 4), sticky="ew")
+        self._pane_label_b = ctk.CTkLabel(
+            center,
+            text="B — DUPLICATE",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=tk["text_secondary"],
+            anchor="center",
+        )
+        self._pane_label_b.grid(row=0, column=1, padx=16, pady=(12, 4), sticky="ew")
 
         self._hero_viewport = ctk.CTkFrame(center, fg_color="transparent")
         self._hero_viewport.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=8, pady=4)
         self._hero_viewport.grid_columnconfigure(0, weight=1)
-        self._hero_viewport.grid_columnconfigure(1, weight=1)
+        self._hero_viewport.grid_columnconfigure(1, weight=0, minsize=1)  # divider column
+        self._hero_viewport.grid_columnconfigure(2, weight=1)
         self._hero_viewport.grid_rowconfigure(0, weight=1)
         self._hero_viewport.bind("<Configure>", self._on_hero_viewport_configure)
+
+        self._hero_divider = ctk.CTkFrame(self._hero_viewport, width=1, fg_color=tk["border_subtle"])
+        self._hero_divider.grid(row=0, column=1, sticky="ns", padx=4, pady=16)
 
         self._hero_left_label = ctk.CTkLabel(self._hero_viewport, text="Keep preview")
         self._hero_left_label.grid(row=0, column=0, padx=12, pady=8, sticky="nsew")
@@ -210,7 +224,7 @@ class ReviewPageCTK(ctk.CTkFrame):
         )
 
         self._hero_right_label = ctk.CTkLabel(self._hero_viewport, text="Compare preview")
-        self._hero_right_label.grid(row=0, column=1, padx=12, pady=8, sticky="nsew")
+        self._hero_right_label.grid(row=0, column=2, padx=12, pady=8, sticky="nsew")
         self._hero_right_caption = ctk.StringVar(value="")
         ctk.CTkLabel(center, textvariable=self._hero_right_caption, text_color=tk["text_secondary"]).grid(
             row=2,
@@ -355,8 +369,10 @@ class ReviewPageCTK(ctk.CTkFrame):
 
         # Row style presets
         self._group_row_normal = "transparent"
-        self._group_row_hover = self._tokens["bg_overlay"]
-        self._group_row_selected = self._tokens["bg_elevated"]
+        # Surface-2 (bg_elevated) for hover; surface-3 (bg_overlay) for selected — proper elevation stack.
+        self._group_row_hover = self._tokens.get("bg_elevated") or self._tokens["bg_elevated"]
+        self._group_row_selected = self._tokens.get("bg_overlay") or self._tokens["bg_elevated"]
+        self._group_row_accent_bars: dict[str, ctk.CTkFrame] = {}
 
         # Start in empty state; hide result panel
         self._result_panel.grid_remove()
@@ -400,13 +416,26 @@ class ReviewPageCTK(ctk.CTkFrame):
             fg_color=str(tokens.get("danger", "#E53E3E")),
             hover_color=str(tokens.get("danger_hover", "#9B2C2C")),
         )
-        if hasattr(self, "_preview_title"):
-            self._preview_title.configure(text_color=str(tokens.get("text_primary", "#F1F5F9")))
+        _pane_muted = str(tokens.get("text_secondary", "#94A3B8"))
+        for _pl in (getattr(self, "_pane_label_a", None), getattr(self, "_pane_label_b", None)):
+            if _pl is not None:
+                _pl.configure(text_color=_pane_muted)
+        if hasattr(self, "_hero_divider"):
+            self._hero_divider.configure(fg_color=resolve_border_token(tokens))
         self._refresh_btn.configure(fg_color=elev, border_color=br)
         self._details.configure(fg_color=surf, text_color=txt, border_color=br)
 
-        self._group_row_hover = theme_pair(tokens.get("bg_overlay"), self._tokens["bg_overlay"])
-        self._group_row_selected = theme_pair(tokens.get("bg_elevated"), self._tokens["bg_elevated"])
+        # Surface-2 for hover, surface-3 (bg_overlay) for selected — matches elevation system.
+        self._group_row_hover = theme_pair(tokens.get("bg_elevated"), self._tokens.get("bg_elevated") or self._tokens["bg_overlay"])
+        _overlay = tokens.get("bg_overlay") or tokens.get("bg_elevated")
+        self._group_row_selected = theme_pair(_overlay, self._tokens.get("bg_overlay") or self._tokens.get("bg_elevated"))
+        # Live-update accent bars to follow the new accent_primary token
+        _acc = str(tokens.get("accent_primary") or "#58a6ff")
+        for _bar in self._group_row_accent_bars.values():
+            try:
+                _bar.configure(fg_color=_acc)
+            except Exception:
+                pass
         cur = self._group_var.get()
         if cur and self._group_row_frames:
             self._highlight_group_row(cur)
@@ -614,7 +643,7 @@ class ReviewPageCTK(ctk.CTkFrame):
             return
         if w < 80 or h < 80:
             return
-        per_col = max(60, (w - 48) // 2)
+        per_col = max(60, (w - 56) // 2)  # 48 outer padding + ~8 for divider column
         side = min(self._HERO_MAX, max(self._HERO_MIN, min(per_col, h - 16)))
         if abs(side - self._hero_pixel_size) >= 24:
             self._hero_pixel_size = side
@@ -742,6 +771,7 @@ class ReviewPageCTK(ctk.CTkFrame):
         self._group_row_frames.clear()
         self._group_thumb_labels.clear()
         self._group_thumb_refs.clear()
+        self._group_row_accent_bars.clear()
 
     def _show_no_duplicates_empty(self) -> None:
         empty = ctk.CTkFrame(self._group_scroll, fg_color="transparent")
@@ -784,13 +814,19 @@ class ReviewPageCTK(ctk.CTkFrame):
 
     def _rebuild_group_rows(self, gids: list[str]) -> None:
         self._clear_group_rows()
+        acc_color = str(self._tokens.get("accent_primary") or "#58a6ff")
         for i, gid in enumerate(gids):
             group = self._group_map[gid]
             title_txt, sub_txt = self._group_card_labels(group, ordinal=i + 1)
 
             inner = ctk.CTkFrame(self._group_scroll, corner_radius=8, fg_color=self._group_row_normal)
             inner.pack(fill="x", pady=4)
-            inner.grid_columnconfigure(1, weight=1)
+            inner.grid_columnconfigure(2, weight=1)
+            inner.grid_rowconfigure(0, weight=1)
+            inner.grid_rowconfigure(1, weight=1)
+            # 3px left accent bar — stays accent_primary regardless of hover/select state
+            accent = ctk.CTkFrame(inner, width=3, corner_radius=0, fg_color=acc_color)
+            accent.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, 0), pady=0)
 
             # Thumbnail placeholder (48x48)
             thumb_lbl = ctk.CTkLabel(
@@ -801,10 +837,9 @@ class ReviewPageCTK(ctk.CTkFrame):
                 fg_color=self._tokens["bg_overlay"],
                 corner_radius=6,
             )
-            thumb_lbl.grid(row=0, column=0, rowspan=2, padx=(8, 6), pady=8, sticky="w")
+            thumb_lbl.grid(row=0, column=1, rowspan=2, padx=(8, 6), pady=8, sticky="w")
             self._group_thumb_labels[gid] = thumb_lbl
 
-            # Title + size text
             title_lbl = ctk.CTkLabel(
                 inner,
                 text=title_txt,
@@ -812,23 +847,22 @@ class ReviewPageCTK(ctk.CTkFrame):
                 text_color=self._tokens["text_primary"],
                 anchor="w",
             )
-            title_lbl.grid(row=0, column=1, sticky="w", padx=(0, 10), pady=(8, 0))
+            title_lbl.grid(row=0, column=2, sticky="w", padx=(0, 10), pady=(8, 0))
             sub_lbl = ctk.CTkLabel(
                 inner,
                 text=sub_txt,
                 text_color=self._tokens["text_secondary"],
                 anchor="w",
             )
-            sub_lbl.grid(row=1, column=1, sticky="w", padx=(0, 10), pady=(0, 8))
+            sub_lbl.grid(row=1, column=2, sticky="w", padx=(0, 10), pady=(0, 8))
 
-            # Click handlers
-            for w in (inner, thumb_lbl, title_lbl, sub_lbl):
+            for w in (inner, thumb_lbl, title_lbl, sub_lbl, accent):
                 w.bind("<Button-1>", lambda _e, g=gid: self._select_group(g))
             inner.bind("<Enter>", lambda _e, g=gid, fr=inner: self._on_group_row_enter(fr, g))
             inner.bind("<Leave>", lambda _e, fr=inner, g=gid: self._group_row_leave(fr, g))
 
             self._group_row_frames[gid] = inner
-
+            self._group_row_accent_bars[gid] = accent
         self._highlight_group_row(self._group_var.get())
 
     # ------------------------------------------------------------------

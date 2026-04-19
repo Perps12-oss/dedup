@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from typing import Any, Callable
 
 from ..state.store import UiDegradedFlags
@@ -128,6 +129,7 @@ class ThemeController:
                     btn.configure(fg_color=inactive, text_color=str(tokens.get("text_secondary", "#b3b3b3")))
         except Exception as e:
             _log.warning("Full theme token pass failed: %s", e)
+        self._sync_dwm_titlebar(tokens)
 
     def paint_backdrop(self, _event: object = None) -> None:
         """Spine 2: full-area Tk Canvas behind an inset CTk shell (multi-stop wash). Debounced 30ms."""
@@ -179,3 +181,34 @@ class ThemeController:
             self.on_tokens(self._tm.tokens)
         except Exception as e:
             _log.warning("Settings-changed theme refresh failed: %s", e)
+
+    def _sync_dwm_titlebar(self, tokens: dict) -> None:
+        """Set Windows title-bar color to match bg_base and enable immersive dark mode.
+
+        Eliminates the OS accent-color clash ("olive bar above the app").
+        Silently skipped on non-Windows or when DWM is unavailable (pre-Win10).
+        DWMWA_USE_IMMERSIVE_DARK_MODE = 20  (Win 10 20H1+)
+        DWMWA_CAPTION_COLOR            = 35  (Win 11 22000+)
+        """
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            import ctypes.wintypes
+
+            dwmapi = ctypes.windll.dwmapi  # type: ignore[attr-defined]
+            hwnd = self._root.winfo_id()
+
+            # Force dark title-bar chrome (light close/min/max icons on dark bg)
+            mode = str(tokens.get("mode", "dark")).lower()
+            dark = ctypes.c_int(0 if mode == "light" else 1)
+            dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(dark), ctypes.sizeof(dark))
+
+            # Match caption background to app surface-0 (bg_base)
+            raw = str(tokens.get("bg_base", "#0c0d0e")).strip().lstrip("#")
+            if len(raw) == 6:
+                r, g, b = int(raw[0:2], 16), int(raw[2:4], 16), int(raw[4:6], 16)
+                colorref = ctypes.c_int(r | (g << 8) | (b << 16))  # COLORREF = 0x00BBGGRR
+                dwmapi.DwmSetWindowAttribute(hwnd, 35, ctypes.byref(colorref), ctypes.sizeof(colorref))
+        except Exception as e:
+            _log.debug("DWM title-bar sync skipped (non-fatal): %s", e)

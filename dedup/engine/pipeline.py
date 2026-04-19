@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -969,6 +970,33 @@ class ScanPipeline:
                 metadata_json={"bytes_found": self._bytes_found},
             )
             self._persist_directory_manifest()
+
+        # Deduplicate by canonical path before hashing to prevent self-duplicate groups.
+        # Handles: hardlinks, junctions, symlinks, UNC vs local paths, 8.3 short names,
+        # case variants, trailing-separator differences, \\?\ prefixes.
+        if files:
+            _seen_canon: dict[str, int] = {}
+            _deduped: list[FileMetadata] = []
+            for _f in files:
+                try:
+                    _canon = os.path.normcase(os.path.realpath(_f.path))
+                except OSError:
+                    _canon = os.path.normcase(_f.path)
+                if _canon not in _seen_canon:
+                    _seen_canon[_canon] = len(_deduped)
+                    _deduped.append(_f)
+            _removed = len(files) - len(_deduped)
+            if _removed:
+                _log.info(
+                    "Canonical-path dedup removed %d duplicate path entries before hashing "
+                    "(hardlinks / junctions / 8.3 aliases / case variants). "
+                    "Diagnostics: self-duplicate entries suppressed = %d",
+                    _removed,
+                    _removed,
+                )
+                files = _deduped
+                self._files_found = len(files)
+                self._bytes_found = sum(_f.size for _f in files)
 
         if self.persistence and self._incremental_prior_session_id:
             prior_files = self.persistence.inventory_repo.iter_by_session(self._incremental_prior_session_id)

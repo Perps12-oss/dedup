@@ -61,4 +61,18 @@ def finalize_cinematic_tokens(t: ThemeDict) -> ThemeDict:
     if "bg_surface" not in out or not _is_hex_color(out.get("bg_surface")):
         out["bg_surface"] = adjust_color(base, brightness=-3)
 
+    # Surface-3: hover / selected-card / modal overlay — one step above bg_elevated.
+    # Gives hover states genuine depth without a border.
+    if "bg_overlay" not in out or not _is_hex_color(out.get("bg_overlay")):
+        out["bg_overlay"] = adjust_color(out["bg_elevated"], brightness=8)
+
+    # Tinted status-pill foreground tokens — derived from existing semantic colors.
+    # Use tinted background (tag_safe / tag_warn / tag_danger) with these for legible pills.
+    if "tag_safe_fg" not in out:
+        out["tag_safe_fg"] = out.get("success", "#4ade80")
+    if "tag_warn_fg" not in out:
+        out["tag_warn_fg"] = out.get("warning", "#fbbf24")
+    if "tag_danger_fg" not in out:
+        out["tag_danger_fg"] = out.get("danger", "#f87171")
+
     return out
