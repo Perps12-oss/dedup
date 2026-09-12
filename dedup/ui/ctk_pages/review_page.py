@@ -430,7 +430,7 @@ class ReviewPageCTK(ctk.CTkFrame):
         _overlay = tokens.get("bg_overlay") or tokens.get("bg_elevated")
         self._group_row_selected = theme_pair(_overlay, self._tokens.get("bg_overlay") or self._tokens.get("bg_elevated"))
         # Live-update accent bars to follow the new accent_primary token
-        _acc = str(tokens.get("accent_primary") or "#58a6ff")
+        _acc = tokens.get("accent_primary") or "#58a6ff"
         for _bar in self._group_row_accent_bars.values():
             try:
                 _bar.configure(fg_color=_acc)
@@ -814,7 +814,7 @@ class ReviewPageCTK(ctk.CTkFrame):
 
     def _rebuild_group_rows(self, gids: list[str]) -> None:
         self._clear_group_rows()
-        acc_color = str(self._tokens.get("accent_primary") or "#58a6ff")
+        acc_color = self._tokens.get("accent_primary") or "#58a6ff"
         for i, gid in enumerate(gids):
             group = self._group_map[gid]
             title_txt, sub_txt = self._group_card_labels(group, ordinal=i + 1)
