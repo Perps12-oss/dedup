@@ -102,7 +102,7 @@ class ReviewController:
         if rule == "newest":
             return max(files, key=lambda f: getattr(f, "mtime_ns", 0))
         if rule == "oldest":
-            return min(files, key=lambda f: getattr(f, "mtime_ns", 0))
+            return min(files, key=lambda f: getattr(f, "size", 0))
         if rule == "largest":
             return max(files, key=lambda f: getattr(f, "size", 0))
         if rule == "smallest":
@@ -175,7 +175,7 @@ class ReviewController:
             group_keep_paths=keep_paths or None,
         )
         if not plan or not getattr(plan, "groups", None):
-            self._cb.set_preview_result("No dual files selected.")
+            self._cb.set_preview_result("No files selected.")
             return
         try:
             from ...engine.deletion import preview_deletion
