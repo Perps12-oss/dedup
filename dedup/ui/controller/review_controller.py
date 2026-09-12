@@ -252,8 +252,10 @@ class ReviewController:
                 import logging
 
                 logging.getLogger(__name__).error("execute_deletion failed: %s", exc)
+                # Capture before lambda; exception name is cleared after except suite
+                err = str(exc)
                 # Post error handling back to main thread
-                self._cb.after(0, lambda: self._on_deletion_error(str(exc)))  # type: ignore[attr-defined]
+                self._cb.after(0, lambda: self._on_deletion_error(err))  # type: ignore[attr-defined]
                 return
             # Post result handling back to main thread
             self._cb.after(0, lambda: self._on_deletion_complete(result_out))  # type: ignore[attr-defined]

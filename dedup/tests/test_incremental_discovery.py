@@ -212,7 +212,7 @@ def test_directory_manifest_persisted_for_completed_scan(temp_dir):
         pipeline.run()
 
         dir_mtimes = persistence.discovery_dir_repo.get_dir_mtimes(pipeline.scan_id)
-        assert str(root) in dir_mtimes
-        assert str(child) in dir_mtimes
+        assert str(root.resolve()) in dir_mtimes
+        assert str(child.resolve()) in dir_mtimes
     finally:
         persistence.close()

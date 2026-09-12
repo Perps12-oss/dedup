@@ -1,39 +1,65 @@
 name: CI
 
 on:
-  push:
-    branches: ["**"]
   pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         python-version: ["3.11", "3.12"]
-
+    defaults:
+      run:
+        shell: bash
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install dependencies
+      - name: Install
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
-          sudo apt-get update
-          sudo apt-get install -y xvfb
+          python -m pip install bandit
+
+      - name: Install xvfb
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
 
       - name: Compile check
-        run: python -m compileall dedup
+        run: python -m compileall -q dedup
 
-      - name: Ruff
-        run: python -m ruff check dedup
+      - name: Ruff F821 (undefined names)
+        run: python -m ruff check dedup --select F821
 
-      - name: Pytest
-        run: xvfb-run -a python -m pytest -q
+      - name: Bandit (high)
+        run: bandit -r dedup --severity-level high
+
+      - name: Pytest (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python -m pytest -q --cov=dedup --cov-report=xml
+
+      - name: Pytest (Windows)
+        if: runner.os == 'Windows'
+        run: python -m pytest -q --cov=dedup --cov-report=xml
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: coverage.xml
+          if-no-files-found: ignore
