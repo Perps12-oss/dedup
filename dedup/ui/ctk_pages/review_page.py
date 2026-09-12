@@ -1240,7 +1240,8 @@ class ReviewPageCTK(ctk.CTkFrame):
         gids = list(self._group_map.keys())
         ord_i = gids.index(gid) + 1
         head, _sz = self._group_card_labels(group, ordinal=ord_i)
-        lines = [head, f"Keep: {Path(keep).name if keep else '\u2014'}", ""]
+        keep_name = Path(keep).name if keep else _COMPARE_EMPTY
+        lines = [head, f"Keep: {keep_name}", ""]
         for f in getattr(group, "files", []):
             marker = "KEEP" if f.path == keep else "DEL "
             lines.append(f"[{marker}] {f.path}")

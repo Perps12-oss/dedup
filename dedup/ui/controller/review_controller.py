@@ -102,7 +102,7 @@ class ReviewController:
         if rule == "newest":
             return max(files, key=lambda f: getattr(f, "mtime_ns", 0))
         if rule == "oldest":
-            return min(files, key=lambda f: getattr(f, "size", 0))
+            return min(files, key=lambda f: getattr(f, "mtime_ns", 0))
         if rule == "largest":
             return max(files, key=lambda f: getattr(f, "size", 0))
         if rule == "smallest":
