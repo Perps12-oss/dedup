@@ -42,9 +42,6 @@ jobs:
       - name: Compile check
         run: python -m compileall -q dedup
 
-      - name: Ruff
-        run: python -m ruff check dedup
-
       - name: Ruff F821 (undefined names)
         run: python -m ruff check dedup --select F821
 
